@@ -27,12 +27,16 @@ A request for a roll written in dice notation, for example `2d6+1d8+3`, `1d20 ad
 _Avoid_: Formula, command, query
 
 **Throw**:
-One animated tumble of every die a Roll Expression calls for, from release until all dice come to rest.
+One animated tumble of every die a Roll Expression calls for, from release until all dice come to rest, each showing a Face Value.
 _Avoid_: Animation, toss
 
 **Face Value**:
 The number a single die shows once it is at rest.
 _Avoid_: Pip, die result
+
+**Cocked Die**:
+A Die that comes to rest without a single face (or, for a d4, a single vertex) pointing up, such as one leaning on a tray wall or on another Die. It has no Face Value, so a Throw never ends with one.
+_Avoid_: Leaner, tilted die
 
 **Roll Result**:
 The total and breakdown obtained by applying a Roll Expression's modifiers, advantage/disadvantage and keep rules to the Face Values of a Throw.
