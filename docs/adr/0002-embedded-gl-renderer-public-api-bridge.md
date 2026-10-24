@@ -1,0 +1,19 @@
+# Dice are drawn by our own LWJGL OpenGL renderer, shown in JavaFX through a public-API PixelBuffer bridge
+
+An embedded renderer written directly against LWJGL's OpenGL 3.3 core profile, with our own GLSL (PBR, environment reflections, shadow maps, parallax-engraved numerals), draws the tray and the dice. JavaFX is only the 2D app shell. Each frame is rendered into an FBO on a dedicated render thread, read back asynchronously through a small ring of pixel-pack buffers, and handed to a double-buffered JavaFX `PixelBuffer`, so the app uses public JavaFX API only. The render thread creates its GL context natively per platform (CGL on macOS, a hidden window plus WGL on Windows, EGL surfaceless or a GLX pbuffer on Linux), not through GLFW, because GLFW needs the main thread on macOS and JavaFX owns it. We did this because the renderer bake-off judged an embedded GL renderer closest to a real die, and showed the CPU-copy path looks identical to zero-copy. That made the zero-copy library's coupling to JavaFX internals a cost with no visible benefit.
+
+## Considered Options
+
+- **JavaFX 3D.** Rejected. Its fixed-function Phong pipeline has no shadows, no reflections, no PBR and no mipmaps on Windows, so a metal Dice Set renders as grey plastic. These are hard limits of the API and are not on the roadmap.
+- **openglfx (zero-copy `GLCanvas`).** Rejected for v1. It reaches into `com.sun.prism` internals, needs seven `--add-exports` into `javafx.graphics` and Kotlin on the module path, and has a single maintainer. It was built against JavaFX 17, and a D3D12 or Metal default pipeline would break or bypass its zero-copy paths. Recreating its canvas hung the prototype once in seven tries. Its Blit mode costs the same as our bridge.
+- **libGDX + gdx-gltf on top of GL.** Rejected. Its main strength, glTF asset loading, goes unused because all geometry is procedural. It brings its own application lifecycle and an unverified JPMS/`jlink` story, and needs a bridge that lags openglfx core. The scene (one tray, up to about 20 Dice, a few lights) is small enough to own.
+
+## Consequences
+
+- **One render surface.** Exactly one GL context and one render surface exist per app run. They are resized, never disposed and recreated, and torn down only at exit.
+- **One render thread.** It owns the context and makes every GL call. The JavaFX Application Thread only presents finished frames (`PixelBuffer.updateBuffer`) and sends it messages: resize, camera, Dice Set. Physics pre-simulates on its own worker and hands over a finished recording (see ADR-0001).
+- **Frame latency.** Async readback adds about one frame of latency. That is harmless, because a Throw is a recorded playback.
+- **Swappable transport.** The frame transport sits behind a small seam. A zero-copy implementation can be added later without touching the renderer, if profiling ever shows the copy is the bottleneck.
+- **On-demand rendering.** The renderer draws only during Throw playback or when the view changes, and is idle otherwise.
+- **GL floor.** OpenGL 3.3 core is the hard floor, so macOS's GL 4.1 core stays usable. 4.x features may be used only behind an optional capability check. If the app can't create a 3.3 core context, it fails fast with a message naming the requirement and the detected renderer and driver. There is no fallback renderer.
+- **Quality levers.** Render scale, MSAA samples and shadow quality are built into the renderer from v1 as a safety valve for integrated GPUs, which could not be measured.
