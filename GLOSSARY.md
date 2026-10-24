@@ -26,6 +26,14 @@ _Avoid_: d100 die
 A request for a roll written in dice notation, for example `2d6+1d8+3`, `1d20 adv` or `4d6kh3`.
 _Avoid_: Formula, command, query
 
+**Dice Group**:
+A count of Dice of one Die Kind within a Roll Expression, with an optional keep rule, such as the `4d6kh3` in `4d6kh3+2`.
+_Avoid_: Dice term, pool
+
+**Modifier**:
+A constant integer added to or subtracted from a Roll Expression, such as the `+3` in `2d6+3`.
+_Avoid_: Bonus, constant, flat
+
 **Throw**:
 One animated tumble of every die a Roll Expression calls for, from release until all dice come to rest, each showing a Face Value.
 _Avoid_: Animation, toss
@@ -39,7 +47,7 @@ A Die that comes to rest without a single face (or, for a d4, a single vertex) p
 _Avoid_: Leaner, tilted die
 
 **Roll Result**:
-The total and breakdown obtained by applying a Roll Expression's modifiers, advantage/disadvantage and keep rules to the Face Values of a Throw.
+The total and breakdown obtained by applying a Roll Expression's Modifiers, Advantage/Disadvantage and keep rules to the Face Values of a Throw.
 _Avoid_: Outcome, score
 
 **Advantage / Disadvantage**:
