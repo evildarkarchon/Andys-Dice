@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PROTOTYPE - throwaway. Lives only on the prototype/renderer-bakeoff branch; never merge to main.
+  Answers "Renderer bake-off: JavaFX 3D vs embedded renderer d20"
+  (https://github.com/evildarkarchon/Andys-Dice/issues/8).
+
+  Run (from the repo root):  mvn.cmd -q -f prototypes/renderer-bakeoff/pom.xml package exec:exec
+  See README.md next to this file for keys and options.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>andysdice.prototype</groupId>
+    <artifactId>renderer-bakeoff</artifactId>
+    <version>0-PROTOTYPE</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.release>27</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <javafx.version>27.0.1</javafx.version>
+        <lwjgl.version>3.4.3</lwjgl.version>
+        <openglfx.version>4.2.3</openglfx.version>
+        <!-- Run options, overridable with -D on the mvn command line (see README.md). -->
+        <bakeoff.variant>A</bakeoff.variant>
+        <bakeoff.uncapped>false</bakeoff.uncapped>
+        <bakeoff.capture></bakeoff.capture>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- openglfx 4.2.3 and grapl 2.3.14 publish kotlin-stdlib-jdk8 with <version>unspecified</version>,
+                 which Maven cannot resolve. Pin it to the Kotlin they were built with (2.1.0). -->
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk8</artifactId>
+                <version>2.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bom</artifactId>
+                <version>${lwjgl.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.huskerdev</groupId>
+            <artifactId>openglfx-lwjgl</artifactId>
+            <version>${openglfx.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-opengl</artifactId>
+        </dependency>
+        <!-- Prototype runs on Windows only; v1 would add the linux/macos natives. -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <classifier>natives-windows</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-opengl</artifactId>
+            <classifier>natives-windows</classifier>
+        </dependency>
+
+        <dependency>
+            <groupId>org.joml</groupId>
+            <artifactId>joml</artifactId>
+            <version>1.10.8</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.1</version>
+            </plugin>
+
+            <!-- JavaFX goes on the module path (target/fx), everything else on the class path (target/lib).
+                 That is the realistic layout: openglfx then needs the explicit add-exports below. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-fx</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-dependencies</goal></goals>
+                        <configuration>
+                            <includeGroupIds>org.openjfx</includeGroupIds>
+                            <outputDirectory>${project.build.directory}/fx</outputDirectory>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-lib</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-dependencies</goal></goals>
+                        <configuration>
+                            <excludeGroupIds>org.openjfx</excludeGroupIds>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <executable>${java.home}/bin/java</executable>
+                    <workingDirectory>${project.basedir}</workingDirectory>
+                    <arguments>
+                        <!-- One token on purpose: exec-maven-plugin rewrites the value after a bare "module-path" flag. -->
+                        <argument>--module-path=${project.build.directory}/fx</argument>
+                        <argument>--add-modules</argument>
+                        <argument>javafx.controls</argument>
+                        <argument>--enable-native-access=ALL-UNNAMED,javafx.graphics</argument>
+                        <!-- Pass openglfx's Prism exports ourselves instead of letting it patch them in via Unsafe. -->
+                        <argument>-Dopenglfx.disable.exports=true</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.prism=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.javafx.scene.layout=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.javafx.scene=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.javafx.sg.prism=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.scenario=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.javafx.tk=ALL-UNNAMED</argument>
+                        <argument>--add-exports=javafx.graphics/com.sun.glass.ui=ALL-UNNAMED</argument>
+                        <!-- Without this export LWJGL 3.4.3 falls back to its legacy sun.misc.Unsafe backend on
+                             JDK 27 (terminal-deprecation warnings); with it, LWJGL defaults to jdk.internal.misc.Unsafe. -->
+                        <argument>--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED</argument>
+                        <!-- JOML otherwise uses sun.misc.Unsafe and prints terminal-deprecation warnings on JDK 27. -->
+                        <argument>-Djoml.nounsafe=true</argument>
+                        <argument>-Dbakeoff.variant=${bakeoff.variant}</argument>
+                        <argument>-Dbakeoff.uncapped=${bakeoff.uncapped}</argument>
+                        <argument>-Dbakeoff.capture=${bakeoff.capture}</argument>
+                        <argument>-classpath</argument>
+                        <argument>${project.build.outputDirectory}${path.separator}${project.build.directory}/lib/*</argument>
+                        <argument>andysdice.prototype.bakeoff.Launcher</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

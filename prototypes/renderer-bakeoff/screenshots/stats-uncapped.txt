@@ -1,0 +1,156 @@
+== A-single-rest-look0.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 996.5   worst pulse gap: 2.4 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== A-single-tumble-look0.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 997.9   worst pulse gap: 2.0 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 1   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== A-twenty-rest-look0.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 998.1   worst pulse gap: 2.0 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 20   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== A-twenty-tumble-look0.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 999.1   worst pulse gap: 1.9 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 20   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-single-rest-look0.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 999.5   worst pulse gap: 1.5 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 809   CPU 0.01 ms   GPU 0.13 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-single-tumble-look0.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 998.1   worst pulse gap: 2.3 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 812   CPU 0.01 ms   GPU 0.12 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-twenty-rest-look0.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 1000.1   worst pulse gap: 1.6 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 809   CPU 0.01 ms   GPU 0.14 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 20   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-twenty-tumble-look0.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 999.5   worst pulse gap: 1.6 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 800   CPU 0.01 ms   GPU 0.15 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 20   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-single-rest-look0.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 999.9   worst pulse gap: 1.6 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 872   CPU 0.01 ms   GPU 0.09 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-single-tumble-look0.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 1000.5   worst pulse gap: 1.6 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 860   CPU 0.01 ms   GPU 0.09 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-twenty-rest-look0.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 999.1   worst pulse gap: 1.6 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 737   CPU 0.01 ms   GPU 0.12 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 20   at rest   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-twenty-tumble-look0.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 999.3   worst pulse gap: 1.9 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 879   CPU 0.01 ms   GPU 0.14 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 20   tumbling   orbit on
+Dice Set: Crimson resin, white ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== A-single-rest-look1.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 997.9   worst pulse gap: 1.8 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Ivory, black ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-single-rest-look1.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 997.7   worst pulse gap: 1.7 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 802   CPU 0.01 ms   GPU 0.12 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Ivory, black ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-single-rest-look1.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 1000.5   worst pulse gap: 1.8 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 747   CPU 0.01 ms   GPU 0.11 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Ivory, black ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== A-single-rest-look2.png
+A  JavaFX 3D (Phong)
+JavaFX pulses/s: 998.0   worst pulse gap: 1.9 ms   (vsync off)
+Prism pipeline: D3DPipeline   MSAA: SceneAntialiasing.BALANCED
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Gunmetal, gold ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== B-single-rest-look2.png
+B  openglfx + LWJGL GL (ExternalObjectsD3D, auto)
+JavaFX pulses/s: 998.4   worst pulse gap: 1.7 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 806   CPU 0.01 ms   GPU 0.12 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Gunmetal, gold ink
+d20: 2540 triangles, numeral font Bahnschrift
+
+== C-single-rest-look2.png
+C  openglfx + LWJGL GL (Blit, forced)
+JavaFX pulses/s: 996.6   worst pulse gap: 1.9 ms   (vsync off)
+NVIDIA GeForce RTX 4070/PCIe/SSE2 | GL 4.6.0 NVIDIA 617.42
+GL render calls/s: 817   CPU 0.01 ms   GPU 0.11 ms (timer query)
+viewport 1280x800 px (scale 1.00)   dice: 1   at rest   orbit on
+Dice Set: Gunmetal, gold ink
+d20: 2540 triangles, numeral font Bahnschrift
+
