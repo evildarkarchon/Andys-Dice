@@ -27,7 +27,7 @@ A request for a roll written in dice notation, for example `2d6+1d8+3`, `1d20 ad
 _Avoid_: Formula, command, query
 
 **Dice Group**:
-A count of Dice of one Die Kind within a Roll Expression, with an optional keep rule, such as the `4d6kh3` in `4d6kh3+2`.
+A count of Dice of one Die Kind within a Roll Expression, with an optional reroll rule and keep rule, such as the `4d6rr1kh3` in `4d6rr1kh3+2`.
 _Avoid_: Dice term, pool
 
 **Modifier**:
@@ -35,8 +35,16 @@ A constant integer added to or subtracted from a Roll Expression, such as the `+
 _Avoid_: Bonus, constant, flat
 
 **Throw**:
-One animated tumble of every die a Roll Expression calls for, from release until all dice come to rest, each showing a Face Value.
+One animated tumble of a set of Dice, from release until all of them come to rest, each showing a Face Value.
 _Avoid_: Animation, toss
+
+**Reroll**:
+Throwing a Die again to replace its Face Value when that value meets its Dice Group's reroll condition: once (`ro`), or until it no longer does (`rr`).
+_Avoid_: Re-roll, mulligan
+
+**Reroll Throw**:
+A Throw of only the Dice being rerolled, made after the previous Throw comes to rest, while the other Dice stay where they lie.
+_Avoid_: Second throw, follow-up roll
 
 **Face Value**:
 The number a single die shows once it is at rest.
@@ -47,7 +55,7 @@ A Die that comes to rest without a single face (or, for a d4, a single vertex) p
 _Avoid_: Leaner, tilted die
 
 **Roll Result**:
-The total and breakdown obtained by applying a Roll Expression's Modifiers, Advantage/Disadvantage and keep rules to the Face Values of a Throw.
+The total and breakdown obtained by applying a Roll Expression's Modifiers, Advantage/Disadvantage and keep rules to the final Face Values of its Throws.
 _Avoid_: Outcome, score
 
 **Advantage / Disadvantage**:
