@@ -7,10 +7,11 @@ import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import io.github.evildarkarchon.andysdice.render.GlDriver;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
+import io.github.evildarkarchon.andysdice.render.camera.Framing;
+import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.Objects;
 import java.util.function.Consumer;
 import javafx.application.Platform;
-import org.joml.Vector3d;
 
 /**
  * The walking skeleton wired together (spec slice S3): the physics worker with Jolt, the render thread drawing
@@ -20,19 +21,18 @@ import org.joml.Vector3d;
  * <p>The clock and what advances it are handed in, so the app drives it from JavaFX's pulse and tests advance
  * it by hand. The app wires the window around {@link #pane()}; #48's Roll UI shell replaces the pane without
  * changing this wiring's shape. Any Roll Expression rolls: the controller plans the whole chain of Throws on the
- * physics worker, and the Tray draws every Die of it through the {@link DiceScene} (#38).
+ * physics worker, and the Tray draws every Die of it through the {@link DiceScene} (#38), seen through the
+ * settle-in {@link TrayCamera} on the same clock, which the Player can orbit and zoom (#46).
  *
  * <p>Thread contract: started, used and closed on the JavaFX Application Thread.
  */
 final class Skeleton implements AutoCloseable {
 
-    /** The fixed camera (#46 adds the settle-in camera): over the near end, pitched 55° down at the Tray's middle. */
-    private static final DiceScene.Camera CAMERA = camera(700, 55);
-
     private final PhysicsWorker worker;
     private final RenderThread renderer;
     private final DiceScene scene;
     private final FrameView view;
+    private final TrayCamera camera;
     private final RollController controller;
     private final RollPane pane;
     private final Generators generators;
@@ -40,11 +40,12 @@ final class Skeleton implements AutoCloseable {
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
-            PlaybackClock clock, Pulses pulses, Generators generators) {
+            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators) {
         this.worker = worker;
         this.renderer = renderer;
         this.scene = scene;
         this.view = view;
+        this.camera = camera;
         this.generators = generators;
         this.controller = new RollController(clock, worker::submit, Platform::runLater,
                 new FaceValueGenerator(generators.faceValues()), generators.releases(),
@@ -52,6 +53,8 @@ final class Skeleton implements AutoCloseable {
                     @Override
                     public void show(ChainPlayback chain) {
                         showing = chain;
+                        // The controller starts the chain at the clock's current time; so does the camera.
+                        camera.play(chain.cameraScript());
                         draw(chain, 0);
                         pulses.start();
                     }
@@ -65,12 +68,26 @@ final class Skeleton implements AutoCloseable {
         pane.showStatus(controller.status());
         controller.setOnStatusChanged(status -> {
             pane.showStatus(status);
-            // Only playback needs the pulse; once the Dice rest (or nothing will move) let JavaFX idle.
-            if (!(status instanceof RollStatus.Rolling)) {
+            // Only playback needs the pulse; once the Dice rest (or nothing will move) and the camera has
+            // settled in, let JavaFX idle.
+            if (!(status instanceof RollStatus.Rolling) && !camera.moving()) {
                 pulses.stop();
             }
             onStatusChanged.accept(status);
         });
+        // Added after the controller's own listener, so on each advance the Dice are drawn first. Once the last
+        // Throw is at rest the controller draws nothing more, but the camera is still settling in on the Dice
+        // (and while the next Roll pre-simulates, the last one's settle-in may still be easing).
+        clock.addListener(c -> {
+            showCamera();
+            if (!controller.underWay() && !camera.moving()) {
+                pulses.stop();
+            }
+        });
+        // Every framing fits the view's shape.
+        view.widthProperty().addListener((property, was, now) -> fitAspect());
+        view.heightProperty().addListener((property, was, now) -> fitAspect());
+        CameraGestures.attach(view, camera, () -> !controller.underWay(), this::showCamera);
     }
 
     /**
@@ -90,7 +107,10 @@ final class Skeleton implements AutoCloseable {
         Objects.requireNonNull(generators, "generators");
         PhysicsWorker worker = PhysicsWorker.start();
         DiceScene scene = new DiceScene();
-        scene.setCamera(CAMERA);
+        // Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
+        TrayCamera camera = new TrayCamera(clock, Framing.of(SkeletonTray.GEOMETRY),
+                () -> Platform.getPreferences().isReducedMotion());
+        scene.setCamera(camera.camera());
         FrameView view = new FrameView();
         RenderThread renderer;
         try {
@@ -102,7 +122,7 @@ final class Skeleton implements AutoCloseable {
         view.setOnTargetSizeChanged(renderer::resize);
         // The first-run Tray is empty; draw it once so the view isn't blank until the first Roll.
         renderer.requestFrame();
-        return new Skeleton(worker, renderer, scene, view, clock, pulses, generators);
+        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators);
     }
 
     /**
@@ -169,10 +189,35 @@ final class Skeleton implements AutoCloseable {
         return showing;
     }
 
+    /**
+     * Returns the settle-in camera.
+     *
+     * @return the camera the Tray is drawn from
+     */
+    TrayCamera camera() {
+        return camera;
+    }
+
     /** Draws every Die of the chain at a moment of its playback, interpolated, at the next frame. */
     private void draw(ChainPlayback chain, double seconds) {
         scene.setDice(chain.diceAt(seconds));
+        // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
+        scene.setCamera(camera.camera());
         renderer.requestFrame();
+    }
+
+    /** Draws the Tray again from where the camera is now, at the next frame. */
+    private void showCamera() {
+        scene.setCamera(camera.camera());
+        renderer.requestFrame();
+    }
+
+    /** Fits the camera's framings to the view's shape; a view not laid out yet keeps the last shape. */
+    private void fitAspect() {
+        if (view.getWidth() > 0 && view.getHeight() > 0) {
+            camera.setAspect(view.getWidth() / view.getHeight());
+            showCamera();
+        }
     }
 
     /** Stops the render thread and the physics worker. */
@@ -180,12 +225,5 @@ final class Skeleton implements AutoCloseable {
     public void close() {
         renderer.close();
         worker.close();
-    }
-
-    /** A camera over the near end (towards -z) at a distance in mm, pitched down at the Tray's middle. */
-    private static DiceScene.Camera camera(double distance, double pitchDegrees) {
-        double pitch = Math.toRadians(pitchDegrees);
-        return new DiceScene.Camera(new Vector3d(0, distance * Math.sin(pitch), -distance * Math.cos(pitch)),
-                new Vector3d(0, 0, 0), 32);
     }
 }
