@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  render: mesh and numeral-atlas generation, the LWJGL GL renderer and shaders, native context creation and
+  the FBO/PBO bridge (spec §5, ADR-0002). Tests that need a GL 3.3 context carry the JUnit tag "gl".
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.evildarkarchon.andysdice</groupId>
+        <artifactId>andysdice-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>andysdice-render</artifactId>
+    <name>Andy's Dice: render</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

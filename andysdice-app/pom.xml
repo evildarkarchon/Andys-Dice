@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  app: the JavaFX shell and Roll UI, persistence, the lock file, smoke-test mode and the wiring of everything
+  below it (spec §5).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.evildarkarchon.andysdice</groupId>
+        <artifactId>andysdice-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>andysdice-app</artifactId>
+    <name>Andy's Dice: app</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-physics</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-render</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-sound</artifactId>
+        </dependency>
+    </dependencies>
+</project>
