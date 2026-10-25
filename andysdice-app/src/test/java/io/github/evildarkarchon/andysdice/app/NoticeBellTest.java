@@ -76,7 +76,12 @@ class NoticeBellTest extends HeadlessUiTest {
         assertThat(fromFx(() -> ui().bell().getText())).isEqualTo("2");
         assertThat(fromFx(() -> notices().unread())).isZero();
         assertThat(fromFx(() -> highlighted())).isFalse();
-        assertThat(fromFx(() -> ((SVGPath) ui().bell().getGraphic()).getFill())).isEqualTo(Palette.ICON);
+        // CSS applied first, as background() does: the pseudo-class changed in the previous block, and whether a pulse
+        // has restyled the icon since is down to timing (it failed after LookTabTest had warmed the JVM up).
+        assertThat(fromFx(() -> {
+            ui().bell().applyCss();
+            return ((SVGPath) ui().bell().getGraphic()).getFill();
+        })).isEqualTo(Palette.ICON);
 
         onFx(() -> notices().post("No audio device", "The app will run silently."));
         assertThat(fromFx(() -> ui().bell().getText())).isEqualTo("3");
