@@ -230,6 +230,10 @@ class FrameBridgeTest {
 
     @Test
     void reportsTheDriverItRendersWith() {
+        // Into the build log: every machine's run, CI's Mesa job above all, then says which driver the gl tests ran
+        // on (GALLIUM_DRIVER picks among several in one Mesa, and nothing else would show which one was used).
+        System.getLogger(FrameBridgeTest.class.getName())
+                .log(System.Logger.Level.INFO, "The gl tests run on OpenGL " + renderer.driver());
         assertThat(GlVersion.parse(renderer.driver().version()))
                 .hasValueSatisfying(v -> assertThat(v.isAtLeast(GlVersion.FLOOR)).isTrue());
         assertThat(renderer.driver().renderer()).isNotBlank();

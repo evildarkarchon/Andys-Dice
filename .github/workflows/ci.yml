@@ -1,7 +1,7 @@
 # CI on every branch push and pull request (ADR-0005's "CI shape"), and inside every release (release.yml).
 #
-# - windows: the full `mvn verify` (unit, Jolt, gl and smoke tests) on a pinned Mesa, which gives the runner
-#   a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
+# - windows: the full `mvn verify` (unit, Jolt, gl and smoke tests) on a pinned Mesa and its llvmpipe driver,
+#   which gives the runner a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
 #   of the built app-image: `AndysDice.exe --smoke-test` must exit 0 (ADR-0005).
 # - windows-no-mesa: the packaged zip on the bare runner, whose only OpenGL is GDI Generic 1.1. The launch must
 #   fail fast (ADR-0002): the failure panel, then a non-zero exit once its window is closed, logging the GL 3.3
@@ -60,9 +60,9 @@ jobs:
       #     pinned, not "latest", so a Mesa update can't change GL behaviour under an unchanged commit; bump
       #     it deliberately and watch the gl tests.
       #   build-type release-msvc: the MSVC release build, the action's default flavour.
-      #   deployment-choice 1: "Core desktop OpenGL drivers". It copies Mesa's WGL driver (llvmpipe) into
-      #     System32 as mesadrv.dll and registers it as the OpenGL ICD, so Windows' own opengl32.dll loads it
-      #     and the renderer takes the same native WGL path as on a real machine.
+      #   deployment-choice 1: "Core desktop OpenGL drivers". It copies Mesa's WGL driver into System32 as
+      #     mesadrv.dll and registers it as the OpenGL ICD, so Windows' own opengl32.dll loads it and the
+      #     renderer takes the same native WGL path as on a real machine.
       - uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
         with:
           version: '26.2.4'
@@ -71,6 +71,12 @@ jobs:
 
       - name: mvn verify
         run: ./mvnw.cmd verify
+        env:
+          # Pinned to llvmpipe, Mesa's software rasteriser. Left to itself, Mesa's WGL driver tries d3d12 first
+          # (GL on Direct3D 12, which on this GPU-less runner means WARP) and only then llvmpipe. The target is
+          # GL 3.3 core on DX11-class GPUs (ADR-0014), so GL on D3D12 is not one we test against: on it, every
+          # draw of a Dice Set without a swirl raised GL_OUT_OF_MEMORY. FrameBridgeTest logs the driver that ran.
+          GALLIUM_DRIVER: llvmpipe
 
       # Only when release.yml calls this workflow: the zip this job just built and ran its image tests on is the
       # one the Release gets. On a push or PR inputs.upload-zip is unset, so nothing is uploaded.
