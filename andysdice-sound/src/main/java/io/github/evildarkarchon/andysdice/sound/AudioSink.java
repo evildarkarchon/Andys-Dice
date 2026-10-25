@@ -10,6 +10,21 @@ package io.github.evildarkarchon.andysdice.sound;
 public interface AudioSink extends AutoCloseable {
 
     /**
+     * Opens a sink on the default device; {@code LineSink::open} in the app. {@link SoundOutput} opens one for
+     * each Throw it plays, on the audio thread.
+     */
+    @FunctionalInterface
+    interface Opener {
+        /**
+         * Opens a sink.
+         *
+         * @return an open sink, ready to take blocks
+         * @throws SinkException if no device can play the mix format
+         */
+        AudioSink open() throws SinkException;
+    }
+
+    /**
      * Returns how much is queued ahead of what is being heard now.
      *
      * @return the frames written but not yet heard

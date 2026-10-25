@@ -20,6 +20,14 @@ interface TraySurface extends RollController.TrayView {
     Node node();
 
     /**
+     * Draws the Tray in a new look (#57): the Dice Set, the Tray itself and the Light Rig the Look tab chose. The
+     * Dice already on the Tray stay where they are; the next Roll is thrown into the new Tray.
+     *
+     * @param look the look to draw from now on
+     */
+    void showLook(Look look);
+
+    /**
      * Tells whether the Tray still needs the playback clock after the Roll is over, so the pulse keeps running:
      * the GL Tray's camera settling in on the Dice at rest (#46), for one.
      *

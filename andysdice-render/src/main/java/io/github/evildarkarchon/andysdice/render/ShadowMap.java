@@ -61,20 +61,22 @@ import static org.lwjgl.opengl.GL33C.glSamplerParameteri;
 import java.nio.FloatBuffer;
 
 /**
- * The key light's shadow map (ADR-0010): one {@value #SIZE_PX}² depth texture drawn from the {@link LightView} each
- * frame, before the scene, with every Die and the Tray's walls as casters (the floor and table only receive). The
- * shaders read it twice through {@code shadow.glsl}: with depth comparison for the PCSS filter, and raw, through a
- * sampler object of its own, for the blocker search.
+ * The key light's shadow map (ADR-0010): one square depth texture drawn from the {@link LightView} each frame, before
+ * the scene, with every Die and the Tray's walls as casters (the floor and table only receive). The shaders read it
+ * twice through {@code shadow.glsl}: with depth comparison for the PCSS filter, and raw, through a sampler object of
+ * its own, for the blocker search.
+ *
+ * <p>Its size is half of ADR-0002's shadow-quality lever (the filter's tap count is the other half): each
+ * {@link #begin} is given the Quality Preset's size, and the texture is reallocated when that changes.
  *
  * <p>Render thread only.
  */
 final class ShadowMap {
 
-    /**
-     * Texels per side: the tray prototype's. ADR-0002's shadow-quality setting (tickets #60/#61) is meant to scale it,
-     * with the filter's tap count.
-     */
+    /** Texels per side until a frame asks for another size: the tray prototype's, High's. */
     static final int SIZE_PX = 2048;
+
+    private int sizePx = SIZE_PX;
 
     // The prototype's slope-scaled offset in the depth pass, on top of shadow.glsl's bias in mm.
     private static final float OFFSET_FACTOR = 1.1f;
@@ -97,8 +99,7 @@ final class ShadowMap {
         RenderThread.checkRenderThread();
         texture = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SIZE_PX, SIZE_PX, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
-                (FloatBuffer) null);
+        allocate(SIZE_PX);
         // Linear filtering on a comparing texture gives each PCSS tap a 2x2 compare for free.
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -145,13 +146,24 @@ final class ShadowMap {
      * for {@link #end()}.
      *
      * @param view the key light's view this frame
+     * @param size the map's texels per side this frame, the Quality Preset's; a change reallocates the texture
      */
-    void begin(LightView view) {
+    void begin(LightView view, int size) {
+        if (size < 1) {
+            throw new IllegalArgumentException("a shadow map is at least 1 texel across, not " + size);
+        }
+        if (size != sizePx) {
+            // Re-specifying the attached texture's image keeps the framebuffer's attachment; the image is redrawn
+            // in full below anyway.
+            glBindTexture(GL_TEXTURE_2D, texture);
+            allocate(size);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
         savedDrawFramebuffer = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
         savedReadFramebuffer = glGetInteger(GL_READ_FRAMEBUFFER_BINDING);
         glGetIntegerv(GL_VIEWPORT, savedViewport);
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glViewport(0, 0, SIZE_PX, SIZE_PX);
+        glViewport(0, 0, sizePx, sizePx);
         glClear(GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         // No culling, as in the prototype: the walls are open shells that cast from either side.
@@ -209,6 +221,17 @@ final class ShadowMap {
         glActiveTexture(GL_TEXTURE0 + compareUnit);
         glBindTexture(GL_TEXTURE_2D, 0);
         glActiveTexture(GL_TEXTURE0);
+    }
+
+    /**
+     * Gives the bound depth texture storage of a size, and remembers it.
+     *
+     * @param size texels per side
+     */
+    private void allocate(int size) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
+                (FloatBuffer) null);
+        sizePx = size;
     }
 
     /** Deletes every GL object. */

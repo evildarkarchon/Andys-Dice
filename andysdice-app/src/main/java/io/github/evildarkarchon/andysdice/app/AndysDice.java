@@ -3,6 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
+import io.github.evildarkarchon.andysdice.sound.LineSink;
+import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.lang.System.Logger.Level;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -45,6 +47,7 @@ public final class AndysDice extends Application {
     private Skeleton skeleton;
     private Persistence persistence;
     private WindowGeometry.Tracker geometry;
+    private SoundOutput sound;
 
     /** Created by {@link Application#launch}. */
     public AndysDice() {}
@@ -100,11 +103,23 @@ public final class AndysDice extends Application {
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        // The Settings tab's Quality Preset (#60): the saved one (Medium at first run) goes to the renderer now, and
+        // a new choice is saved and applied at once.
+        QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
         // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
         // time zone as it was at start-up.
         HistoryTab history = HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
         // The Saved Rolls (#56); History's menu gains Save as a Saved Roll….
         SavedTab.install(skeleton.session(), persistence, history);
+        // The Player Files are read once, here (spec §3.3, §3.4): each one skipped is a Notice behind the bell, and
+        // the Tray is drawn in the stored look before the window opens.
+        skeleton.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);
+
+        // Sound (#59): optional, so it never fails the start. The audio thread loads the samples and tries the device
+        // once; no device means silence and one Notice (the smoke test, on CI, runs that way and logs it).
+        sound = Clatter.output(clock, skeleton.generators().soundVariation(), LineSink::open, notices);
+        skeleton.attachSound(sound);
+        SoundSettings.attach(skeleton.pane(), settings, sound);
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.
@@ -136,6 +151,9 @@ public final class AndysDice extends Application {
         }
         if (persistence != null) {
             persistence.close();
+        }
+        if (sound != null) {
+            sound.close();
         }
         if (skeleton != null) {
             skeleton.close();

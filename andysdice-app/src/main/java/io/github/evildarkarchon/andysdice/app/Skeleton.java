@@ -8,9 +8,11 @@ import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import io.github.evildarkarchon.andysdice.render.GlDriver;
 import io.github.evildarkarchon.andysdice.render.LightRig;
+import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
+import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -40,14 +42,14 @@ final class Skeleton implements AutoCloseable {
     private static final BooleanSupplier REDUCED_MOTION = () -> Platform.getPreferences().isReducedMotion();
 
     /**
-     * The Tray every Roll is thrown into, drawn in and framed by: the default built-in, green felt in walnut
-     * (ADR-0010), until the Look tab (#57) lets the Player choose and remembers the choice.
+     * The Tray the scene starts with, before the Look tab (#57) shows the Player's choice: the default built-in,
+     * green felt in walnut (ADR-0010).
      */
     static final Tray TRAY = BuiltInTrays.defaultTray();
 
     /**
-     * The Light Rig the Tray is drawn under: the default, Studio (ADR-0010), until the Look tab (#57) lets the Player
-     * choose it, separately from the Tray, and remembers the choice.
+     * The Light Rig the scene starts with, before the Look tab (#57) shows the Player's choice: the default, Studio
+     * (ADR-0010).
      */
     static final LightRig LIGHT_RIG = LightRig.DEFAULT;
 
@@ -58,17 +60,31 @@ final class Skeleton implements AutoCloseable {
     private final TrayCamera camera;
     private final RollSession session;
     private final Generators generators;
+    private final RenderTargetCap.Capping capping;
+    private final SlowGpuWatch slowGpu;
+    // Read by the slow-GPU watch when it judges a Throw; set on the JavaFX thread.
+    private volatile QualityPreset quality = QualityPreset.DEFAULT;
     private ChainPlayback showing;
+    // Null until attachSound: then told each camera the Tray is drawn from, for panning (#59).
+    private SoundOutput sound;
+
+    /** The Throw of a chain in motion at a frame, as the slow-GPU watch tells Throws apart (by chain identity). */
+    private record ThrowInMotion(ChainPlayback chain, int throwIndex) {}
 
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
-            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators, FailureGuard failures,
-            Notices notices) {
+            TrayCamera camera, RenderTargetCap.Capping capping, PlaybackClock clock, Pulses pulses,
+            Generators generators, FailureGuard failures, Notices notices) {
         this.worker = worker;
         this.renderer = renderer;
         this.scene = scene;
         this.view = view;
         this.camera = camera;
+        this.capping = capping;
         this.generators = generators;
+        // Every frame's GPU time, measured on the render thread, judged per Throw (ADR-0014). It never changes the
+        // preset; it only reads it to suggest the one below.
+        this.slowGpu = new SlowGpuWatch(notices::post, () -> quality);
+        renderer.setOnGpuTime(slowGpu::frame);
         // The GL Tray behind the Tray seam: the frame view, fed by the render thread through the transport. A
         // pre-simulation job that throws ends the session (spec §3.2 "Runtime failure"), so the worker reports it.
         this.session = new RollSession(clock, pulses, failures.reporting(worker::submit), Platform::runLater,
@@ -90,6 +106,17 @@ final class Skeleton implements AutoCloseable {
                     @Override
                     public void showTime(double seconds) {
                         draw(showing, seconds);
+                    }
+
+                    @Override
+                    public void showLook(Look look) {
+                        // The scene takes each part on the render thread at its next frame; the camera reframes
+                        // for the new Tray's walls at once.
+                        scene.setDiceSet(look.diceSet());
+                        scene.setTray(look.tray());
+                        scene.setLightRig(look.lightRig());
+                        camera.setFraming(Framing.of(look.tray().geometry()));
+                        showCamera();
                     }
 
                     @Override
@@ -166,6 +193,8 @@ final class Skeleton implements AutoCloseable {
         // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
         scene.setTray(TRAY);
         scene.setLightRig(LIGHT_RIG);
+        // The default until the Settings tab applies the Player's saved preset (#60).
+        scene.setQualityPreset(QualityPreset.DEFAULT);
         // Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
         TrayCamera camera = new TrayCamera(clock, Framing.of(TRAY.geometry()), REDUCED_MOTION);
         scene.setCamera(camera.camera());
@@ -181,16 +210,32 @@ final class Skeleton implements AutoCloseable {
         failures.watch(FailureGuard.RENDER_THREAD, renderer.stopped());
         // The view reports its physical size (and again after a move to a monitor with another scale); the render
         // target follows it under the cap below High (ADR-0014), and JavaFX scales a capped frame up.
-        view.setOnTargetSizeChanged(RenderTargetCap.capping(renderer::resize));
+        RenderTargetCap.Capping capping = RenderTargetCap.capping(renderer::resize, QualityPreset.DEFAULT);
+        view.setOnTargetSizeChanged(capping);
         // The first-run Tray is empty; draw it once so the view isn't blank until the first Roll.
         renderer.requestFrame();
-        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators, failures, notices);
+        return new Skeleton(worker, renderer, scene, view, camera, capping, clock, pulses, generators, failures,
+                notices);
+    }
+
+    /**
+     * Applies a Quality Preset (ADR-0014): every renderer lever, in one message to the scene, and the render-target
+     * cap, which High lifts (the target is resized from the view's last size). The Settings tab calls this at
+     * start-up with the saved preset and whenever the Player picks another; nothing else does.
+     *
+     * @param preset the Quality Preset
+     */
+    void setQualityPreset(QualityPreset preset) {
+        quality = Objects.requireNonNull(preset, "preset");
+        scene.setQualityPreset(preset);
+        capping.setPreset(preset);
+        renderer.requestFrame();
     }
 
     /**
      * Returns the app's generators.
      *
-     * @return the generators the skeleton was started with; sound variation waits for #59's mixer
+     * @return the generators the skeleton was started with; sound variation is the sound output's (#59)
      */
     Generators generators() {
         return generators;
@@ -230,6 +275,18 @@ final class Skeleton implements AutoCloseable {
      */
     Notices notices() {
         return session.notices();
+    }
+
+    /**
+     * Fills the Look tab (#57) and draws the Tray in the stored look: the Dice Set, Tray and Light Rig picked
+     * there reach the scene, the camera and the next Roll's physics.
+     *
+     * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
+     * @param settings the live settings holding the choices
+     * @return the Look tab's content
+     */
+    LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
+        return session.attachLook(catalogue, settings);
     }
 
     /**
@@ -283,16 +340,43 @@ final class Skeleton implements AutoCloseable {
      * pickup's glow and lift included, as reduced motion has them now.
      */
     private void draw(ChainPlayback chain, double seconds) {
+        // The frames measured from here on count toward the Throw in motion now, if any (the slow-GPU Notice).
+        int moving = chain.throwInMotion(seconds);
+        slowGpu.showing(moving < 0 ? null : new ThrowInMotion(chain, moving));
         scene.setDice(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()));
         // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
         scene.setCamera(camera.camera());
+        panSound();
         renderer.requestFrame();
     }
 
     /** Draws the Tray again from where the camera is now, at the next frame. */
     private void showCamera() {
         scene.setCamera(camera.camera());
+        panSound();
         renderer.requestFrame();
+    }
+
+    /**
+     * Makes the Rolls heard (#59): every Throw's contacts go to the sound output as the chain starts to play, in the
+     * Tray's sound, panned by where each appears from the camera the Tray is drawn from.
+     *
+     * @param output the app's sound output
+     */
+    void attachSound(SoundOutput output) {
+        sound = Objects.requireNonNull(output, "output");
+        // The Tray each Roll is thrown into, as the Look tab (#57) has chosen it by then.
+        Clatter.attach(session, output, () -> session.controller().tray());
+        panSound();
+    }
+
+    /** Tells the sound output how the camera the Tray is drawn from now maps points across the screen. */
+    private void panSound() {
+        if (sound != null) {
+            double aspect = view.getWidth() > 0 && view.getHeight() > 0 ? view.getWidth() / view.getHeight()
+                    : MainWindow.DEFAULT_WIDTH / MainWindow.DEFAULT_HEIGHT;
+            sound.setProjection(CameraPanning.of(camera.camera(), aspect));
+        }
     }
 
     /** Fits the camera's framings to the view's shape; a view not laid out yet keeps the last shape. */

@@ -30,9 +30,24 @@ final class RollSession {
     private final RollQueue queue;
     private final RollEntry entry;
     private final FastForward fastForward;
+    /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
+    private final TraySurface tray;
     private Consumer<RollStatus> onStatusChanged = status -> {};
     /** The app's own pieces that follow the Roll's status (the Roll History, #55), told after the strip. */
     private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
+    private ChainShown onChainShown = (chain, start) -> {};
+
+    /** Told each time a Roll's chain of Throws starts to play on the Tray. */
+    @FunctionalInterface
+    interface ChainShown {
+        /**
+         * A chain has been put on the Tray and plays from now.
+         *
+         * @param chain the chain of Throws
+         * @param start the playback clock's time at its first Release
+         */
+        void shown(ChainPlayback chain, double start);
+    }
 
     /**
      * Wires a Roll UI and its controller.
@@ -68,13 +83,15 @@ final class RollSession {
         this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
-        Objects.requireNonNull(tray, "tray");
+        this.tray = Objects.requireNonNull(tray, "tray");
         controller = new RollController(clock, physics, fxThread, new FaceValueGenerator(generators.faceValues()),
                 generators.releases(), throwInto, new RollController.TrayView() {
                     @Override
                     public void show(ChainPlayback chain) {
                         tray.show(chain);
                         pulses.start();
+                        // The controller starts the chain at the clock's time now (#59: its sound is placed there).
+                        onChainShown.shown(chain, clock.time());
                     }
 
                     @Override
@@ -186,12 +203,39 @@ final class RollSession {
     }
 
     /**
+     * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
+     * through the Tray seam and becomes the Tray the next Roll is thrown into.
+     *
+     * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
+     * @param settings the live settings holding the choices
+     * @return the tab's content, already in the Look tab
+     */
+    LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
+        LookTab look = new LookTab(catalogue, settings, chosen -> {
+            tray.showLook(chosen);
+            controller.setTray(chosen.tray());
+        });
+        ui.lookTab().setContent(look.node());
+        return look;
+    }
+
+    /**
      * Sets who else is told each time the Roll's status changes, after the result strip has shown it.
      *
      * @param listener the listener; it replaces any earlier one
      */
     void setOnStatusChanged(Consumer<RollStatus> listener) {
         onStatusChanged = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
+     * (#59, {@link Clatter}).
+     *
+     * @param listener the listener; it replaces any earlier one
+     */
+    void setOnChainShown(ChainShown listener) {
+        onChainShown = Objects.requireNonNull(listener, "listener");
     }
 
     /**
