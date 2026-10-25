@@ -3,6 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
+import io.github.evildarkarchon.andysdice.sound.LineSink;
+import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.lang.System.Logger.Level;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -44,6 +46,7 @@ public final class AndysDice extends Application {
     private Skeleton skeleton;
     private Persistence persistence;
     private WindowGeometry.Tracker geometry;
+    private SoundOutput sound;
 
     /** Created by {@link Application#launch}. */
     public AndysDice() {}
@@ -100,6 +103,12 @@ public final class AndysDice extends Application {
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
 
+        // Sound (#59): optional, so it never fails the start. The audio thread loads the samples and tries the device
+        // once; no device means silence and one Notice (the smoke test, on CI, runs that way and logs it).
+        sound = Clatter.output(clock, skeleton.generators().soundVariation(), LineSink::open, notices);
+        skeleton.attachSound(sound);
+        SoundSettings.attach(skeleton.pane(), settings, sound);
+
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.
         geometry = MainWindow.open(stage, skeleton.pane(), settings);
@@ -130,6 +139,9 @@ public final class AndysDice extends Application {
         }
         if (persistence != null) {
             persistence.close();
+        }
+        if (sound != null) {
+            sound.close();
         }
         if (skeleton != null) {
             skeleton.close();

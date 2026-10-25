@@ -3,6 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
+import io.github.evildarkarchon.andysdice.core.simulation.ContactBody;
+import io.github.evildarkarchon.andysdice.core.simulation.ContactEvent;
 import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
@@ -27,7 +29,14 @@ import org.joml.Vector3dc;
  */
 final class ScriptedSimulator implements Simulator {
     private static final int SAMPLES = 51;
+    /** When each Die strikes the floor, if {@link #clatter} is set: well before it comes to rest. */
+    static final float CONTACT_TIME = 0.25f;
     final Deque<Ending> script = new ArrayDeque<>();
+    /**
+     * Whether each thrown Die strikes the floor once, at {@link #CONTACT_TIME}, for the sound tests (#59). Off, the
+     * Recordings have no contacts, as before.
+     */
+    boolean clatter;
     /** Every request simulated, in order. */
     final List<AttemptRequest> requests = new ArrayList<>();
     private boolean failNext;
@@ -78,8 +87,13 @@ final class ScriptedSimulator implements Simulator {
         }
         // At rest on the last sample. 50/120 s doesn't survive the float round trip exactly, as a real
         // Recording's length often doesn't, so reading the pose "at the duration" lands just short of it.
+        List<ContactEvent> contacts = new ArrayList<>();
+        for (int die = 0; clatter && die < dice; die++) {
+            contacts.add(new ContactEvent(CONTACT_TIME, ContactBody.die(die), ContactBody.floor(), 0.5f,
+                    new Vector3(3 * die - 6, 0, 0)));
+        }
         Recording recording = new Recording(dice, poses, (SAMPLES - 1) / (float) Recording.SAMPLE_RATE_HZ,
-                List.of());
+                contacts);
         return new Attempt(ending, recording, ending == Ending.COCKED ? Set.of(0) : Set.of());
     }
 

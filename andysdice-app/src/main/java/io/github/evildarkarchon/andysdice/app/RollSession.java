@@ -28,6 +28,19 @@ final class RollSession {
     private final RollEntry entry;
     private final FastForward fastForward;
     private Consumer<RollStatus> onStatusChanged = status -> {};
+    private ChainShown onChainShown = (chain, start) -> {};
+
+    /** Told each time a Roll's chain of Throws starts to play on the Tray. */
+    @FunctionalInterface
+    interface ChainShown {
+        /**
+         * A chain has been put on the Tray and plays from now.
+         *
+         * @param chain the chain of Throws
+         * @param start the playback clock's time at its first Release
+         */
+        void shown(ChainPlayback chain, double start);
+    }
 
     /**
      * Wires a Roll UI and its controller.
@@ -70,6 +83,8 @@ final class RollSession {
                     public void show(ChainPlayback chain) {
                         tray.show(chain);
                         pulses.start();
+                        // The controller starts the chain at the clock's time now (#59: its sound is placed there).
+                        onChainShown.shown(chain, clock.time());
                     }
 
                     @Override
@@ -173,5 +188,15 @@ final class RollSession {
      */
     void setOnStatusChanged(Consumer<RollStatus> listener) {
         onStatusChanged = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
+     * (#59, {@link Clatter}).
+     *
+     * @param listener the listener; it replaces any earlier one
+     */
+    void setOnChainShown(ChainShown listener) {
+        onChainShown = Objects.requireNonNull(listener, "listener");
     }
 }
