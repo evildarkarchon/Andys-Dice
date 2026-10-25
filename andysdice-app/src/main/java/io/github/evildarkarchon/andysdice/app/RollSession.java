@@ -106,6 +106,9 @@ final class RollSession {
         entry = new RollEntry(ui, queue);
         // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up.
         ui.addFailureListener(queue::close);
+        // Nor may a Roll in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost
+        // rather than revealed or kept in the Roll History (ADR-0007).
+        ui.addFailureListener(controller::abandon);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
         ui.showStatus(controller.status());
