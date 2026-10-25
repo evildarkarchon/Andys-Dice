@@ -116,6 +116,73 @@ class RollExpressionParserTest {
         assertThat(expression.physicalDice()).isEqualTo(physicalDice);
     }
 
+    /**
+     * The grammar reference's valid examples that use a reroll, with what each means in canonical notation, and
+     * how many physical Dice its first Throw holds: rerolls add none.
+     */
+    @ParameterizedTest(name = "\"{0}\" means {1} ({2} Dice)")
+    @CsvSource(delimiter = '|', quoteCharacter = '"', textBlock = """
+            4d6rr1kh3       | 4d6rr1kh3       | 4
+            2d6ro<=2        | 2d6ro<=2        | 2
+            "1d20ro1 adv"   | 2d20ro1kh1      | 2
+            1d20rr<=10      | 1d20rr<=10      | 1
+            1d6RO1          | 1d6ro1          | 1
+            """)
+    void grammarReferenceRerollExamples(String input, String canonical, int physicalDice) {
+        RollExpression expression = valid(input);
+
+        assertThat(expression.canonical()).isEqualTo(canonical);
+        assertThat(expression.physicalDice()).isEqualTo(physicalDice);
+    }
+
+    /** Every comparison, both modes, case, leading zeros, Percentile Rolls and rerolls alongside other terms. */
+    @ParameterizedTest(name = "\"{0}\" means {1}")
+    @CsvSource(delimiter = '|', quoteCharacter = '"', textBlock = """
+            1d6ro<3          | 1d6ro<3
+            1d6ro>5          | 1d6ro>5
+            1d6ro>=6         | 1d6ro>=6
+            1d6ro6           | 1d6ro6
+            1d6ro<6          | 1d6ro<6
+            1d6ro<=5         | 1d6ro<=5
+            1d6rr03          | 1d6rr3
+            1d4rr<=2         | 1d4rr<=2
+            d%rr<=50         | 1d%rr<=50
+            d100ro>99        | 1d%ro>99
+            2d%RR>=51kh1     | 2d%rr>=51kh1
+            4d6Rr1KL2        | 4d6rr1kl2
+            "4d6rr1kh3 + 2"  | 4d6rr1kh3+2
+            "1d8ro1+1d20rr1 dis" | 1d8ro1+2d20rr1kl1
+            "-1d6ro1+2d6"    | -1d6ro1+2d6
+            1d20ro1adv       | 2d20ro1kh1
+            """)
+    void rerollsWithEveryComparisonCaseLeadingZerosAndOtherTerms(String input, String canonical) {
+        assertThat(valid(input).canonical()).isEqualTo(canonical);
+    }
+
+    @Test
+    void aRerollIsPartOfItsDiceGroupBeforeItsKeepRule() {
+        RollExpression expression = valid("4d6rr1kh3+2");
+
+        assertThat(expression.terms()).containsExactly(
+                new DiceGroup(Sign.PLUS, 4, GroupKind.D6,
+                        Optional.of(new RerollRule(RerollRule.Mode.UNTIL, RerollRule.Comparison.EQUAL, 1)),
+                        Optional.of(new KeepRule(KeepRule.Direction.HIGHEST, 3)), Optional.empty(),
+                        new Span(0, 9), "4d6rr1kh3"),
+                new Modifier(Sign.PLUS, 2, new Span(10, 11), "2"));
+    }
+
+    /** {@code 1d20ro1 adv} carries the reroll over to both d20s: it means {@code 2d20ro1kh1}. */
+    @Test
+    void advantageCarriesTheD20sRerollOver() {
+        RollExpression expression = valid("1d20ro<2 adv");
+
+        assertThat(expression.terms()).containsExactly(
+                new DiceGroup(Sign.PLUS, 2, GroupKind.D20,
+                        Optional.of(new RerollRule(RerollRule.Mode.ONCE, RerollRule.Comparison.LESS, 2)),
+                        Optional.of(new KeepRule(KeepRule.Direction.HIGHEST, 1)), Optional.of(Advantage.ADVANTAGE),
+                        new Span(0, 8), "1d20ro<2"));
+    }
+
     @ParameterizedTest(name = "\"{0}\" means {1}")
     @CsvSource(delimiter = '|', quoteCharacter = '"', textBlock = """
             2d20kl       | 2d20kl1

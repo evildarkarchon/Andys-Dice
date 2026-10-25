@@ -26,8 +26,9 @@ public final class RollEvaluator {
      *                   group: {@code 2d6+1d8} takes three, the two d6 then the d8. A Percentile Roll is one roll,
      *                   with values 1 to 100 (see {@link PercentileRoll})
      * @return the total and the Breakdown, one term per term as written
-     * @throws IllegalArgumentException if there isn't exactly one chain per roll, or a chain holds a value its Die
-     *                                  Kind can't show
+     * @throws IllegalArgumentException if there isn't exactly one chain per roll, a chain holds a value its Die
+     *                                  Kind can't show, or a chain isn't settled under its group's reroll rule
+     *                                  (see {@link RerollRule#rerollsAgain(FaceValueChain)})
      */
     public static RollResult evaluate(RollExpression expression, List<FaceValueChain> chains) {
         Objects.requireNonNull(expression, "expression");
@@ -55,7 +56,11 @@ public final class RollEvaluator {
         return new RollResult(total, new Breakdown(terms));
     }
 
-    /** Evaluates one Dice Group from its own chains, in their original order in the group. */
+    /**
+     * Evaluates one Dice Group from its own chains, in their original order in the group. Rerolls come first: each
+     * chain is checked to be settled under the group's reroll rule, and only then does the keep rule compare
+     * their last values.
+     */
     private static TermResult group(DiceGroup group, List<FaceValueChain> chains) {
         for (FaceValueChain chain : chains) {
             for (int value : chain.values()) {
@@ -63,6 +68,7 @@ public final class RollEvaluator {
                     throw new IllegalArgumentException("a " + group.kind().label() + " can't show " + value);
                 }
             }
+            checkSettled(group, chain);
         }
         boolean[] kept = kept(group, chains);
         List<DieResult> dice = new ArrayList<>();
@@ -74,6 +80,29 @@ public final class RollEvaluator {
             }
         }
         return new TermResult(group, subtotal, dice);
+    }
+
+    /**
+     * Checks that {@code chain} is exactly what the group's reroll rule makes of its first value: each value but
+     * the last was Rerolled because the rule said so, and the last is one the rule lets stand. A group with no
+     * reroll rule never Rerolls, so its chains hold one value each. This keeps a planner's mistake from reaching
+     * the Roll Result as a plausible total.
+     *
+     * @throws IllegalArgumentException if the chain stops while the rule still Rerolls it, or goes on after the
+     *                                  rule let a value stand
+     */
+    private static void checkSettled(DiceGroup group, FaceValueChain chain) {
+        List<Integer> values = chain.values();
+        for (int shown = 1; shown <= values.size(); shown++) {
+            FaceValueChain soFar = new FaceValueChain(values.subList(0, shown));
+            boolean rerollsAgain = group.reroll().map(rule -> rule.rerollsAgain(soFar)).orElse(false);
+            boolean last = shown == values.size();
+            if (rerollsAgain == last) {
+                throw new IllegalArgumentException(group.canonical() + (last
+                        ? " rerolls " + soFar.last() + " again, but the chain " + values + " stops there"
+                        : " lets " + soFar.last() + " stand, but the chain " + values + " goes on"));
+            }
+        }
     }
 
     /**
