@@ -1,4 +1,4 @@
-# CI on every push and pull request (ADR-0005's "CI shape").
+# CI on every branch push and pull request (ADR-0005's "CI shape"), and inside every release (release.yml).
 #
 # - windows: the full `mvn verify` (unit, Jolt, gl and smoke tests) on a pinned Mesa, which gives the runner
 #   a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
@@ -13,9 +13,19 @@
 name: CI
 
 on:
+  # Branches only: a pushed v* tag runs this workflow through release.yml instead, so it doesn't run twice.
   push:
+    branches:
+      - '**'
   pull_request:
   workflow_dispatch:
+  # release.yml runs the whole CI before it publishes, and takes the zip the windows job built and tested.
+  workflow_call:
+    inputs:
+      upload-zip:
+        description: Upload the windows job's AndysDice-<version>-windows-x64.zip as the release-zip artifact
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,6 +71,18 @@ jobs:
 
       - name: mvn verify
         run: ./mvnw.cmd verify
+
+      # Only when release.yml calls this workflow: the zip this job just built and ran its image tests on is the
+      # one the Release gets. On a push or PR inputs.upload-zip is unset, so nothing is uploaded.
+      - name: Upload the zip for the release
+        if: inputs.upload-zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-zip
+          path: andysdice-assembly/target/AndysDice-*-windows-x64.zip
+          if-no-files-found: error
+          # The zip is already compressed.
+          compression-level: 0
 
       - name: Upload test reports
         if: failure()

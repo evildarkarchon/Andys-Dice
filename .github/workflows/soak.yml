@@ -17,6 +17,8 @@ on:
     # 03:17 UTC every day: off the hour, when scheduled runs queue up.
     - cron: '17 3 * * *'
   workflow_dispatch:
+  # release.yml runs the soak too: a release must pass it, not only the latest night.
+  workflow_call:
 
 permissions:
   contents: read
