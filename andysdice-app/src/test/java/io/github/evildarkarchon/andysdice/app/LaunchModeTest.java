@@ -4,27 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * How the command line picks the app's mode (the Player's app, the hidden smoke test, the dev-only bench), and
- * where each mode keeps its persisted state: the bench's Rolls must never reach the Player's Roll History.
+ * How each of the app's modes (the Player's app, the hidden smoke test, the dev-only bench) runs, and where each
+ * keeps its persisted state: the bench's Rolls must never reach the Player's Roll History. Which mode a command line
+ * picks is {@link CommandLineTest}'s.
  */
 class LaunchModeTest {
 
     @TempDir
     Path dataFolder;
-
-    @Test
-    void theCommandLinePicksTheModeAndTheSmokeTestWinsOverTheBench() {
-        assertThat(LaunchMode.of(List.of())).isEqualTo(LaunchMode.PLAYER);
-        assertThat(LaunchMode.of(List.of("--something-else"))).isEqualTo(LaunchMode.PLAYER);
-        assertThat(LaunchMode.of(List.of(SmokeTest.FLAG))).isEqualTo(LaunchMode.SMOKE_TEST);
-        assertThat(LaunchMode.of(List.of(Bench.FLAG))).isEqualTo(LaunchMode.BENCH);
-        assertThat(LaunchMode.of(List.of(Bench.FLAG, SmokeTest.FLAG))).isEqualTo(LaunchMode.SMOKE_TEST);
-    }
 
     @Test
     void onlyTheHiddenModesRunUnattendedAndFasterThanRealTime() {

@@ -5,16 +5,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 import java.util.function.IntConsumer;
 import java.util.stream.Stream;
 
 /**
- * What this run of the app is for, as the command line chose it: the Player's app, the hidden smoke test
- * ({@value SmokeTest#FLAG}, ADR-0005) or the hidden, dev-only bench ({@value Bench#FLAG}, ADR-0014). Each hidden mode
- * plays faster than real time, never waits on a person (a failure exits at once), and runs its own driver once the
- * window is up.
+ * What this run of the app is for, as the command line chose it ({@link CommandLine}): the Player's app, the hidden
+ * smoke test ({@value SmokeTest#FLAG}, ADR-0005) or the hidden, dev-only bench ({@value Bench#FLAG}, ADR-0014). Each
+ * hidden mode plays faster than real time, never waits on a person (a failure exits at once), and runs its own driver
+ * once the window is up.
  *
  * <p>The bench keeps its persisted state (settings, Roll History, Saved Rolls, window geometry) in a throwaway folder
  * of its own, so its Rolls never reach the Player's {@code history.txt}; the log and the instance lock stay in the
@@ -82,21 +81,6 @@ enum LaunchMode {
         this.speed = speed;
         this.unattended = unattended;
         this.logSuffix = logSuffix;
-    }
-
-    /**
-     * Chooses the mode from the command line: the smoke test wins if both hidden flags are given; anything else
-     * on the line is ignored.
-     *
-     * @param args the command line
-     * @return the mode
-     */
-    static LaunchMode of(List<String> args) {
-        Objects.requireNonNull(args, "args");
-        if (args.contains(SmokeTest.FLAG)) {
-            return SMOKE_TEST;
-        }
-        return args.contains(Bench.FLAG) ? BENCH : PLAYER;
     }
 
     /**

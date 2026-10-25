@@ -17,8 +17,22 @@ import java.util.Optional;
  * <p>Before the log it takes the data folder's {@link InstanceLock}; if another copy holds it, this launch only
  * shows {@link AlreadyRunning}'s message and exits with {@link AlreadyRunning#EXIT_STATUS}.
  *
- * <p>The process exits with the status {@link AndysDice#launch} returns: 0 after a normal quit or a passed smoke
- * test, non-zero after a start-up failure, a runtime failure or a failed smoke test.
+ * <p>It checks the {@link CommandLine} before any window opens: a rejected one is logged at WARNING and written to
+ * standard error, naming each rejected argument and the accepted flags, and the process exits with
+ * {@link CommandLine#REJECTED_STATUS} without starting JavaFX.
+ *
+ * <p>Otherwise the process exits with the status {@link AndysDice#launch} returns: 0 after a normal quit or a passed
+ * smoke test, non-zero after a start-up failure, a runtime failure or a failed smoke test. Every exit status:
+ * <ul>
+ *   <li>0: a normal quit, a passed smoke test or a bench within its budgets</li>
+ *   <li>1 ({@link AndysDice#STARTUP_FAILED}): Jolt or the GL context couldn't start</li>
+ *   <li>2 ({@link SmokeTest#FAILED}): the smoke test failed</li>
+ *   <li>3 ({@link AndysDice#RUNTIME_FAILED}): a runtime failure ended the session</li>
+ *   <li>4 ({@link AlreadyRunning#EXIT_STATUS}): another copy is running</li>
+ *   <li>5 ({@link Bench#MISSED}): the bench missed a budget</li>
+ *   <li>6 ({@link Bench#FAILED}): the bench couldn't finish</li>
+ *   <li>7 ({@link CommandLine#REJECTED_STATUS}): the command line was rejected</li>
+ * </ul>
  */
 public final class Main {
 
@@ -29,13 +43,14 @@ public final class Main {
     /**
      * Starts Andy's Dice.
      *
-     * @param args {@value SmokeTest#FLAG} runs the hidden smoke test (ADR-0005), {@value Bench#FLAG} the hidden,
-     *     dev-only bench (ADR-0014); anything else is ignored
+     * @param args nothing for the Player's app, or exactly one of {@value SmokeTest#FLAG} (the hidden smoke test,
+     *     ADR-0005) and {@value Bench#FLAG} (the hidden, dev-only bench, ADR-0014); anything else is rejected
      */
     public static void main(String[] args) {
         // The process's own start, launcher included, so "launch to window" covers what the user waits for.
         Instant launched = ProcessHandle.current().info().startInstant().orElseGet(Instant::now);
-        LaunchMode mode = LaunchMode.of(List.of(args));
+        // Checked now, but acted on only once the lock is settled: see below.
+        CommandLine line = CommandLine.parse(List.of(args));
 
         DataFolder data = DataFolder.choose();
         // One instance (spec §3.6). Taken before the log is installed: the running copy owns the log file, and a
@@ -45,6 +60,13 @@ public final class Main {
         try {
             Optional<InstanceLock> acquired = InstanceLock.tryAcquire(data.folder());
             if (acquired.isEmpty()) {
+                if (line instanceof CommandLine.Rejected rejected) {
+                    // A rejected line opens no window, not even AlreadyRunning's, and its status names the real
+                    // mistake. The log is the running copy's, so only standard error gets the rejection.
+                    System.err.println(rejected.message());
+                    System.exit(CommandLine.REJECTED_STATUS);
+                    return;
+                }
                 System.err.println(AlreadyRunning.MESSAGE + ": " + data.folder() + " is locked by another copy");
                 System.exit(AlreadyRunning.run(args));
                 return;
@@ -55,6 +77,14 @@ public final class Main {
             // (persistence then reports the folder in a Notice).
             lockFailure = e;
         }
+        // A rejected command line is acted on only here, after the lock and before anything else. It must be in
+        // the log, since the packaged exe has no console, so the log has to be installed first; and the log may
+        // only be installed by the copy holding the lock (above), or a rejected launch would rotate a running
+        // copy's log. Standard error, for a dev run, is written before the log's tee is in, which would otherwise
+        // put the rejection in the log a second time.
+        if (line instanceof CommandLine.Rejected rejected) {
+            System.err.println(rejected.message());
+        }
         AppLog log = null;
         try {
             log = AppLog.install(data.folder());
@@ -62,6 +92,41 @@ public final class Main {
             // Running without a log file beats not running; the console, where there is one, still gets it all.
             System.err.println("Andy's Dice can't write its log in " + data.folder() + ": " + e);
         }
+        int status = switch (line) {
+            case CommandLine.Rejected rejected -> {
+                LOG.log(Level.WARNING, rejected.message());
+                yield CommandLine.REJECTED_STATUS;
+            }
+            case CommandLine.Accepted(LaunchMode mode) -> run(launched, mode, data, log, lock, lockFailure);
+        };
+        if (lock != null) {
+            // Also what keeps the lock reachable for the whole run: a collected channel would release it early.
+            try {
+                lock.close();
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Couldn't release the instance lock: " + e);
+            }
+        }
+        if (log != null) {
+            log.close();
+        }
+        // Explicitly, so the status reaches the launcher and no stray non-daemon thread keeps the JVM alive.
+        System.exit(status);
+    }
+
+    /**
+     * Runs the app in an accepted mode, once the lock is settled and the log installed, and returns when it quits.
+     *
+     * @param launched when the process started
+     * @param mode what this run is for
+     * @param data the data folder chosen for this run
+     * @param log the installed log, or {@code null} if it couldn't be
+     * @param lock the instance lock, or {@code null} if it couldn't be taken
+     * @param lockFailure why the lock couldn't be taken, when {@code lock} is {@code null}
+     * @return the process's exit status
+     */
+    private static int run(Instant launched, LaunchMode mode, DataFolder data, AppLog log, InstanceLock lock,
+            IOException lockFailure) {
         LOG.log(Level.INFO, "Andy's Dice " + version() + " starting on Java " + Runtime.version() + ", "
                 + System.getProperty("os.name") + " " + System.getProperty("os.arch")
                 + mode.logSuffix());
@@ -80,22 +145,10 @@ public final class Main {
         // The smoke test's verbose reports must be on before JavaFX starts.
         mode.prepare();
 
-        int status = AndysDice.launch(launched, data.folder(), args, failures);
+        int status = AndysDice.launch(launched, data.folder(), mode, failures);
 
         LOG.log(status == 0 ? Level.INFO : Level.ERROR, "Andy's Dice exiting with status " + status);
-        if (lock != null) {
-            // Also what keeps the lock reachable for the whole run: a collected channel would release it early.
-            try {
-                lock.close();
-            } catch (IOException e) {
-                LOG.log(Level.WARNING, "Couldn't release the instance lock: " + e);
-            }
-        }
-        if (log != null) {
-            log.close();
-        }
-        // Explicitly, so the status reaches the launcher and no stray non-daemon thread keeps the JVM alive.
-        System.exit(status);
+        return status;
     }
 
     /** The app's version, as the module was built with it, or "(unversioned)" in an exploded dev build. */
