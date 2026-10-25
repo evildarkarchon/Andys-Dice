@@ -4,6 +4,7 @@ import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
 import java.lang.System.Logger.Level;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -38,8 +39,11 @@ public final class AndysDice extends Application {
     private static volatile Instant launched = Instant.now();
     private static volatile FailureGuard failures = new FailureGuard(null);
     private static volatile int exitStatus;
+    private static volatile Path dataFolder;
 
     private Skeleton skeleton;
+    private Persistence persistence;
+    private WindowGeometry.Tracker geometry;
 
     /** Created by {@link Application#launch}. */
     public AndysDice() {}
@@ -48,13 +52,15 @@ public final class AndysDice extends Application {
      * Runs the application until it quits, on the calling thread.
      *
      * @param launchedAt when the process started, for the launch-to-window time in the log
+     * @param data the data folder chosen for this run, where the persisted files live
      * @param args the command line
      * @param guard where failures that end the session go; it shows them in the failure panel once the window
      *     is up
      * @return the process's exit status
      */
-    static int launch(Instant launchedAt, String[] args, FailureGuard guard) {
+    static int launch(Instant launchedAt, Path data, String[] args, FailureGuard guard) {
         launched = Objects.requireNonNull(launchedAt, "launchedAt");
+        dataFolder = Objects.requireNonNull(data, "data");
         failures = Objects.requireNonNull(guard, "guard");
         exitStatus = 0;
         Application.launch(AndysDice.class, args);
@@ -68,12 +74,17 @@ public final class AndysDice extends Application {
         if (smoke) {
             clock.setSpeed(SmokeTest.SPEED);
         }
+        // The persisted state first (spec §3.6): the window opens at the saved geometry. The one Notices goes to the
+        // session too, so a file set aside while loading shows behind the bell.
+        Notices notices = new Notices();
+        persistence = new Persistence(dataFolder, notices::post);
+        SettingsStore settings = new SettingsStore(persistence);
         // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
         // SecureRandom.
         FailureGuard guard = failures;
         try {
             skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom(),
-                    guard);
+                    guard, notices);
         } catch (JoltStartupException | GlUnavailableException e) {
             // The message names what is missing; for GL, the 3.3 core requirement and the renderer, vendor and
             // version the driver reported (ADR-0002). The log has it, and so does the failure panel.
@@ -89,8 +100,9 @@ public final class AndysDice extends Application {
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
 
-        // Layout C, titled and sized as spec §3.2's first run: shown, with focus in the box.
-        MainWindow.open(stage, skeleton.pane());
+        // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
+        // the box.
+        geometry = MainWindow.open(stage, skeleton.pane(), settings);
         LOG.log(Level.INFO, "Window shown " + Duration.between(launched, Instant.now()).toMillis()
                 + " ms after launch");
 
@@ -111,6 +123,14 @@ public final class AndysDice extends Application {
 
     @Override
     public void stop() {
+        // Closing the window has saved the geometry already; a quit that skipped that (the smoke test, a Quit
+        // button) saves it here. Then every queued write finishes before the process exits.
+        if (geometry != null) {
+            geometry.save();
+        }
+        if (persistence != null) {
+            persistence.close();
+        }
         if (skeleton != null) {
             skeleton.close();
         }
