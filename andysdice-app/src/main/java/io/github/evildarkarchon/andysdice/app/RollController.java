@@ -12,6 +12,7 @@ import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayMaterials;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
@@ -142,7 +143,8 @@ final class RollController {
      */
     void roll(String input) {
         if (underWay) {
-            // A Roll typed during another becomes the Queued Roll in #49; until then it is ignored.
+            // A Roll asked for during another is queued in front of the controller (RollQueue, #50), so one that
+            // still reaches it here is ignored.
             return;
         }
         RollExpression expression;
@@ -210,7 +212,10 @@ final class RollController {
         if (elapsed >= now.chain().restTime()) {
             playing = null;
             underWay = false;
-            setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result()));
+            // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). Rolls from a Saved Roll get
+            // its name with #56.
+            setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
+                    now.chain().plan().throwChain().size(), Optional.empty()));
         }
     }
 
