@@ -21,6 +21,7 @@ import static org.lwjgl.opengl.GL20C.glUseProgram;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Pose;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.mesh.DieMesh;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
@@ -42,6 +43,9 @@ import org.joml.Vector3dc;
  *
  * <p>Every face carries its engraved, inked Numerals (ticket #41, ADR-0008): each Die Kind's atlas is
  * rasterised and uploaded at {@link #init()}, and {@code engraving.glsl} traces it by parallax occlusion.
+ *
+ * <p>Once {@link #setTray} has chosen one, the Dice lie in a Tray (ticket #44, ADR-0010), drawn first by
+ * {@link TrayRenderer} from the same outline physics collides with.
  *
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
@@ -126,6 +130,9 @@ public final class DiceScene implements FrameRenderer {
 
     private volatile List<Die> dice = List.of();
     private volatile Camera camera = DEFAULT_CAMERA;
+    // Null until a Tray is chosen: the gallery's stills and the Dice-only tests draw no Tray.
+    private volatile Tray tray;
+    private final TrayRenderer trayRenderer = new TrayRenderer();
 
     // Render thread only.
     private final Map<DieKind, GlMesh> meshes = new EnumMap<>(DieKind.class);
@@ -166,6 +173,20 @@ public final class DiceScene implements FrameRenderer {
     }
 
     /**
+     * Puts the Dice in a Tray (ADR-0010): its floor, walls and the table around it are drawn under them from the next
+     * frame, each surface procedural and tinted by the Tray file's colours. A new scene has no Tray and draws only
+     * the Dice over the background. Any thread.
+     *
+     * <p>The first frame with a surface kind not drawn before generates its texture on the render thread, a few
+     * hundred milliseconds; after that a change of Tray only rebuilds its meshes.
+     *
+     * @param tray the Tray to draw
+     */
+    public void setTray(Tray tray) {
+        this.tray = Objects.requireNonNull(tray, "tray");
+    }
+
+    /**
      * How many triangles a Die of a kind is drawn with. Render thread only, after {@link #init()}; for tests.
      *
      * @param kind the Die Kind
@@ -178,6 +199,7 @@ public final class DiceScene implements FrameRenderer {
 
     @Override
     public void init() {
+        trayRenderer.init();
         program = Shaders.program("die.vert", "die.frag");
         modelUniform = glGetUniformLocation(program, "uModel");
         viewProjectionUniform = glGetUniformLocation(program, "uViewProjection");
@@ -206,16 +228,11 @@ public final class DiceScene implements FrameRenderer {
                 (BACKGROUND_ARGB & 0xff) / 255f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         List<Die> drawn = dice;
-        if (drawn.isEmpty()) {
+        Tray shown = tray;
+        if (drawn.isEmpty() && shown == null) {
             return;
         }
         Camera view = camera;
-        glEnable(GL_DEPTH_TEST);
-        // Back faces culled: the meshes wind counter-clockwise from outside, so a wrongly wound one shows.
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-        glUseProgram(program);
-
         double distance = view.eye().distance(view.target());
         // Near and far bracket everything within a metre of the target, which holds any Tray and its Dice.
         double near = Math.max(1, distance - 1000);
@@ -223,7 +240,18 @@ public final class DiceScene implements FrameRenderer {
         Matrix4d viewProjection = new Matrix4d()
                 .perspective(Math.toRadians(view.fovYDegrees()), (double) width / height, near, far)
                 .lookAt(view.eye(), view.target(), new Vector3d(0, 1, 0));
-        glUniformMatrix4fv(viewProjectionUniform, false, columns(viewProjection));
+        float[] viewProjectionColumns = columns(viewProjection);
+        glEnable(GL_DEPTH_TEST);
+        if (shown != null) {
+            // The Tray before the Dice, and with no culling: its walls are seen from both sides.
+            trayRenderer.draw(shown, viewProjectionColumns, view.eye(), KEY, FILL);
+        }
+        // Back faces culled: the meshes wind counter-clockwise from outside, so a wrongly wound one shows.
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glUseProgram(program);
+
+        glUniformMatrix4fv(viewProjectionUniform, false, viewProjectionColumns);
         glUniform3f(eyeUniform, (float) view.eye().x(), (float) view.eye().y(), (float) view.eye().z());
         glUniform3f(keyUniform, (float) KEY.x(), (float) KEY.y(), (float) KEY.z());
         glUniform3f(fillUniform, (float) FILL.x(), (float) FILL.y(), (float) FILL.z());
@@ -253,6 +281,7 @@ public final class DiceScene implements FrameRenderer {
         atlases.values().forEach(GlAtlas::delete);
         atlases.clear();
         glDeleteProgram(program);
+        trayRenderer.dispose();
     }
 
     /**
