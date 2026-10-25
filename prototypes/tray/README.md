@@ -5,7 +5,14 @@
 > and is kept as a primary source. It is built on the `prototype/materials` code: ADR-0008's numerals and
 > ADR-0009's Dice Sets (translucency technique C, swirls baked), unchanged.
 
-**Verdict.** Pending the driving dev's reaction; recorded on the ticket when given.
+**Verdict (2026-10-24).** The player chooses the Tray: Trays are `.tray` data files like Dice Sets, over one
+fixed 300 x 200 mm footprint with walls at least 30 mm high. The default is green felt in walnut, and the
+leather hexagon and walnut board also ship. The escape volume is the visible walls. The Light Rig is its own
+setting: studio (default), lamp and window ship, all with PCSS. Translucent shadows stay full. The camera
+settles in, and a rerolled Die glows, then lifts. Recorded in
+[ADR-0010](https://github.com/evildarkarchon/Andys-Dice/blob/main/docs/adr/0010-trays-are-data-files-over-one-footprint-under-a-chosen-light-rig.md).
+The 20-Dice cap's leaning dice became
+[How does a 20-Dice Throw reach a flat rest?](https://github.com/evildarkarchon/Andys-Dice/issues/21).
 
 **Question.** What do the tray, its surface, the camera and the lighting look like in v1, in our GL 3.3
 renderer? That covers the felt or wood floor, the walls and the tray size (against the 20-Dice cap), whether
