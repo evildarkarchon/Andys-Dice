@@ -2,6 +2,10 @@
 <!--
   app: the JavaFX shell and Roll UI, persistence, the lock file, smoke-test mode and the wiring of everything
   below it (spec §5).
+
+  Dev run of the app from the reactor, under the shared native-access option set with
+  illegal-native-access=deny (ADR-0004):
+      mvn -pl andysdice-app -am process-classes -Prun
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -16,6 +20,15 @@
 
     <artifactId>andysdice-app</artifactId>
     <name>Andy's Dice: app</name>
+
+    <properties>
+        <!-- The natives to lay out in this module's own target/natives, which its dev run and its tests (both
+             start Jolt and GL in their own JVM) read through the shared option set (ADR-0004). The OS profiles
+             below switch them, as physics' and render's do. -->
+        <jolt-jni.platform>Windows64</jolt-jni.platform>
+        <jolt-jni.flavour>ReleaseSp</jolt-jni.flavour>
+        <lwjgl.natives>natives-windows</lwjgl.natives>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -34,5 +47,126 @@
             <groupId>io.github.evildarkarchon.andysdice</groupId>
             <artifactId>andysdice-sound</artifactId>
         </dependency>
+        <!-- The Roll Expression box and the result strip. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              jolt-jni's default ReleaseSp native (never _avx2 or _fma) and LWJGL's natives, flattened into the one
+              natives directory (ADR-0004), exactly as physics and render lay out their own; nothing is extracted
+              at runtime, and no classifier jar is a dependency, so none lands on the module path.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-natives</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <!-- fileMappers works only inside each artifactItem; at the goal level it is ignored. -->
+                                <artifactItem>
+                                    <groupId>com.github.stephengold</groupId>
+                                    <artifactId>jolt-jni-${jolt-jni.platform}</artifactId>
+                                    <version>${jolt-jni.version}</version>
+                                    <classifier>${jolt-jni.flavour}</classifier>
+                                    <fileMappers>
+                                        <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                    </fileMappers>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.lwjgl</groupId>
+                                    <artifactId>lwjgl</artifactId>
+                                    <version>${lwjgl.version}</version>
+                                    <classifier>${lwjgl.natives}</classifier>
+                                    <fileMappers>
+                                        <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                    </fileMappers>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.lwjgl</groupId>
+                                    <artifactId>lwjgl-opengl</artifactId>
+                                    <version>${lwjgl.version}</version>
+                                    <classifier>${lwjgl.natives}</classifier>
+                                    <fileMappers>
+                                        <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                    </fileMappers>
+                                </artifactItem>
+                            </artifactItems>
+                            <includes>**/*.dll,**/*.so,**/*.dylib</includes>
+                            <outputDirectory>${andysdice.nativesDir}</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- The dev run of the app, with the shared JVM option sets (ADR-0004). A profile of this module only, so
+             -am can build the modules it needs without trying to run anything in them. -->
+        <profile>
+            <id>run</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- Maven's own JDK (27), not whatever java is first on PATH. -->
+                                    <executable>${java.home}/bin/java</executable>
+                                    <!-- The shared option sets hold several options each; the launcher splits
+                                         JDK_JAVA_OPTIONS on spaces, where a single <argument> would not. -->
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives}</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>io.github.evildarkarchon.andysdice.app/io.github.evildarkarchon.andysdice.app.AndysDice</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>natives-linux</id>
+            <activation>
+                <os>
+                    <name>linux</name>
+                </os>
+            </activation>
+            <properties>
+                <jolt-jni.platform>Linux64</jolt-jni.platform>
+                <lwjgl.natives>natives-linux</lwjgl.natives>
+            </properties>
+        </profile>
+        <!-- The DebugSp Jolt native, as physics' jolt-debug profile swaps it in (development only). -->
+        <profile>
+            <id>jolt-debug</id>
+            <properties>
+                <jolt-jni.flavour>DebugSp</jolt-jni.flavour>
+            </properties>
+        </profile>
+    </profiles>
 </project>
