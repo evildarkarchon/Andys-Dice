@@ -296,6 +296,24 @@ final class Skeleton implements AutoCloseable {
     }
 
     /**
+     * Returns the render thread, for {@code --bench}'s GPU bench, which draws its own scenes on it.
+     *
+     * @return the app's one render thread
+     */
+    RenderThread renderer() {
+        return renderer;
+    }
+
+    /**
+     * Returns the scene the render thread draws, for {@code --bench}'s GPU bench.
+     *
+     * @return the Dice scene
+     */
+    DiceScene scene() {
+        return scene;
+    }
+
+    /**
      * Returns what the OpenGL driver reported about the render thread's context, for the log.
      *
      * @return the context's renderer, vendor and version

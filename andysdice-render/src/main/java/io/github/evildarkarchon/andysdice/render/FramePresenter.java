@@ -89,6 +89,8 @@ final class FramePresenter {
 
     private final ImageView view;
     private final Runnable onBufferFreed;
+    // JavaFX thread only: told after each frame is put on the view.
+    private Runnable onPresented = () -> {};
     private final AtomicLong presented = new AtomicLong();
     private final AnimationTimer pulse = new AnimationTimer() {
         @Override
@@ -172,6 +174,17 @@ final class FramePresenter {
         return presented.get();
     }
 
+    /**
+     * Sets who is told each time a frame is put on screen, as {@code --bench} times Enter to first motion. JavaFX
+     * thread only.
+     *
+     * @param listener run on the JavaFX thread right after each frame is set on the view (and counted); it must not
+     *     block. {@code null} for none. It replaces any earlier listener.
+     */
+    void setOnPresented(Runnable listener) {
+        onPresented = listener == null ? () -> {} : listener;
+    }
+
     /** Runs once per pulse, on the JavaFX thread, while there is a frame to show or a buffer to give back. */
     private void onPulse() {
         Frame show;
@@ -196,6 +209,7 @@ final class FramePresenter {
         if (show != null) {
             show.present(view);
             presented.incrementAndGet();
+            onPresented.run();
         }
         if (freed) {
             onBufferFreed.run();

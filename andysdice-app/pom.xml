@@ -7,6 +7,9 @@
   illegal-native-access=deny (ADR-0004):
       mvn -pl andysdice-app -am process-classes -Prun
   Its data folder (and so its log, logs\andysdice.log) is andysdice-app\target\data, set by -Dandysdice.data.dir.
+
+  Dev-only bench (ADR-0014, ticket #61), the same run with the hidden bench flag; exits non-zero on a missed budget:
+      mvn -pl andysdice-app -am process-classes -Pbench
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -142,6 +145,42 @@
                                         <modulepath/>
                                         <argument>--module</argument>
                                         <argument>${andysdice.launcherMain}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The dev-only bench (ADR-0014, ticket #61): the app as the run profile starts it, with the hidden bench
+             flag. It times Enter to first motion and the GPU, prints both against their budgets and fails the build
+             (a non-zero exit) when one is missed. Not a CI gate: run it on the driving dev's machine. -->
+        <profile>
+            <id>bench</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>bench</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} -Dandysdice.data.dir=${project.build.directory}/data</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>${andysdice.launcherMain}</argument>
+                                        <argument>--bench</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

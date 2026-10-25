@@ -24,7 +24,8 @@ import javafx.stage.Stage;
  * and the process exits with {@link #STARTUP_FAILED} once the Player quits or closes the window. A failure later
  * in the session (spec §3.2 "Runtime failure") replaces the Tray with that panel, and the process then exits with
  * {@link #RUNTIME_FAILED}. With {@value SmokeTest#FLAG} it runs the {@link SmokeTest} once the window is up, and
- * either failure exits at once instead of waiting for Quit.
+ * either failure exits at once instead of waiting for Quit. With the dev-only {@value Bench#FLAG} it runs the
+ * {@link Bench} instead, in the same way.
  */
 public final class AndysDice extends Application {
 
@@ -71,9 +72,15 @@ public final class AndysDice extends Application {
     @Override
     public void start(Stage stage) {
         boolean smoke = getParameters().getRaw().contains(SmokeTest.FLAG);
+        // The dev-only bench (#61); the smoke test wins if both are asked for.
+        boolean bench = !smoke && getParameters().getRaw().contains(Bench.FLAG);
+        // Neither hidden mode waits on a person: a failure exits at once.
+        boolean unattended = smoke || bench;
         PlaybackClock clock = new PlaybackClock();
         if (smoke) {
             clock.setSpeed(SmokeTest.SPEED);
+        } else if (bench) {
+            clock.setSpeed(Bench.SPEED);
         }
         // The persisted state first (spec §3.6): the window opens at the saved geometry. The one Notices goes to the
         // session too, so a file set aside while loading shows behind the bell.
@@ -93,8 +100,8 @@ public final class AndysDice extends Application {
             // Set before the window opens: closing it is as much a way out as Quit, and exits non-zero too.
             exitStatus = STARTUP_FAILED;
             FailureScreen.startup(stage, Failure.startup(e, guard.logFile()), () -> quit(STARTUP_FAILED));
-            if (smoke) {
-                // The smoke test never waits on a person.
+            if (unattended) {
+                // The smoke test and the bench never wait on a person.
                 quit(STARTUP_FAILED);
             }
             return;
@@ -113,21 +120,23 @@ public final class AndysDice extends Application {
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.
         geometry = MainWindow.open(stage, skeleton.pane(), settings);
-        LOG.log(Level.INFO, "Window shown " + Duration.between(launched, Instant.now()).toMillis()
-                + " ms after launch");
+        Duration launchToWindow = Duration.between(launched, Instant.now());
+        LOG.log(Level.INFO, "Window shown " + launchToWindow.toMillis() + " ms after launch");
 
         // From now on a failure that ends the session (spec §3.2 "Runtime failure") replaces the Tray with the
         // failure panel; one that came before the window was up is shown at once.
         guard.attach(failure -> {
             exitStatus = RUNTIME_FAILED;
             FailureScreen.show(skeleton.pane(), failure, () -> quit(RUNTIME_FAILED));
-            if (smoke) {
+            if (unattended) {
                 quit(RUNTIME_FAILED);
             }
         }, Platform::runLater);
 
         if (smoke) {
             SmokeTest.run(skeleton, this::quit);
+        } else if (bench) {
+            Bench.run(skeleton, launchToWindow, this::quit);
         }
     }
 
