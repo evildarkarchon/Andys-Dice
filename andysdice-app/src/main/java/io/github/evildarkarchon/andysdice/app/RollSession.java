@@ -23,6 +23,7 @@ final class RollSession {
 
     private final RollController controller;
     private final RollUi ui;
+    private final Notices notices = new Notices();
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     /**
@@ -55,6 +56,7 @@ final class RollSession {
                     }
                 });
         ui = new RollUi(tray.node());
+        NoticeBell.attach(ui.bell(), notices);
         ui.setOnRoll(controller::roll);
         ui.showStatus(controller.status());
         controller.setOnStatusChanged(status -> {
@@ -91,6 +93,15 @@ final class RollSession {
      */
     RollUi ui() {
         return ui;
+    }
+
+    /**
+     * Returns the app's Notice service, whose Notices the bell shows. Post to it from any thread.
+     *
+     * @return the Notices
+     */
+    Notices notices() {
+        return notices;
     }
 
     /**

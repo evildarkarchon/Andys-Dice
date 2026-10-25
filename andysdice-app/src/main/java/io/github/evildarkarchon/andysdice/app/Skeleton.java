@@ -164,6 +164,15 @@ final class Skeleton implements AutoCloseable {
     }
 
     /**
+     * Returns the app's Notice service, whose Notices the bell shows. Post to it from any thread.
+     *
+     * @return the Notices
+     */
+    Notices notices() {
+        return session.notices();
+    }
+
+    /**
      * Returns the view the Tray is rendered into.
      *
      * @return the frame view
