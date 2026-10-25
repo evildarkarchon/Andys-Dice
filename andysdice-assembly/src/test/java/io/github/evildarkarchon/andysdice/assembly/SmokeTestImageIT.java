@@ -43,7 +43,8 @@ class SmokeTestImageIT {
     @Test
     void exitsZeroAfterRollingTheFixedExpression() throws IOException {
         assertThat(run.exitStatus()).as(run.describe()).isZero();
-        assertThat(run.log()).contains("Smoke test rolled 1d6+1 = ");
+        // The Roll Result as the result strip shows it: the canonical expression, then its total.
+        assertThat(run.log()).containsPattern("Smoke test rolled \\S+ = -?\\d+");
     }
 
     /** The data folder beside the launcher was chosen, and the log says so and why. */

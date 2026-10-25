@@ -24,8 +24,8 @@ final class SmokeTest {
     /** The command-line flag. Hidden: no UI or documentation offers it. */
     static final String FLAG = "--smoke-test";
 
-    /** The fixed Roll Expression it rolls. The walking skeleton can only roll a plain d6 with a Modifier. */
-    static final String EXPRESSION = "1d6+1";
+    /** The fixed Roll Expression it rolls: two Die Kinds in one Throw and a Modifier, kept quick to play. */
+    static final String EXPRESSION = "1d20+2d6+1";
 
     /** How much faster than real time the Throw plays. */
     static final double SPEED = 8;

@@ -13,7 +13,7 @@ module io.github.evildarkarchon.andysdice.render {
     requires org.lwjgl.opengl;
     // FrameView is a JavaFX Region, so JavaFX's graphics module is part of this module's API.
     requires transitive javafx.graphics;
-    // The gallery writes its stills with ImageIO; the numeral atlas (#41) will rasterise with java.awt.geom.
+    // The gallery writes its stills with ImageIO; the numeral atlas (#41) rasterises with java.awt.geom.
     requires java.desktop;
 
     exports io.github.evildarkarchon.andysdice.render;

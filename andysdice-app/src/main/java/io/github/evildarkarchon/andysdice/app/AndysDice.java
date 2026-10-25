@@ -4,11 +4,9 @@ import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
 import java.lang.System.Logger.Level;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.SplittableRandom;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -16,8 +14,8 @@ import javafx.stage.Stage;
 
 /**
  * Andy's Dice: the JavaFX application. In the walking skeleton (ticket #34) it shows the Roll Expression box,
- * the Tray and the result strip; typing {@code 1d6} and pressing Enter Throws the cube with real Jolt and plays
- * it back on the playback clock, which JavaFX's pulse advances at 60 Hz.
+ * the Tray and the result strip; typing a Roll Expression and pressing Enter Throws its Dice with real Jolt and
+ * plays the whole chain of Throws back on the playback clock, which JavaFX's pulse advances at 60 Hz.
  *
  * <p>{@link Main} launches it. Without Jolt's native or an OpenGL 3.3 core context it logs why, naming the
  * requirement and the detected renderer and driver (ADR-0002's fail-fast), and the process exits with
@@ -60,11 +58,10 @@ public final class AndysDice extends Application {
         if (smoke) {
             clock.setSpeed(SmokeTest.SPEED);
         }
-        // Spec §6: the Face Value and Release generators are seeded independently from SecureRandom.
-        SecureRandom seeds = new SecureRandom();
+        // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
+        // SecureRandom.
         try {
-            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)),
-                    new SplittableRandom(seeds.nextLong()), new SplittableRandom(seeds.nextLong()));
+            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom());
         } catch (JoltStartupException | GlUnavailableException e) {
             // The message names what is missing; for GL, the 3.3 core requirement and the renderer, vendor and
             // version the driver reported (ADR-0002). #53 shows it in the failure panel; until then the log has it.
