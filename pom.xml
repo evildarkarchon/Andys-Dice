@@ -8,6 +8,7 @@
 
   Build (Windows, JDK 27):  mvn verify
   Build without GL tests:   mvn verify -Pno-gl
+  The soak (slow tests):    mvn verify -Psoak -pl andysdice-physics -am
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -66,6 +67,10 @@
         <maven-resources-plugin.version>3.4.0</maven-resources-plugin.version>
         <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
         <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
+        <jpackage-maven-plugin.version>1.8.0</jpackage-maven-plugin.version>
+        <download-maven-plugin.version>1.13.0</download-maven-plugin.version>
+        <build-helper-maven-plugin.version>3.6.2</build-helper-maven-plugin.version>
+        <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
 
         <!--
           The one native-access option set (ADR-0004). It grants native access to exactly jolt-jni, LWJGL,
@@ -98,12 +103,25 @@
              by unpacking jolt-jni's native; a module whose tests load Jolt must unpack it the same way. -->
         <andysdice.joltNatives>-Dandysdice.natives.dir=${andysdice.nativesDir}</andysdice.joltNatives>
 
+        <!-- JOML's part of the shared option set (ADR-0004): without it JOML's matrix copies go through
+             sun.misc.Unsafe, which JDK 27 warns about. -->
+        <andysdice.jomlOptions>-Djoml.nounsafe=true</andysdice.jomlOptions>
+
+        <!-- The app's entry point as module/class, for the dev run (app) and the jpackage launcher (assembly). -->
+        <andysdice.launcherMain>io.github.evildarkarchon.andysdice.app/io.github.evildarkarchon.andysdice.app.Main</andysdice.launcherMain>
+
         <!-- Extra JVM options for a module's tests. Modules set this; they never override argLine itself,
              so the native-access set can't be dropped by accident. -->
         <andysdice.test.jvmArgs></andysdice.test.jvmArgs>
 
-        <!-- JUnit tag expression of test groups to leave out. Empty runs everything; the no-gl profile sets it. -->
-        <andysdice.test.excludedGroups></andysdice.test.excludedGroups>
+        <!--
+          The slow-tagged tests (the soak, ADR-0005) are left out of every build but the soak profile's, which
+          empties this. It is kept apart from the gl exclusion below so the two profiles combine.
+        -->
+        <andysdice.test.excludedSlow>slow</andysdice.test.excludedSlow>
+
+        <!-- JUnit tags of test groups to leave out, comma-separated. The no-gl profile adds gl. -->
+        <andysdice.test.excludedGroups>${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -237,7 +255,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <!-- Lets the gl tag guard test see which groups this build meant to leave out. -->
@@ -250,7 +268,7 @@
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven-failsafe-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <andysdice.test.excludedGroups>${andysdice.test.excludedGroups}</andysdice.test.excludedGroups>
@@ -281,6 +299,27 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
                     <version>${maven-enforcer-plugin.version}</version>
+                </plugin>
+                <!-- Packaging (ADR-0004); only the assembly module uses these. -->
+                <plugin>
+                    <groupId>org.panteleyev</groupId>
+                    <artifactId>jpackage-maven-plugin</artifactId>
+                    <version>${jpackage-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>com.googlecode.maven-download-plugin</groupId>
+                    <artifactId>download-maven-plugin</artifactId>
+                    <version>${download-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>${build-helper-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>${maven-assembly-plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -321,7 +360,19 @@
         <profile>
             <id>no-gl</id>
             <properties>
-                <andysdice.test.excludedGroups>gl</andysdice.test.excludedGroups>
+                <!-- With -Psoak as well, excludedSlow is empty and this is "gl,", which Surefire reads as gl. -->
+                <andysdice.test.excludedGroups>gl,${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
+            </properties>
+        </profile>
+        <!--
+          The soak (ADR-0005, ADR-0013, ADR-0014): also runs the slow-tagged tests, chiefly physics' JoltSoakTest,
+          which throws 1,000 20-Dice Rolls into each built-in Tray through the real planner and Jolt and fails on
+          core's Soak gates. Run by the nightly workflow: mvn verify -Psoak -pl andysdice-physics -am
+        -->
+        <profile>
+            <id>soak</id>
+            <properties>
+                <andysdice.test.excludedSlow></andysdice.test.excludedSlow>
             </properties>
         </profile>
     </profiles>
