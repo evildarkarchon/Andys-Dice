@@ -6,6 +6,7 @@
   Dev run of the app from the reactor, under the shared native-access option set with
   illegal-native-access=deny (ADR-0004):
       mvn -pl andysdice-app -am process-classes -Prun
+  Its data folder (and so its log, logs\andysdice.log) is andysdice-app\target\data, set by -Dandysdice.data.dir.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -134,13 +135,13 @@
                                     <!-- The shared option sets hold several options each; the launcher splits
                                          JDK_JAVA_OPTIONS on spaces, where a single <argument> would not. -->
                                     <environmentVariables>
-                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives}</JDK_JAVA_OPTIONS>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} -Dandysdice.data.dir=${project.build.directory}/data</JDK_JAVA_OPTIONS>
                                     </environmentVariables>
                                     <arguments>
                                         <argument>--module-path</argument>
                                         <modulepath/>
                                         <argument>--module</argument>
-                                        <argument>io.github.evildarkarchon.andysdice.app/io.github.evildarkarchon.andysdice.app.AndysDice</argument>
+                                        <argument>${andysdice.launcherMain}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

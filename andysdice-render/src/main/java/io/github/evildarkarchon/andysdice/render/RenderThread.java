@@ -184,7 +184,8 @@ public final class RenderThread implements AutoCloseable {
     private void run(CompletableFuture<GlDriver> ready) {
         renderThread = Thread.currentThread();
         try {
-            context = GlContext.create(GlVersion.FLOOR);
+            // The floor, unless a dev or test run raises it to force the fail-fast (GlVersion.REQUIRE_PROPERTY).
+            context = GlContext.create(GlVersion.required(System.getProperty(GlVersion.REQUIRE_PROPERTY)));
             target = new RenderTarget();
             transport.open(this::wakeUp);
             transportOpen = true;
