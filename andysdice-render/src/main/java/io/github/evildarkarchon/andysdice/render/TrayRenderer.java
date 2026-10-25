@@ -37,6 +37,7 @@ import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
 import static org.lwjgl.opengl.GL20C.glUniform3f;
+import static org.lwjgl.opengl.GL20C.glUniform4fv;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
 import static org.lwjgl.opengl.GL20C.glVertexAttribPointer;
@@ -54,6 +55,7 @@ import io.github.evildarkarchon.andysdice.render.tray.SurfaceTexture;
 import io.github.evildarkarchon.andysdice.render.tray.TrayMesh;
 import java.nio.ByteBuffer;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import org.joml.Vector3dc;
 import org.lwjgl.opengl.GL;
@@ -63,7 +65,9 @@ import org.lwjgl.system.MemoryUtil;
 /**
  * Draws the chosen Tray (ADR-0010) in the Dice scene: its floor, walls and the table around it ({@link TrayMesh}),
  * each with its procedural, tiling surface ({@link SurfaceTexture}) tinted by the Tray file's colour, through
- * {@code tray.vert} / {@code tray.frag}.
+ * {@code tray.vert} / {@code tray.frag}. The chosen Light Rig lights it (ticket #45): its walls cast into the key
+ * light's shadow map ({@link #drawCasters}), every surface receives that shadow, and each Die darkens the floor
+ * beneath it with a contact occlusion.
  *
  * <p>A surface kind's texture is generated and uploaded the first time a Tray needs it, then kept for the life of
  * the renderer, so changing Tray later costs only its meshes. Render thread only.
@@ -81,14 +85,19 @@ final class TrayRenderer {
     private static final int MAX_TEXTURE_MAX_ANISOTROPY = 0x84FF;
     private static final float ANISOTROPY = 8;
 
+    /** How many Dice darken the floor beneath them: {@code tray.frag}'s array, the 20-Dice cap plus slack. */
+    static final int MAX_DICE = 24;
+
+    /** A Die's contact-occlusion sphere is a little larger than its inscribed one (the prototype's). */
+    private static final double CONTACT_RADIUS_SCALE = 1.05;
+
     private final Map<SurfaceTexture.Kind, Integer> textures = new EnumMap<>(SurfaceTexture.Kind.class);
     private int program;
     private int viewProjectionUniform;
     private int eyeUniform;
-    private int keyUniform;
-    private int keyColourUniform;
-    private int fillUniform;
-    private int fillColourUniform;
+    private LightUniforms lightUniforms;
+    private int diceUniform;
+    private int diceCountUniform;
     private int tintUniform;
     private int roughnessUniform;
     private int sheenUniform;
@@ -99,16 +108,19 @@ final class TrayRenderer {
     private GlPart walls;
     private GlPart table;
 
-    /** Compiles the shader. GL objects for a Tray are made when it is first drawn. */
-    void init() {
+    /**
+     * Compiles the shader. GL objects for a Tray are made when it is first drawn.
+     *
+     * @param shadowUnit the texture unit the scene binds the comparing shadow map to
+     * @param rawShadowUnit the unit it binds the raw shadow map to
+     */
+    void init(int shadowUnit, int rawShadowUnit) {
         RenderThread.checkRenderThread();
         program = Shaders.program("tray.vert", "tray.frag");
         viewProjectionUniform = glGetUniformLocation(program, "uViewProjection");
         eyeUniform = glGetUniformLocation(program, "uEye");
-        keyUniform = glGetUniformLocation(program, "uKeyDirection");
-        keyColourUniform = glGetUniformLocation(program, "uKeyColour");
-        fillUniform = glGetUniformLocation(program, "uFillDirection");
-        fillColourUniform = glGetUniformLocation(program, "uFillColour");
+        diceUniform = glGetUniformLocation(program, "uDice");
+        diceCountUniform = glGetUniformLocation(program, "uDiceCount");
         tintUniform = glGetUniformLocation(program, "uTint");
         roughnessUniform = glGetUniformLocation(program, "uRoughness");
         sheenUniform = glGetUniformLocation(program, "uSheen");
@@ -116,22 +128,37 @@ final class TrayRenderer {
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uSurface"), SURFACE_UNIT);
         glUniform1f(glGetUniformLocation(program, "uShadeRange"), SurfaceTexture.SHADE_RANGE);
+        lightUniforms = new LightUniforms(program, shadowUnit, rawShadowUnit);
         glUseProgram(0);
     }
 
     /**
-     * Draws a Tray, building its meshes first if it isn't the one drawn last. Depth testing is the caller's.
+     * Draws a Tray's shadow casters, its walls, with whatever depth-only program is in use (the floor and table only
+     * receive). Builds its meshes first if it isn't the one drawn last.
+     *
+     * @param next the Tray whose walls to draw
+     */
+    void drawCasters(Tray next) {
+        RenderThread.checkRenderThread();
+        if (!next.equals(tray)) {
+            rebuild(next);
+        }
+        walls.draw();
+    }
+
+    /**
+     * Draws a Tray, building its meshes first if it isn't the one drawn last, lit by a Light Rig and shadowed by the
+     * shadow map the caller has bound to the units given to {@link #init}. Depth testing is the caller's.
      *
      * @param next the Tray to draw
      * @param viewProjection the view-projection matrix, column-major
      * @param eye the camera's position, in mm
-     * @param key the direction toward the key light
-     * @param keyColour the key light's radiance, linear RGB
-     * @param fill the direction toward the fill light
-     * @param fillColour the fill light's radiance, linear RGB
+     * @param rig the Light Rig
+     * @param lightView the key light's view the shadow map was drawn from
+     * @param dice the Dice on it, which darken the floor beneath them; past {@value #MAX_DICE}, the rest don't
      */
-    void draw(Tray next, float[] viewProjection, Vector3dc eye, Vector3dc key, Vector3dc keyColour, Vector3dc fill,
-            Vector3dc fillColour) {
+    void draw(Tray next, float[] viewProjection, Vector3dc eye, LightRig rig, LightView lightView,
+            List<DiceScene.Die> dice) {
         RenderThread.checkRenderThread();
         if (!next.equals(tray)) {
             rebuild(next);
@@ -139,10 +166,18 @@ final class TrayRenderer {
         glUseProgram(program);
         glUniformMatrix4fv(viewProjectionUniform, false, viewProjection);
         vector(eyeUniform, eye);
-        vector(keyUniform, key);
-        vector(keyColourUniform, keyColour);
-        vector(fillUniform, fill);
-        vector(fillColourUniform, fillColour);
+        lightUniforms.apply(rig, lightView);
+        int count = Math.min(dice.size(), MAX_DICE);
+        float[] spheres = new float[4 * MAX_DICE];
+        for (int i = 0; i < count; i++) {
+            DiceScene.Die die = dice.get(i);
+            spheres[4 * i] = (float) die.position().x();
+            spheres[4 * i + 1] = (float) die.position().y();
+            spheres[4 * i + 2] = (float) die.position().z();
+            spheres[4 * i + 3] = (float) (die.kind().inradius() * CONTACT_RADIUS_SCALE);
+        }
+        glUniform4fv(diceUniform, spheres);
+        glUniform1i(diceCountUniform, count);
 
         SurfaceTexture.Kind floorKind = SurfaceTexture.Kind.of(tray.floor().surface());
         SurfaceTexture.Kind wallKind = SurfaceTexture.Kind.of(tray.walls().material());

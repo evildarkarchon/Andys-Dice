@@ -5,12 +5,15 @@
 // Numerals are ADR-0008's engravings (engraving.glsl), filled with the Dice Set's opaque ink.
 //
 // From the tray prototype's die.frag, opaque path only: translucency (transmission, the volume march and the
-// refracted opaque pass) is ticket #43, so a translucent Dice Set draws opaque here. Shadows and the other Light
-// Rigs are #45, the reroll glow #47.
+// refracted opaque pass) is ticket #43, so a translucent Dice Set draws opaque here. The reroll glow is #47.
+// The lights, the reflection room and the key light's PCSS shadow are the chosen Light Rig's (#45): light.glsl,
+// env.glsl and shadow.glsl, shared with the Tray.
 
 #include "hash.glsl"
 #include "engraving.glsl"
+#include "light.glsl"
 #include "env.glsl"
+#include "shadow.glsl"
 #include "tonemap.glsl"
 
 in vec3 vWorldPosition;
@@ -22,10 +25,6 @@ in vec3 vModelPosition;
 uniform mat4 uModel;          // rotation and translation only: mat3(uModel) turns model directions to world
 
 uniform vec3 uEye;            // camera position, world mm
-uniform vec3 uKeyDirection;   // toward the key light, normalised
-uniform vec3 uKeyColour;      // its radiance, linear RGB
-uniform vec3 uFillDirection;  // toward the fill light, normalised
-uniform vec3 uFillColour;
 
 // The Dice Set, colours in linear RGB.
 uniform vec3 uBase;
@@ -114,7 +113,8 @@ float flakeAt(vec3 p, out vec3 fn) {
 void main() {
     vec3 V = normalize(uEye - vWorldPosition);
     vec3 Ng = normalize(vWorldNormal);
-    vec3 KL = uKeyDirection;
+    vec3 KL;
+    vec3 KC = keyLight(vWorldPosition, KL);
 
     // --- ADR-0008 Numerals: parallax occlusion through the atlas, with the recess's own shadow. ---
     Engraving e = engrave(vUv, vWorldTangent, Ng, V, KL);
@@ -148,14 +148,18 @@ void main() {
     vec3 diffColour = albedo * (1.0 - metal);
     float a = max(rough * rough, 0.002);
 
-    vec3 colour = directLight(Ns, V, KL, uKeyColour, diffColour, f0, a) * e.keyOcclusion;
+    // The key reaches this point past the other Dice and the walls (the shadow map) and out of the engraving's
+    // recess (its own self-shadow march).
+    float shadow = keyShadow(vWorldPosition) * e.keyOcclusion;
+    vec3 colour = directLight(Ns, V, KL, KC, diffColour, f0, a) * shadow;
     colour += directLight(Ns, V, uFillDirection, uFillColour, diffColour, f0, a) * mix(1.0, e.keyOcclusion, 0.5);
 
     // The environment, by the split-sum: this reflection is what keeps a metal from looking like grey plastic.
+    // In shadow the room's brightest part, the key's own softbox, lamp or window, is hidden too, so it dims.
     float NoV = max(dot(Ns, V), 1e-3);
     vec2 ab = envBRDF(rough, NoV);
     vec3 Rv = reflect(-V, Ns);
-    vec3 specEnv = env(Rv, rough) * (f0 * ab.x + ab.y);
+    vec3 specEnv = env(Rv, rough) * (f0 * ab.x + ab.y) * mix(0.35, 1.0, shadow);
     vec3 diffEnv = env(Ns, 1.0) * diffColour;
     colour += (diffEnv + specEnv) * e.cavity;
 
@@ -166,7 +170,7 @@ void main() {
         vec3 H = normalize(V + KL);
         float lobe = D_GGX(max(dot(N, H), 0.0), 0.12) * max(dot(N, KL), 0.0);
         colour += uPearl * s * (1.0 - ink) * tint
-                * (lobe * 0.08 * uKeyColour * e.keyOcclusion + env(Rv, 0.6) * 0.12 + 0.05 * fres);
+                * (lobe * 0.08 * KC * shadow + env(Rv, 0.6) * 0.12 + 0.05 * fres);
     }
 
     // Opaque: the bridge hands JavaFX premultiplied pixels, and alpha 1 makes them plain ones.

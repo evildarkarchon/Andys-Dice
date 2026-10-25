@@ -40,8 +40,12 @@ import org.joml.Vector3dc;
 
 /**
  * Draws Dice with their rounded meshes ({@link DieMesh}, ticket #40) in place of the sharp solids: each Die of
- * whatever Die Kind at its pose, seen from a camera, under the Studio Light Rig's key and fill lights and its
+ * whatever Die Kind at its pose, seen from a camera, under the chosen Light Rig's key and fill lights and its
  * analytic reflection environment, in the chosen Dice Set. The app's playback and the gallery both draw through it.
+ *
+ * <p>The Light Rig (ticket #45, ADR-0010; Studio until {@link #setLightRig} says otherwise) also gives the key light's
+ * shadow: each frame first draws a {@link ShadowMap} of every Die and the Tray's walls from the key light, which the
+ * Dice and the Tray then filter by PCSS.
  *
  * <p>Every face carries its engraved, inked Numerals (ticket #41, ADR-0008): each Die Kind's atlas is
  * rasterised and uploaded at {@link #init()}, and {@code engraving.glsl} traces it by parallax occlusion.
@@ -56,8 +60,9 @@ import org.joml.Vector3dc;
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
  *
- * <p>{@link #setDice}, {@link #setCamera} and {@link #setDiceSet} may be called from any thread and take effect at
- * the next frame; everything else runs on the render thread, as a {@link FrameRenderer}.
+ * <p>{@link #setDice}, {@link #setCamera}, {@link #setDiceSet}, {@link #setTray} and {@link #setLightRig} may be
+ * called from any thread and take effect at the next frame; everything else runs on the render thread, as a
+ * {@link FrameRenderer}.
  */
 public final class DiceScene implements FrameRenderer {
 
@@ -131,17 +136,10 @@ public final class DiceScene implements FrameRenderer {
     private static final Camera DEFAULT_CAMERA = new Camera(
             new Vector3d(0, 5 + 400 * Math.sin(Math.toRadians(50)), -400 * Math.cos(Math.toRadians(50))),
             new Vector3d(0, 5, 0), 32);
-    // The Studio Light Rig (the tray prototype's SceneSpec.light(STUDIO)): a warm key from above the camera's left
-    // and a cool fill from the far right, as directions toward the lights and linear radiance. env.glsl's two
-    // softboxes sit in the same directions. Ticket #45 makes the rigs choosable and adds their shadows.
-    private static final Vector3dc KEY = new Vector3d(-0.45, 0.85, -0.35).normalize();
-    private static final Vector3dc KEY_COLOUR = new Vector3d(1.0, 0.96, 0.90).mul(3.0);
-    private static final Vector3dc FILL = new Vector3d(0.7, 0.45, 0.5).normalize();
-    private static final Vector3dc FILL_COLOUR = new Vector3d(0.55, 0.62, 0.75).mul(0.5);
-
     private volatile List<Die> dice = List.of();
     private volatile Camera camera = DEFAULT_CAMERA;
     private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
+    private volatile LightRig lightRig = LightRig.DEFAULT;
     // Null until a Tray is chosen: the gallery's stills and the Dice-only tests draw no Tray.
     private volatile Tray tray;
     private final TrayRenderer trayRenderer = new TrayRenderer();
@@ -150,21 +148,26 @@ public final class DiceScene implements FrameRenderer {
     private final Map<DieKind, GlMesh> meshes = new EnumMap<>(DieKind.class);
     private final Map<DieKind, GlAtlas> atlases = new EnumMap<>(DieKind.class);
     private SwirlVolumes swirls;
+    private ShadowMap shadowMap;
     private DiceSetUniforms diceSetUniforms;
+    private LightUniforms lightUniforms;
     private int program;
     private int modelUniform;
     private int viewProjectionUniform;
     private int eyeUniform;
-    private int keyUniform;
-    private int keyColourUniform;
-    private int fillUniform;
-    private int fillColourUniform;
     private int mmPerUvUniform;
 
     // The texture units the engraving's atlas and the swirl volume are bound to.
     private static final int MASK_UNIT = 0;
     private static final int SLOPE_UNIT = 1;
     private static final int SWIRL_UNIT = 2;
+    // The shadow map's two units, shared by the Dice and the Tray. Kept clear of the low units, which the Dice's and
+    // the Tray's own textures use (and ticket #43's copy of the opaque pass may take).
+    private static final int SHADOW_UNIT = 6;
+    private static final int RAW_SHADOW_UNIT = 7;
+
+    /** The model matrix of what is already in world space: the Tray's walls, in the shadow pass. */
+    private static final float[] IDENTITY = columns(new Matrix4d());
 
     /** Creates an empty scene; its GL objects are made in {@link #init()}. */
     public DiceScene() {}
@@ -212,6 +215,17 @@ public final class DiceScene implements FrameRenderer {
     }
 
     /**
+     * Chooses the Light Rig the scene is lit by (ADR-0010): its key and fill lights, the key's PCSS shadow and the
+     * room the Dice and the Tray reflect. Independent of the Tray. Takes effect at the next frame; any thread. Until
+     * this is called, it is {@link LightRig#DEFAULT}, Studio.
+     *
+     * @param lightRig the Light Rig
+     */
+    public void setLightRig(LightRig lightRig) {
+        this.lightRig = Objects.requireNonNull(lightRig, "lightRig");
+    }
+
+    /**
      * How many swirl volumes have been baked so far. Render thread only, after {@link #init()}; for tests.
      *
      * @return the count of distinct swirl fields drawn since {@link #init()}
@@ -234,23 +248,21 @@ public final class DiceScene implements FrameRenderer {
 
     @Override
     public void init() {
-        trayRenderer.init();
+        trayRenderer.init(SHADOW_UNIT, RAW_SHADOW_UNIT);
         program = Shaders.program("die.vert", "die.frag");
         modelUniform = glGetUniformLocation(program, "uModel");
         viewProjectionUniform = glGetUniformLocation(program, "uViewProjection");
         eyeUniform = glGetUniformLocation(program, "uEye");
-        keyUniform = glGetUniformLocation(program, "uKeyDirection");
-        keyColourUniform = glGetUniformLocation(program, "uKeyColour");
-        fillUniform = glGetUniformLocation(program, "uFillDirection");
-        fillColourUniform = glGetUniformLocation(program, "uFillColour");
         mmPerUvUniform = glGetUniformLocation(program, "uMmPerUv");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
         glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
         glUniform1f(glGetUniformLocation(program, "uDepth"), (float) NumeralAtlas.VISIBLE_DEPTH_MM);
         diceSetUniforms = new DiceSetUniforms(program, SWIRL_UNIT);
+        lightUniforms = new LightUniforms(program, SHADOW_UNIT, RAW_SHADOW_UNIT);
         glUseProgram(0);
         swirls = new SwirlVolumes();
+        shadowMap = new ShadowMap();
         // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
         // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
         for (DieKind kind : DieKind.values()) {
@@ -270,6 +282,22 @@ public final class DiceScene implements FrameRenderer {
             return;
         }
         Camera view = camera;
+        LightRig rig = lightRig;
+
+        // The key light's shadow map first, into its own framebuffer: every Die, and the Tray's walls.
+        LightView lightView = LightView.of(rig, view);
+        shadowMap.begin(lightView);
+        for (Die die : drawn) {
+            shadowMap.model(columns(new Matrix4d().translation(die.position()).rotate(die.orientation())));
+            meshes.get(die.kind()).draw();
+        }
+        if (shown != null) {
+            shadowMap.model(IDENTITY);
+            trayRenderer.drawCasters(shown);
+        }
+        shadowMap.end();
+        shadowMap.bind(SHADOW_UNIT, RAW_SHADOW_UNIT);
+
         glUseProgram(program);
         // Before the depth test and culling go on, and before the Tray is drawn: a first use of a swirled Dice Set
         // bakes its volume here, with a full-screen triangle into a framebuffer of its own.
@@ -285,7 +313,7 @@ public final class DiceScene implements FrameRenderer {
         glEnable(GL_DEPTH_TEST);
         if (shown != null) {
             // The Tray before the Dice, and with no culling: its walls are seen from both sides.
-            trayRenderer.draw(shown, viewProjectionColumns, view.eye(), KEY, KEY_COLOUR, FILL, FILL_COLOUR);
+            trayRenderer.draw(shown, viewProjectionColumns, view.eye(), rig, lightView, drawn);
         }
         // Back faces culled: the meshes wind counter-clockwise from outside, so a wrongly wound one shows.
         glEnable(GL_CULL_FACE);
@@ -294,10 +322,7 @@ public final class DiceScene implements FrameRenderer {
 
         glUniformMatrix4fv(viewProjectionUniform, false, viewProjectionColumns);
         glUniform3f(eyeUniform, (float) view.eye().x(), (float) view.eye().y(), (float) view.eye().z());
-        vector(keyUniform, KEY);
-        vector(keyColourUniform, KEY_COLOUR);
-        vector(fillUniform, FILL);
-        vector(fillColourUniform, FILL_COLOUR);
+        lightUniforms.apply(rig, lightView);
         for (int slot = 0; slot < drawn.size(); slot++) {
             Die die = drawn.get(slot);
             diceSetUniforms.seed(slot);
@@ -309,6 +334,7 @@ public final class DiceScene implements FrameRenderer {
             meshes.get(die.kind()).draw();
         }
         glUseProgram(0);
+        shadowMap.unbind(SHADOW_UNIT, RAW_SHADOW_UNIT);
         glDisable(GL_CULL_FACE);
         glDisable(GL_DEPTH_TEST);
     }
@@ -322,20 +348,16 @@ public final class DiceScene implements FrameRenderer {
         atlases.values().forEach(GlAtlas::delete);
         atlases.clear();
         swirls.delete();
+        shadowMap.delete();
         glDeleteProgram(program);
         trayRenderer.dispose();
-    }
-
-    /** Sets a {@code vec3} uniform from a vector. */
-    private static void vector(int location, Vector3dc v) {
-        glUniform3f(location, (float) v.x(), (float) v.y(), (float) v.z());
     }
 
     /**
      * A matrix as the column-major floats {@code glUniformMatrix4fv} takes untransposed. Read element by element:
      * JOML's own array copies go through {@code sun.misc.Unsafe} unless told not to, which JDK 27 warns about.
      */
-    private static float[] columns(Matrix4dc m) {
+    static float[] columns(Matrix4dc m) {
         return new float[] {
             (float) m.m00(), (float) m.m01(), (float) m.m02(), (float) m.m03(),
             (float) m.m10(), (float) m.m11(), (float) m.m12(), (float) m.m13(),

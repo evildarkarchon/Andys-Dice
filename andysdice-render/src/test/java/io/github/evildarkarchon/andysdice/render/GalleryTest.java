@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
 import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * The dev gallery on a real GL 3.3 core context (ADR-0005): one still of every Die Kind in every fixed pose in every
  * built-in Dice Set, each showing a Die with inked Numerals, and a sheet of every Die Kind's Numerals as its atlas
- * lays them out. Whether they look right is for an eye to judge; this checks that they are all there.
+ * lays them out, and every built-in Tray under every Light Rig. Whether they look right is for an eye to judge; this
+ * checks that they are all there.
  *
  * <p>The gallery starts the JVM's one render thread itself, so it has a test class (and a JVM) of its own.
  */
@@ -51,6 +54,18 @@ class GalleryTest {
                 }
             }
         }
+        // Ticket #45 (ADR-0010): every built-in Tray under every Light Rig, with Dice resting in it.
+        List<List<Path>> rigsByTray = new ArrayList<>();
+        for (Tray tray : BuiltInTrays.all()) {
+            List<Path> rigs = new ArrayList<>();
+            for (LightRig rig : LightRig.values()) {
+                Path still = directory.resolve("light-rigs")
+                        .resolve(tray.identity() + "-" + rig.name().toLowerCase(Locale.ROOT) + ".png");
+                expected.add(still);
+                rigs.add(still);
+            }
+            rigsByTray.add(rigs);
+        }
         for (DieKind kind : DieKind.values()) {
             Path sheet = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-numerals.png");
             expected.add(sheet);
@@ -70,6 +85,24 @@ class GalleryTest {
             assertThat(inkFraction(ImageIO.read(file.toFile()))).as("%s shows inked Numerals", file)
                     .isGreaterThan(0.002);
         }
+        for (List<Path> rigs : rigsByTray) {
+            List<BufferedImage> images = new ArrayList<>();
+            for (Path file : rigs) {
+                BufferedImage image = ImageIO.read(file.toFile());
+                assertThat(image.getWidth()).isEqualTo(Gallery.SIZE_PX);
+                assertThat(image.getHeight()).isEqualTo(Gallery.SIZE_PX);
+                assertThat(coveredFraction(image)).as("%s shows the Tray and the table filling the frame", file)
+                        .isGreaterThan(0.9);
+                images.add(image);
+            }
+            // The same Tray and Dice look different under each rig.
+            for (int a = 0; a < images.size(); a++) {
+                for (int b = a + 1; b < images.size(); b++) {
+                    assertThat(differingFraction(images.get(a), images.get(b)))
+                            .as("%s vs %s", rigs.get(a), rigs.get(b)).isGreaterThan(0.5);
+                }
+            }
+        }
         for (Path file : sheets) {
             BufferedImage image = ImageIO.read(file.toFile());
             assertThat(image.getWidth()).isEqualTo(image.getHeight()).isLessThanOrEqualTo(Gallery.SHEET_MAX_PX);
@@ -78,6 +111,18 @@ class GalleryTest {
         try (var listing = Files.walk(directory)) {
             assertThat(listing.filter(Files::isRegularFile).count()).isEqualTo(written.size());
         }
+    }
+
+    private static double differingFraction(BufferedImage a, BufferedImage b) {
+        int differing = 0;
+        for (int y = 0; y < a.getHeight(); y++) {
+            for (int x = 0; x < a.getWidth(); x++) {
+                if (a.getRGB(x, y) != b.getRGB(x, y)) {
+                    differing++;
+                }
+            }
+        }
+        return differing / (double) (a.getWidth() * a.getHeight());
     }
 
     private static double coveredFraction(BufferedImage image) {
