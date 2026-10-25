@@ -107,6 +107,16 @@ final class Stylesheet {
                 ".result-strip { -fx-background-color: " + surface + "; -fx-padding: 12 16 12 16; }",
                 ".result-message { -fx-font-size: 15px; }",
 
+                // #50: the Queued Roll's "next: …" chip on the toolbar, outlined in the accent so it reads as a
+                // state rather than a button; and the parse-error popup's label, its whole content (a popup is
+                // its own scene, so the label carries the roll-ui class too, and this outranks that rule).
+                "." + ROOT_CLASS + " .next-chip { -fx-background-color: " + accent + ", " + raised
+                        + "; -fx-background-insets: 0, 1; -fx-background-radius: 10, 9; -fx-padding: 3 10 3 10; "
+                        + "-fx-text-fill: " + text + "; }",
+                "." + ROOT_CLASS + ".error-popup { -fx-background-color: " + hex(Palette.ERROR)
+                        + "; -fx-background-radius: 6; -fx-padding: 6 10 6 10; -fx-text-fill: "
+                        + hex(Palette.ON_ERROR) + "; -fx-font-size: 13px; }",
+
                 // The Roll Expression box. Modena hides a focused field's prompt; the first-run box has focus
                 // and must still show "e.g. 1d20+5", so the prompt keeps its colour when focused.
                 "." + ROOT_CLASS + " .text-field { -fx-background-color: " + outline + ", " + field
@@ -138,8 +148,8 @@ final class Stylesheet {
                 "");
     }
 
-    /** A colour as CSS {@code #rrggbb}; the palette is opaque. */
-    private static String hex(Color colour) {
+    /** A colour as CSS {@code #rrggbb}; the palette is opaque. Also used by stylesheets kept beside a control. */
+    static String hex(Color colour) {
         return String.format(Locale.ROOT, "#%02x%02x%02x", Math.round(colour.getRed() * 255),
                 Math.round(colour.getGreen() * 255), Math.round(colour.getBlue() * 255));
     }

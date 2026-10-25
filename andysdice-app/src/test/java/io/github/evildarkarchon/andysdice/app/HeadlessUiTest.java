@@ -4,6 +4,7 @@ import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.SplittableRandom;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -11,10 +12,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.robot.Robot;
+import javafx.stage.PopupWindow;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -256,6 +260,20 @@ abstract class HeadlessUiTest {
         if (fromFx(() -> controller().underWay())) {
             throw new AssertionError("the Roll was still under way after " + PLAY_LIMIT_SECONDS + " s of playback");
         }
+    }
+
+    /**
+     * Returns every popup window showing now (the parse-error popup, a list popup, and so on), tooltips left out
+     * since a robot's mouse can raise one by chance. Popups are windows of their own, so a scene snapshot or a
+     * lookup in the main window never finds them. Call it on the JavaFX thread.
+     *
+     * @return the showing popups, in JavaFX's window order
+     */
+    static List<PopupWindow> showingPopups() {
+        return Window.getWindows().stream()
+                .filter(window -> window instanceof PopupWindow && !(window instanceof Tooltip) && window.isShowing())
+                .map(PopupWindow.class::cast)
+                .toList();
     }
 
     /** Code run on the JavaFX thread that may throw. */

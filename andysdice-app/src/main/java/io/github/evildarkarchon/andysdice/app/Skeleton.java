@@ -11,6 +11,7 @@ import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -30,6 +31,12 @@ import javafx.scene.Node;
  * <p>Thread contract: started, used and closed on the JavaFX Application Thread.
  */
 final class Skeleton implements AutoCloseable {
+
+    /**
+     * Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
+     * The camera and the reroll pickup both read it.
+     */
+    private static final BooleanSupplier REDUCED_MOTION = () -> Platform.getPreferences().isReducedMotion();
 
     /**
      * The Tray every Roll is thrown into, drawn in and framed by: the default built-in, green felt in walnut
@@ -132,8 +139,7 @@ final class Skeleton implements AutoCloseable {
         // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
         scene.setTray(TRAY);
         // Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
-        TrayCamera camera = new TrayCamera(clock, Framing.of(TRAY.geometry()),
-                () -> Platform.getPreferences().isReducedMotion());
+        TrayCamera camera = new TrayCamera(clock, Framing.of(TRAY.geometry()), REDUCED_MOTION);
         scene.setCamera(camera.camera());
         FrameView view = new FrameView();
         RenderThread renderer;
@@ -178,6 +184,15 @@ final class Skeleton implements AutoCloseable {
      */
     RollController controller() {
         return session.controller();
+    }
+
+    /**
+     * Returns the app's Notice service, whose Notices the bell shows. Post to it from any thread.
+     *
+     * @return the Notices
+     */
+    Notices notices() {
+        return session.notices();
     }
 
     /**
@@ -226,9 +241,12 @@ final class Skeleton implements AutoCloseable {
         return camera;
     }
 
-    /** Draws every Die of the chain at a moment of its playback, interpolated, at the next frame. */
+    /**
+     * Draws every Die of the chain at a moment of its playback, interpolated, at the next frame: the reroll
+     * pickup's glow and lift included, as reduced motion has them now.
+     */
     private void draw(ChainPlayback chain, double seconds) {
-        scene.setDice(chain.diceAt(seconds));
+        scene.setDice(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()));
         // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
         scene.setCamera(camera.camera());
         renderer.requestFrame();
