@@ -49,6 +49,9 @@ import org.joml.Vector3dc;
  * swirl, speckle, pearl and metal. A swirled Dice Set's field is baked into a 3D texture the first time it is
  * drawn. Until ticket #43, a translucent Dice Set is drawn opaque.
  *
+ * <p>A Die about to be picked up for a Reroll Throw carries a {@linkplain Die#glow() glow}, drawn as a warm,
+ * rim-weighted highlight over its Dice Set (ticket #47, {@link Pickup}).
+ *
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
  *
@@ -69,18 +72,35 @@ public final class DiceScene implements FrameRenderer {
      * @param kind its Die Kind, which picks the mesh
      * @param position its centre in the world, in mm
      * @param orientation the rotation from its z-up model frame into the y-up world
+     * @param glow how strongly it shows the reroll highlight, 0 (none) to 1: a Die about to be picked up for a
+     *             Reroll Throw or Cocked Rethrow glows (#47, ADR-0010)
      */
-    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation, double glow) {
 
         /**
          * Checks the parts and copies them, so that the Die cannot change after it is handed over.
          *
          * @throws NullPointerException if any part is {@code null}
+         * @throws IllegalArgumentException if the glow is not within [0, 1]
          */
         public Die {
             Objects.requireNonNull(kind, "kind");
             position = new Vector3d(Objects.requireNonNull(position, "position"));
             orientation = new Quaterniond(Objects.requireNonNull(orientation, "orientation"));
+            if (!(glow >= 0 && glow <= 1)) {
+                throw new IllegalArgumentException("glow out of range: " + glow);
+            }
+        }
+
+        /**
+         * A Die that doesn't glow, as every Die is but the ones being picked up.
+         *
+         * @param kind its Die Kind
+         * @param position its centre in the world, in mm
+         * @param orientation the rotation from its z-up model frame into the y-up world
+         */
+        public Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+            this(kind, position, orientation, 0);
         }
 
         /**
@@ -153,6 +173,7 @@ public final class DiceScene implements FrameRenderer {
     private int fillUniform;
     private int fillColourUniform;
     private int mmPerUvUniform;
+    private int glowUniform;
 
     // The texture units the engraving's atlas and the swirl volume are bound to.
     private static final int MASK_UNIT = 0;
@@ -222,6 +243,7 @@ public final class DiceScene implements FrameRenderer {
         fillUniform = glGetUniformLocation(program, "uFillDirection");
         fillColourUniform = glGetUniformLocation(program, "uFillColour");
         mmPerUvUniform = glGetUniformLocation(program, "uMmPerUv");
+        glowUniform = glGetUniformLocation(program, "uGlow");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
         glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
@@ -277,6 +299,7 @@ public final class DiceScene implements FrameRenderer {
             GlAtlas atlas = atlases.get(die.kind());
             atlas.bind(MASK_UNIT, SLOPE_UNIT);
             glUniform1f(mmPerUvUniform, atlas.mmPerUv());
+            glUniform1f(glowUniform, (float) die.glow());
             meshes.get(die.kind()).draw();
         }
         glUseProgram(0);

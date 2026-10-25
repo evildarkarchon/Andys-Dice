@@ -46,6 +46,7 @@ uniform float uInkMetal;
 uniform float uInkRough;
 
 uniform vec3 uSeed;           // this Die's offset into the swirl and flake fields, mm, so no two Dice match
+uniform float uGlow;          // 0..1: this Die is about to be picked up for a Reroll Throw (#47)
 
 out vec4 fragColour;
 
@@ -168,6 +169,10 @@ void main() {
         colour += uPearl * s * (1.0 - ink) * tint
                 * (lobe * 0.08 * uKeyColour * e.keyOcclusion + env(Rv, 0.6) * 0.12 + 0.05 * fres);
     }
+
+    // The reroll glow (#47, the tray prototype's): warm and weighted to the rim, so the Player sees which Dice go
+    // back. Added last, over whatever the Dice Set drew.
+    if (uGlow > 0.0) colour += uGlow * vec3(1.0, 0.70, 0.25) * (0.06 + 1.2 * pow(1.0 - max(dot(Ng, V), 0.0), 3.0));
 
     // Opaque: the bridge hands JavaFX premultiplied pixels, and alpha 1 makes them plain ones.
     fragColour = vec4(toneMap(colour), 1.0);
