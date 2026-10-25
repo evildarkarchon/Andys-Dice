@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  assembly: the jpackage app-image and zip, app\legal\, and the Failsafe smoke tests that run the built
+  launcher (spec §5, ADR-0004, ADR-0005). The only module that knows about packaging, and the only one that
+  binds Failsafe.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.evildarkarchon.andysdice</groupId>
+        <artifactId>andysdice-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>andysdice-assembly</artifactId>
+    <name>Andy's Dice: assembly</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-app</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Configured (argLine with the native-access set) in the parent's pluginManagement. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
