@@ -97,7 +97,8 @@ by timing and by throw statistics in the
 - **Surface detail is mostly sub-pixel** at the whole-Tray view. The floors read through colour, mottling
   and sheen, and their grain shows when the camera eases in.
 - **Sound.** If v1's sound varies by surface, it follows the Tray's floor kind and wall material, which
-  the file already names.
+  the file already names. *Amended by ADR-0012:* it does. There is one sample category per floor kind
+  and per wall material, and the reroll pickup is silent.
 - **Testing (ADR-0005).** Pure-Java tests cover the Tray loader as they do the Dice Set loader. The
   invariant tests on real Jolt run in the default Tray. The gallery shows every built-in Tray under every
   Light Rig.

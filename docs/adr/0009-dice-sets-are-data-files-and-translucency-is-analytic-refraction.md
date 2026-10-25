@@ -80,4 +80,5 @@ the driving dev's GPU. This was decided by eye and by timing in the prototype fo
   player files and name clashes. A GL test on Mesa can check that a baked swirl volume matches the field
   it was baked from. The gallery shows every built-in Dice Set.
 - **Sound.** Metal Dice Sets exist, so if v1's sound distinguishes materials, the Dice Set file gains
-  a key for it, with resin as the default.
+  a key for it, with resin as the default. *Amended by ADR-0012:* it doesn't. Every Dice Set sounds
+  like resin, and no key is added.
