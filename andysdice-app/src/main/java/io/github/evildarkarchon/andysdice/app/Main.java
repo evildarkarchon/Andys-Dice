@@ -29,7 +29,8 @@ public final class Main {
     /**
      * Starts Andy's Dice.
      *
-     * @param args {@value SmokeTest#FLAG} runs the hidden smoke test (ADR-0005); anything else is ignored
+     * @param args {@value SmokeTest#FLAG} runs the hidden smoke test (ADR-0005), {@value Bench#FLAG} the hidden,
+     *     dev-only bench (ADR-0014); anything else is ignored
      */
     public static void main(String[] args) {
         // The process's own start, launcher included, so "launch to window" covers what the user waits for.
@@ -63,7 +64,7 @@ public final class Main {
         }
         LOG.log(Level.INFO, "Andy's Dice " + version() + " starting on Java " + Runtime.version() + ", "
                 + System.getProperty("os.name") + " " + System.getProperty("os.arch")
-                + (smoke ? ", in smoke-test mode" : ""));
+                + (smoke ? ", in smoke-test mode" : List.of(args).contains(Bench.FLAG) ? ", in bench mode" : ""));
         LOG.log(Level.INFO, "Data folder: " + data.folder() + " (" + data.reason() + ")");
         if (log != null) {
             LOG.log(Level.INFO, "Log file: " + log.file());

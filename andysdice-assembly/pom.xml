@@ -5,7 +5,8 @@
   binds Failsafe.
 
   On Windows (the windows-image profile, OS-activated) `mvn verify` builds
-      target\jpackage\AndysDice\             the app-image: AndysDice.exe, app\ (with app\natives\), runtime\
+      target\jpackage\AndysDice\             the app-image: AndysDice.exe, app\ (with app\natives\ and app\legal\),
+                                             runtime\
       target\AndysDice-<version>-windows-x64.zip
   and then runs the *ImageIT tests against them. Elsewhere only the module itself is built, so the Linux CI job
   still passes.
@@ -42,6 +43,7 @@
         <!-- jpackage copies its input folder into the image's app\ folder, which is $APPDIR. -->
         <image.appInput>${image.staging}/app</image.appInput>
         <image.natives>${image.appInput}/natives</image.natives>
+        <image.legal>${image.appInput}/legal</image.legal>
         <image.modules>${image.staging}/mods</image.modules>
         <image.destination>${project.build.directory}/jpackage</image.destination>
         <image.zipName>AndysDice-${project.version}-windows-x64</image.zipName>
@@ -158,6 +160,46 @@
                                     </resources>
                                 </configuration>
                             </execution>
+                            <!--
+                              app\legal\ (ADR-0004, spec §6): Andy's Dice's own MIT licence from the repository root,
+                              and the third-party notices in src/legal. Only the index is filtered, for the versions it
+                              names; the licence texts are copied byte for byte. jlink adds the JDK's and JavaFX's own
+                              notices to runtime\legal\, and the sounds' SOURCES.md comes from the sound jar (below).
+                              The LegalNoticesImageIT checks every bundled third-party module and native has a notice.
+                            -->
+                            <execution>
+                                <id>legal-notices</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${image.legal}</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/legal</directory>
+                                            <filtering>true</filtering>
+                                            <includes>
+                                                <include>THIRD-PARTY-NOTICES.md</include>
+                                            </includes>
+                                        </resource>
+                                        <resource>
+                                            <directory>src/legal</directory>
+                                            <filtering>false</filtering>
+                                            <excludes>
+                                                <exclude>THIRD-PARTY-NOTICES.md</exclude>
+                                            </excludes>
+                                        </resource>
+                                        <resource>
+                                            <directory>${project.basedir}/..</directory>
+                                            <filtering>false</filtering>
+                                            <includes>
+                                                <include>LICENSE</include>
+                                            </includes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
 
@@ -230,6 +272,31 @@
                                     </artifactItems>
                                     <includes>**/*.dll</includes>
                                     <outputDirectory>${image.natives}</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <!--
+                              The sample bank's SOURCES.md, taken from the sound jar the image links, so the credits
+                              that ship are those of the slices that ship (spec §6; #59 keeps it beside the slices).
+                            -->
+                            <execution>
+                                <id>sound-sources</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>unpack</goal>
+                                </goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>io.github.evildarkarchon.andysdice</groupId>
+                                            <artifactId>andysdice-sound</artifactId>
+                                            <version>${project.version}</version>
+                                            <includes>**/sample-bank/SOURCES.md</includes>
+                                            <fileMappers>
+                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                            </fileMappers>
+                                        </artifactItem>
+                                    </artifactItems>
+                                    <outputDirectory>${image.legal}</outputDirectory>
                                 </configuration>
                             </execution>
                             <!-- Our modules and the third-party class jars, for jlink's module path. JavaFX's Maven
@@ -339,6 +406,8 @@
                                         <!-- Where the jolt-jni native jars are, to check which flavour the image holds. -->
                                         <andysdice.image.mavenRepo>${settings.localRepository}</andysdice.image.mavenRepo>
                                         <andysdice.image.joltVersion>${jolt-jni.version}</andysdice.image.joltVersion>
+                                        <!-- The checkout, so app\legal\ can be checked against the files it copies. -->
+                                        <andysdice.image.repoRoot>${project.basedir}/..</andysdice.image.repoRoot>
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>

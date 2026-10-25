@@ -107,6 +107,17 @@ public final class FrameView extends Region {
         return presenter.framesPresented();
     }
 
+    /**
+     * Sets who is told each time a frame is put on screen, for timing: {@code --bench} times Enter to first motion
+     * up to the first frame of the Throw shown here (ADR-0014).
+     *
+     * @param listener run on the JavaFX thread right after each frame is shown and counted in
+     *     {@link #framesPresented()}; it must not block. {@code null} for none. It replaces any earlier listener.
+     */
+    public void setOnFramePresented(Runnable listener) {
+        presenter.setOnPresented(listener);
+    }
+
     @Override
     protected void layoutChildren() {
         double w = getWidth();

@@ -10,6 +10,9 @@
   Dev-only gallery (ADR-0005, ticket #40): a still of every Die Kind in fixed poses, in every built-in Dice Set
   (#42), written as PNGs to andysdice-render/target/gallery:
       mvn -pl andysdice-render -am process-classes -Pgallery
+
+  Dev-only GPU bench (ADR-0014, ticket #61): the most expensive scene's GPU time at 1080p per Quality Preset:
+      mvn -pl andysdice-render -am process-classes -Pgpu-bench
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -174,6 +177,42 @@
                                         <argument>--module</argument>
                                         <argument>io.github.evildarkarchon.andysdice.render/io.github.evildarkarchon.andysdice.render.Gallery</argument>
                                         <argument>${project.build.directory}/gallery</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The GPU half of the dev-only bench (ADR-0014, ticket #61), alone, with a render thread of its own: the
+             most expensive scene's GPU time at 1080p at each Quality Preset, exiting non-zero if Medium misses its
+             0.5 ms budget. The app's -Pbench also times Enter to first motion; this profile has another name so that
+             the app's -am build never runs it too. Same shared option sets as the gallery. -->
+        <profile>
+            <id>gpu-bench</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>gpu-bench</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions}</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>io.github.evildarkarchon.andysdice.render/io.github.evildarkarchon.andysdice.render.GpuBench</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
