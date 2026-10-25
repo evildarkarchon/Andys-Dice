@@ -78,7 +78,7 @@ class RollEvaluatorTest {
 
     @Test
     void onlyTheLastValueOfAFaceValueChainCounts() {
-        RollResult result = evaluate("2d6", chain(1, 1, 5), chain(4));
+        RollResult result = evaluate("2d6rr1", chain(1, 1, 5), chain(4));
 
         assertThat(result.total()).isEqualTo(9);
         DieResult rerolled = result.breakdown().terms().getFirst().dice().getFirst();
@@ -125,11 +125,11 @@ class RollEvaluatorTest {
      */
     @Test
     void keepsCompareLastValuesAndARerolledDieKeepsItsPosition() {
-        TermResult rerolledLow = evaluate("2d6kh1", chain(6, 2), chain(3)).breakdown().terms().getFirst();
+        TermResult rerolledLow = evaluate("2d6ro>5kh1", chain(6, 2), chain(3)).breakdown().terms().getFirst();
         assertThat(rerolledLow.subtotal()).isEqualTo(3);
         assertThat(rerolledLow.dice()).extracting(DieResult::kept).containsExactly(false, true);
 
-        TermResult tie = evaluate("2d6kh1", chain(1, 4), chain(4)).breakdown().terms().getFirst();
+        TermResult tie = evaluate("2d6ro1kh1", chain(1, 4), chain(4)).breakdown().terms().getFirst();
         assertThat(tie.dice()).extracting(DieResult::kept).containsExactly(true, false);
     }
 
@@ -169,6 +169,78 @@ class RollEvaluatorTest {
     @Test
     void anAdvantageRollNeedsTwoChainsForItsD20() {
         assertThatIllegalArgumentException().isThrownBy(() -> evaluate("1d20 adv", chain(11)));
+    }
+
+    /**
+     * Rerolls are settled before keeps: the keep rule compares each chain's last value, and a Rerolled Die is
+     * marked rerolled whether or not it is kept.
+     */
+    @Test
+    void rerollsAreSettledBeforeKeeps() {
+        RollResult result = evaluate("4d6rr1kh3+2", chain(1, 1, 5), chain(6), chain(2), chain(1, 3));
+
+        assertThat(result.total()).isEqualTo(16);
+        TermResult group = result.breakdown().terms().getFirst();
+        assertThat(group.subtotal()).isEqualTo(14);
+        assertThat(group.dice()).extracting(DieResult::value).containsExactly(5, 6, 2, 3);
+        assertThat(group.dice()).extracting(DieResult::kept).containsExactly(true, true, false, true);
+        assertThat(group.dice()).extracting(DieResult::rerolled).containsExactly(true, false, false, true);
+        assertThat(group.dice().getFirst().chain().values()).containsExactly(1, 1, 5);
+    }
+
+    /** {@code ro} rerolls once and the new value stands, even if it matches the condition again. */
+    @Test
+    void rerollOnceKeepsTheSecondValueWhateverItIs() {
+        RollResult result = evaluate("2d6ro<=2", chain(1, 2), chain(4));
+
+        assertThat(result.total()).isEqualTo(6);
+        assertThat(result.breakdown().terms().getFirst().dice()).extracting(DieResult::rerolled)
+                .containsExactly(true, false);
+    }
+
+    /** A Percentile Roll's reroll tests its 1-100 value. */
+    @Test
+    void aPercentileRerollTestsTheValueFrom1To100() {
+        assertThat(evaluate("d%rr<=50", chain(37, 50, 81)).total()).isEqualTo(81);
+        assertThatIllegalArgumentException().isThrownBy(() -> evaluate("d%rr<=50", chain(37, 51, 81)));
+    }
+
+    /** {@code 1d20ro1 adv} evaluates exactly like {@code 2d20ro1kh1}: the reroll applies to both d20s. */
+    @Test
+    void aRerollOnAnAdvantageD20CarriesOver() {
+        FaceValueChain[] chains = {chain(1, 7), chain(12)};
+        RollResult advantage = evaluate("1d20ro1 adv", chains);
+        RollResult written = evaluate("2d20ro1kh1", chains);
+
+        assertThat(advantage.total()).isEqualTo(12).isEqualTo(written.total());
+        assertThat(advantage.breakdown().terms().getFirst().dice())
+                .isEqualTo(written.breakdown().terms().getFirst().dice());
+        assertThat(evaluate("1d20ro1 dis", chain(12), chain(1, 7)).total()).isEqualTo(7);
+        assertThatIllegalArgumentException().isThrownBy(() -> evaluate("1d20ro1 adv", chain(12), chain(1)));
+    }
+
+    /**
+     * The chains must follow the group's reroll rule: a Die is Rerolled exactly while the rule says it rerolls
+     * again, so a chain that stops early, goes on too long or rerolls without a reroll rule is refused.
+     */
+    @Test
+    void rejectsAChainThatDoesNotFollowTheRerollRule() {
+        assertThatIllegalArgumentException().as("ro: a matching value not rerolled")
+                .isThrownBy(() -> evaluate("1d6ro1", chain(1)));
+        assertThatIllegalArgumentException().as("ro: a value rerolled that didn't match")
+                .isThrownBy(() -> evaluate("1d6ro1", chain(2, 1)));
+        assertThatIllegalArgumentException().as("ro: rerolled twice")
+                .isThrownBy(() -> evaluate("1d6ro1", chain(1, 1, 4)));
+        assertThatIllegalArgumentException().as("rr: stopped while it still matches")
+                .isThrownBy(() -> evaluate("1d6rr<3", chain(1, 2)));
+        assertThatIllegalArgumentException().as("rr: rerolled past a value that didn't match")
+                .isThrownBy(() -> evaluate("1d6rr<3", chain(1, 4, 5)));
+        assertThatIllegalArgumentException().as("no reroll rule")
+                .isThrownBy(() -> evaluate("4d6kh3", chain(1, 5), chain(2), chain(3), chain(4)));
+
+        assertThat(evaluate("1d6ro1", chain(1, 1)).total()).isEqualTo(1);
+        assertThat(evaluate("1d6ro1", chain(2)).total()).isEqualTo(2);
+        assertThat(evaluate("1d6rr<3", chain(2, 1, 1, 6)).total()).isEqualTo(6);
     }
 
     @Test
