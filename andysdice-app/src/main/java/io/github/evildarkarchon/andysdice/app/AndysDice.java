@@ -5,6 +5,7 @@ import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
 import java.lang.System.Logger.Level;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -99,6 +100,9 @@ public final class AndysDice extends Application {
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
+        // time zone as it was at start-up.
+        HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
         // The Player Files are read once, here (spec §3.3, §3.4): each one skipped is a Notice behind the bell, and
         // the Tray is drawn in the stored look before the window opens.
         skeleton.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);

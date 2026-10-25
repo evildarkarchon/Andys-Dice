@@ -13,7 +13,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Labeled;
 import javafx.scene.input.KeyCode;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,21 +26,15 @@ class LookTabTest extends HeadlessUiTest {
     private static final String DICE_SET = "format = 1\nname = %s\nbase = #405060\n";
     private static final String TRAY = "format = 1\nname = %s\noutline = oval\n";
 
-    private Persistence persistence;
     private SettingsStore settings;
     private LookTab look;
 
-    @AfterEach
-    void closePersistence() {
-        if (persistence != null) {
-            persistence.close();
-        }
-    }
-
-    /** Reads the Player Files and the settings and fills the Look tab, as start-up does; then shows the tab. */
+    /**
+     * Reads the Player Files and the settings (over the base class's writer) and fills the Look tab, as start-up
+     * does; then shows the tab.
+     */
     private void attachLook() throws Exception {
         onFx(() -> {
-            persistence = new Persistence(dataFolder, session.notices()::post);
             settings = new SettingsStore(persistence);
             look = session.attachLook(LookCatalogue.load(dataFolder, session.notices()::post), settings);
             ui().tabs().getSelectionModel().select(ui().lookTab());
