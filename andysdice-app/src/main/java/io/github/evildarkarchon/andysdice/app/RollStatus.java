@@ -14,11 +14,11 @@ sealed interface RollStatus {
     /** The text the result strip shows for this status. */
     String text();
 
-    /** Nothing has been rolled yet: the first-run Tray is empty. */
+    /** Nothing has been rolled yet: the first-run Tray is empty (spec §3.2 "First run"). */
     record Ready() implements RollStatus {
         @Override
         public String text() {
-            return "Type a Roll Expression and press Enter.";
+            return "Type a Roll Expression, or click a die above.";
         }
     }
 
