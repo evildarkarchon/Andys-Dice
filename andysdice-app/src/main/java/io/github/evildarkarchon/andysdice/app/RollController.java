@@ -8,6 +8,9 @@ import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowPlanner;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
+import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
+import io.github.evildarkarchon.andysdice.core.simulation.TrayMaterials;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -72,6 +75,7 @@ final class RollController {
     private final Executor fxThread;
     private final FaceValueGenerator faceValues;
     private final RandomGenerator releases;
+    private final Tray throwInto;
     private final TrayView tray;
 
     private Consumer<RollStatus> onStatusChanged = status -> {};
@@ -87,15 +91,18 @@ final class RollController {
      * @param fxThread runs the pre-simulation's result on this controller's thread ({@code Platform::runLater})
      * @param faceValues the Face Value generator (ADR-0001); used only on the physics worker, one Roll at a time
      * @param releases the Release generator (ADR-0003); used only on the physics worker, one Roll at a time
+     * @param throwInto the chosen Tray (ADR-0010), whose shape and physics materials every Throw is simulated in;
+     *     the view draws the same Tray
      * @param tray where the Roll is drawn
      */
     RollController(PlaybackClock clock, PhysicsJobs physics, Executor fxThread, FaceValueGenerator faceValues,
-            RandomGenerator releases, TrayView tray) {
+            RandomGenerator releases, Tray throwInto, TrayView tray) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.physics = Objects.requireNonNull(physics, "physics");
         this.fxThread = Objects.requireNonNull(fxThread, "fxThread");
         this.faceValues = Objects.requireNonNull(faceValues, "faceValues");
         this.releases = Objects.requireNonNull(releases, "releases");
+        this.throwInto = Objects.requireNonNull(throwInto, "throwInto");
         this.tray = Objects.requireNonNull(tray, "tray");
         clock.addListener(c -> advanced());
     }
@@ -152,8 +159,11 @@ final class RollController {
         CompletableFuture<RollPlan> planned;
         try {
             // Choose and pre-simulate the whole chain on the worker before anything plays (ADR-0001, ADR-0014).
-            planned = physics.submit(simulator -> new ThrowPlanner(simulator, SkeletonTray.GEOMETRY,
-                    SkeletonTray.MATERIALS).plan(expression, faceValues, releases));
+            // An Escaped Die's Attempt is never kept (ADR-0003), so only Attempts inside the walls ever play.
+            TrayGeometry geometry = throwInto.geometry();
+            TrayMaterials materials = throwInto.materials();
+            planned = physics.submit(simulator -> new ThrowPlanner(simulator, geometry, materials)
+                    .plan(expression, faceValues, releases));
         } catch (RuntimeException e) {
             // A worker that has been closed rejects the job outright rather than through the future.
             planned = CompletableFuture.failedFuture(e);

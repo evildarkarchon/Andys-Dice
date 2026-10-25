@@ -2,6 +2,8 @@ package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.physics.PhysicsWorker;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
@@ -27,6 +29,12 @@ final class Skeleton implements AutoCloseable {
     /** The fixed camera (#46 adds the settle-in camera): over the near end, pitched 55° down at the Tray's middle. */
     private static final DiceScene.Camera CAMERA = camera(700, 55);
 
+    /**
+     * The Tray every Roll is thrown into and drawn in: the default built-in, green felt in walnut (ADR-0010), until
+     * the Look tab (#57) lets the Player choose and remembers the choice.
+     */
+    static final Tray TRAY = BuiltInTrays.defaultTray();
+
     private final PhysicsWorker worker;
     private final RenderThread renderer;
     private final DiceScene scene;
@@ -44,7 +52,7 @@ final class Skeleton implements AutoCloseable {
         this.view = view;
         this.generators = generators;
         this.controller = new RollController(clock, worker::submit, Platform::runLater,
-                new FaceValueGenerator(generators.faceValues()), generators.releases(),
+                new FaceValueGenerator(generators.faceValues()), generators.releases(), TRAY,
                 new RollController.TrayView() {
                     @Override
                     public void show(ChainPlayback chain) {
@@ -87,6 +95,8 @@ final class Skeleton implements AutoCloseable {
         PhysicsWorker worker = PhysicsWorker.start();
         DiceScene scene = new DiceScene();
         scene.setCamera(CAMERA);
+        // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
+        scene.setTray(TRAY);
         FrameView view = new FrameView();
         RenderThread renderer;
         try {
