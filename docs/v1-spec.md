@@ -12,9 +12,8 @@ decisions behind it. It doesn't restate them.
   comments aren't a hand-off artifact.
 
 The map that produced this is
-[Wayfinder: Andy's Dice v1 spec](https://github.com/evildarkarchon/Andys-Dice/issues/1). One decision is still
-open: [What are the Roll UI's remaining behaviours?](https://github.com/evildarkarchon/Andys-Dice/issues/24).
-It extends [§3.2](#32-the-roll-ui) and changes nothing else.
+[Wayfinder: Andy's Dice v1 spec](https://github.com/evildarkarchon/Andys-Dice/issues/1). Every decision on it
+is closed.
 
 ## 1. What v1 is
 
@@ -66,8 +65,9 @@ caps and every error with its span are in [the grammar reference](roll-expressio
      ([ADR-0003](adr/0003-jolt-pre-simulates-throws-behind-engine-neutral-recording.md),
      [ADR-0013](adr/0013-throws-reach-a-flat-rest-by-release-friction-and-nudges.md)).
    - If all 24 fail, the best Attempt is kept and only its Cocked Dice are thrown again in a visible Cocked
-     Rethrow, at most 3 times. Past that, or if no Attempt came to rest at all, the Roll fails. A failed Roll
-     never shows a fudged result and never enters the Roll History.
+     Rethrow, at most 3 times. Past that, or if no Attempt came to rest at all, the Roll fails. A Failed Roll
+     never shows a fudged result and never enters the Roll History ([§3.2](#32-the-roll-ui) shows how it
+     appears).
    - Each Die's numbering is turned by its Numbering Rotation so the chosen Numeral is the one that landed up.
 4. **Play back.** The Recordings play on JavaFX's 60 Hz pulse, with sound mixed live from their contacts. A
    Die being rerolled glows, then lifts out along an arc, and the other Dice stay where they lie as Frozen Dice
@@ -86,12 +86,17 @@ Layout C, "Notebook sidebar", from the
 (screenshots `C-*.png`), as resolved in
 [How should the v1 Roll UI look and behave?](https://github.com/evildarkarchon/Andys-Dice/issues/19#issuecomment-6393081238).
 Its verification is [ADR-0011](adr/0011-ui-verified-on-javafx-headless-platform-without-testfx.md). The
-window title is "Andy's Dice".
+window title is "Andy's Dice". The remaining behaviours (failed Rolls, runtime failures, keyboard,
+accessibility, window sizes, first run, locale, the Cocked Rethrow and glyphs) were settled in
+[What are the Roll UI's remaining behaviours?](https://github.com/evildarkarchon/Andys-Dice/issues/24).
 
-> **Pending:** the remaining behaviours (the Shift conflict below, failed Rolls, runtime failures, keyboard,
-> accessibility, first-run sizes, locale, Cocked Rethrow presentation, glyph font) are decided in
-> [What are the Roll UI's remaining behaviours?](https://github.com/evildarkarchon/Andys-Dice/issues/24) and
-> recorded here.
+**Window**
+- **Default size:** 1280 × 800, shrunk to 90% of the primary screen's usable area if it doesn't fit, and
+  centred. Saved bounds and the maximised flag then take over ([§3.6](#36-persistence)).
+- **Minimum size:** 960 × 600 (the 340 px sidebar plus a Tray at least 620 px wide).
+- **Display scaling:** Windows display scaling is honoured. Both sizes are logical pixels. The render target
+  follows physical pixels, under the render-target cap ([§4](#4-caps-targets-and-tunables)), and a move
+  between monitors with different scales is handled.
 
 **Layout**
 - **Left sidebar:** a header (the app name and the Notice bell) above four tabs: **Saved**, **History**
@@ -106,7 +111,8 @@ window title is "Andy's Dice".
   - the total, large;
   - one block per term exactly as written (`4d6rr1kh3`, `1d20 adv`), with its subtotal and its Dice as chips;
   - Modifiers as signed numbers;
-  - on the right, the expression, the Saved Roll's name if any, the time and the number of Throws.
+  - on the right, the expression, the Saved Roll's name if any, the time and the number of Throws. Every
+    Throw counts, Cocked Rethrows included.
 - **Breakdown marks:**
   - A rerolled Die stacks its earlier Face Values as faded chips behind the final one, with a ↻ badge (↻×N
     for several rounds).
@@ -124,12 +130,31 @@ window title is "Andy's Dice".
   - a red popup under the span's start shows the one message;
   - typing dismisses the popup;
   - nothing is rolled or queued.
+- **After a Roll is accepted**, the box keeps its expression with all of it selected, so typing replaces it
+  and Enter rolls it again. A die-strip button still appends, even to a selected expression. A click on a
+  Saved Roll or a Roll History entry replaces the box's contents.
+
+**Failed Roll**
+- A Failed Roll is known before anything moves, because the whole chain is pre-simulated
+  ([§3.1](#31-rolling)). Nothing moves, and the Tray keeps the previous Roll's Dice.
+- The result strip shows a message where the total would go:
+  - past the Cocked Rethrows, or with no Attempt at rest: "The Dice wouldn't settle. Nothing was rolled.
+    Press Enter to try again.";
+  - past the 100-round reroll backstop: "Too many rerolls. Nothing was rolled."
+- It is neither a Notice nor the parse-error popup. The box keeps the expression, the failure is logged, and
+  nothing joins the Roll History. A Queued Roll that fails shows the same message.
 
 **Fast-forward**
 - There is no skip: every Die is always seen landing.
-- Holding **Shift** plays the whole chain at ×4: Throws, the reroll pickup and camera easing. Releasing Shift
-  returns to normal speed.
-- *Conflict, pending #24:* typing `+`, `%`, `<`, `>` or capitals in the always-editable box also holds Shift.
+- Holding **Shift alone** plays the whole chain at ×4: Throws, the reroll pickup and camera easing. Releasing
+  Shift returns to normal speed.
+- Fast-forward starts only once Shift has been held for about 0.2 s (a tunable). If any other key is pressed
+  during the hold, that hold never fast-forwards. Typing `+`, `%`, `<`, `>` or capitals in the box therefore
+  never speeds the Dice up.
+
+**Cocked Rethrow**
+- It looks exactly like a Reroll Throw: the camera eases out, the Cocked Dice glow and lift, and the camera
+  settles in again. It adds nothing to the Breakdown; the number of Throws is its only trace.
 
 **Camera**
 - **Settle-in:** the camera frames the whole Tray from a fixed 3/4 view while Dice tumble, then eases in on the
@@ -150,6 +175,7 @@ window title is "Andy's Dice".
   parse is refused with its message, and an expression error's span is selected.
 - 🗑 deletes after a modal confirmation; Cancel is the default.
 - A Saved Roll that no longer parses shows ⚠ and its message, won't roll, and stays editable.
+- **Empty:** "No Saved Rolls yet. Use + New Saved Roll, or right-click a History entry."
 
 **History tab**
 - **Rows:** newest first, grouped under day headers ("Today", "Yesterday", "Wed 21 Oct"). Each row shows:
@@ -162,6 +188,10 @@ window title is "Andy's Dice".
   - A right-click offers **Roll again**, **Copy into the box** and **Save as a Saved Roll…**.
 - **The foot** shows "n of 100 kept" and **Clear all…**, behind a modal confirmation (Cancel is the default).
 - Single entries can't be deleted. Only the latest Roll's Breakdown is shown; a past Roll shows its total.
+- **Empty:** "No Rolls yet." The foot reads "0 of 100 kept", and **Clear all…** is disabled.
+- **Dates and times** are fixed English, whatever the system locale, as is all UI text. Day headers read
+  "Today", "Yesterday", then "Wed 21 Oct", adding the year when it isn't the current one ("Wed 21 Oct 2025").
+  Times are 24-hour `HH:mm` in the system time zone. Totals have no grouping separators.
 
 **Look tab**
 - **Dice Set:** a swatch grid of the 14 built-ins in order ([Appendix B](#appendix-b-built-in-dice-sets)),
@@ -186,6 +216,77 @@ window title is "Andy's Dice".
   - a slow GPU, suggesting a lower Quality Preset. The preset is never changed automatically.
 - **Destructive actions** (deleting a Saved Roll, clearing the history) use modal confirmations with Cancel
   as the default.
+
+**First run**
+- The Tray is empty, and the result strip reads "Type a Roll Expression, or click a die above."
+- The box is empty, with the prompt text `e.g. 1d20+5`, and has focus. The History tab is selected.
+- The exact wording of every message in this section is a tunable.
+
+**Runtime failure**
+- v1 is crash-only. An uncaught exception on any of the app's threads, a dead render thread or a lost GL
+  context (where the driver reports one) ends the session. Nothing is recovered in-process: ADR-0002 allows one
+  GL context per app run.
+- The Tray area is replaced by a panel drawn by JavaFX alone: "Andy's Dice hit a problem and has to close",
+  the one-line cause, the log file's path, **Copy details** and **Quit**. The sidebar is disabled.
+- The same panel is the fail-fast at start-up when a GL 3.3 core context can't be created
+  ([ADR-0002](adr/0002-embedded-gl-renderer-public-api-bridge.md)), naming the requirement and the detected
+  renderer and driver.
+- Nothing persisted is lost: writes are atomic and only finished Rolls join the Roll History.
+- Sound failures stay silent ([§3.5](#35-sound)), and persistence failures stay Notices.
+
+**Keyboard**
+- **Esc** does the first of these that applies:
+  1. closes an open popup or dialog (a dialog's Esc is Cancel);
+  2. cancels an inline ✎ edit;
+  3. cancels the Queued Roll.
+
+  Otherwise it does nothing. It never skips.
+- **Focus order:** the box, the die strip, the Roll button, the sidebar's tabs, the open tab's content, the
+  bell. The box has focus at start and after every Roll.
+- **Shortcuts:** there are no single-letter shortcuts, because they would collide with typing.
+  - Ctrl+1 to Ctrl+4 pick a tab.
+  - Ctrl+L focuses the box and selects its contents.
+  - Ctrl+S opens **+ New Saved Roll**.
+  - Ctrl+R moves focus to the result strip.
+- **Lists (Saved, History):**
+  - ↑/↓ move the selection.
+  - Space copies the selected entry into the box (a click), and Enter rolls it (a double-click).
+  - The Menu key or Shift+F10 opens the History context menu.
+  - On a Saved Roll, F2 starts ✎ editing, Alt+↑/↓ reorder, and Delete asks to delete it.
+- **Look tab:** the swatch grids and lists move with the arrow keys, and Space or Enter picks.
+- **The bell** opens with Space or Enter.
+- **Keyboard-only floor:** every action reachable by mouse is reachable by keyboard, except orbiting and
+  zooming the camera. The automatic camera is complete without them.
+
+**Accessibility**
+- **Contrast:** WCAG 2.2 AA on the one fixed dark theme:
+  - 4.5:1 for text, the faded chips' Face Values included;
+  - 3:1 for icons, focus rings, the ↻ badge and the slash.
+
+  Colour is never the only signal. A pure-Java test computes the ratios from the palette constants. The
+  rendered Tray and Dice are outside it. v1 ignores the system's light/dark scheme and has no Windows
+  high-contrast mode.
+- **Reduced motion** follows the system, through JavaFX's `Platform.Preferences.isReducedMotion()`, with no
+  setting of its own. When it is on:
+  - the camera cuts instead of easing (settle-in, before a Reroll Throw or Cocked Rethrow, back from orbit);
+  - the reroll glow is a steady highlight rather than a pulse;
+  - the reroll lift keeps its arc but plays at ×2;
+  - UI transitions are instant.
+
+  The Dice still tumble: they are the content, and there is still no skip.
+- **Screen readers:** JavaFX's accessibility bridge (UI Automation and Narrator on Windows).
+  - Every focusable control has an accessible name, the icon-only ones included ("Delete Saved Roll
+    Fireball").
+  - Each Saved Roll and Roll History row reads as one sentence.
+  - The result strip is focusable. After a reveal, its accessible text is a spoken summary: "Total 17. 4d6
+    reroll 1s keep highest 3: 6, 5, 6, 1 not kept. Plus 2."
+  - No announcement is pushed at the reveal, because JavaFX has no public live-region API.
+  - An ADR-0011 test checks that every focusable node has non-empty accessible text.
+
+**Glyphs**
+- Every icon (↻, ✎, 🗑, ⚠, the bell, ↑/↓ and the not-kept slash) is drawn in code as a JavaFX `SVGPath` from
+  path data in the source. None depends on a system font, so emoji rendering never matters.
+- UI text uses JavaFX's default system font (Segoe UI on Windows).
 
 ### 3.3 Dice and Dice Sets
 
@@ -241,7 +342,7 @@ chosen once at start-up, and an app-owned system property overrides it for dev r
 - **Size:** the last 100 Rolls, and it survives a restart.
 - **Entries:** each stores a UTC instant, the expression as written, the Saved Roll's name at the time (or
   empty), and each Die's Face Value Chain in Dice Group order. The Roll Result is recomputed from these.
-- **When:** a Roll joins the Roll History when its Roll Result is revealed. A failed Roll, or one cut short by
+- **When:** a Roll joins the Roll History when its Roll Result is revealed. A Failed Roll, or one cut short by
   closing the app, never joins it.
 - **Actions:** Roll again (which appends a new Roll), Copy into the box, Save as a Saved Roll, and Clear all.
 - **No re-watching.** Only the latest Roll's Recordings stay in memory, and the Tray starts empty after a
@@ -308,6 +409,10 @@ exits.
 | Roll History / Saved Rolls | 100 / 100 | contract | ADR-0007 |
 | Saved Roll name | 1–40 characters | contract | #14 |
 | Queue beat, Fast-forward speed | ≈ 0.9 s, ×4 | tunable | #19 |
+| Fast-forward hold before it starts | ≈ 0.2 s of Shift alone | tunable | #24 |
+| Window default / minimum (logical px) | 1280 × 800 (≤ 90% of the screen) / 960 × 600 | tunable | #24 |
+| Reduced-motion reroll lift | ×2 | tunable | #24 |
+| UI contrast | WCAG 2.2 AA (4.5:1 text, 3:1 graphics) | contract (tested) | #24 |
 | Reroll pickup | ≈ 0.6 s glow + 0.7 s lift | tunable | ADR-0010 |
 | Footprint, wall height | 300 × 200 mm, ≥ 30 mm | contract | ADR-0010 |
 | Numeral depth, edge radius | 0.4 mm, 0.75 mm | contract | ADR-0008 |
@@ -408,7 +513,7 @@ is vertical and verifiable on its own under ADR-0005.
 | S5 | **Opaque Dice look** (`render`): rounded meshes; the numeral atlas and parallax engraving; the uber-shader for solid, swirl, speckle, pearl and metal; `.diceset` loading with the opaque built-ins and Player Dice Sets; the gallery | S2, S3 | mesh and atlas pure tests, `gl` shader tests, gallery |
 | S6 | **Translucent Dice Sets:** analytic refraction, the volume march, the opaque-pass copy, the remaining built-ins | S5 | `gl` tests, gallery |
 | S7 | **Trays, Light Rigs and camera:** `.tray` files and the 3 built-ins; the escape volume; PCSS; analytic reflections; the 3 rigs; the settle-in camera, orbit and zoom; the reroll glow and lift | S4, S5 | pure and `gl` tests, soak per Tray |
-| S8 | **Roll UI:** the Layout C notebook; the die strip; the result strip and Breakdown chips; the Queued Roll; Fast-forward; the error popup; the bell; the headless UI test base | S1, S3, and [#24](https://github.com/evildarkarchon/Andys-Dice/issues/24) | headless UI tests |
+| S8 | **Roll UI:** the Layout C notebook; the die strip; the result strip and Breakdown chips; the Queued Roll; Fast-forward with its Shift-alone hold; the error popup and the Failed Roll message; the bell; the runtime-failure panel; keyboard, focus order and shortcuts; contrast, reduced motion and accessible text; the code-drawn icons; the headless UI test base | S1, S3 | headless UI tests, the palette contrast test |
 | S9 | **Persistence:** the three files, the atomic writer thread, the lock file, the data-folder fallback; the History and Saved tabs wired up | S8 | pure round-trip and UI tests |
 | S10 | **Sound** (`sound`): the mixer, the CC0 sample bank, the sink seam; rendering against the playback clock, Fast-forward included; mute and volume | S4 | pure mixer tests on synthetic events |
 | S11 | **Performance and release:** the Low, Medium and High presets; `--bench` with timer queries; the slow-GPU Notice; the release checklist in `docs/`; the tag-triggered release workflow; `app\legal\` | all | `--bench`, a release dry run |

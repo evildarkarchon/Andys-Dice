@@ -111,6 +111,10 @@ _Avoid_: Drop lowest (use the keep form)
 One rolling of a Roll Expression: its Throws and the Roll Result they produce.
 _Avoid_: Roll event, history entry
 
+**Failed Roll**:
+A Roll that ends without a Roll Result, because its Dice could not be brought to rest or it needed too many Rerolls. Nothing moves, and it never joins the Roll History.
+_Avoid_: Error roll, aborted roll
+
 **Queued Roll**:
 A Roll the Player asks for while Dice are still moving, which starts shortly after the current Roll Result is revealed. There is at most one.
 _Avoid_: Pending roll, next roll
