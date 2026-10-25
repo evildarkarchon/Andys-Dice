@@ -4,6 +4,9 @@ import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
 import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.Solid;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
+import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
 import java.awt.image.RenderedImage;
@@ -28,7 +31,8 @@ import org.joml.Vector3dc;
  * directory of PNGs, so the look can be judged by eye. Nothing asserts on its pixels; later tickets add their
  * axes (Numerals #41, Dice Sets #42, Trays #44) to the same stills. The stills show the engraved Numerals (#41),
  * and a sheet per Die Kind shows every one of its Numerals in its face's frame. Every still is taken in every
- * built-in Dice Set (#42), a directory per Dice Set.
+ * built-in Dice Set (#42), a directory per Dice Set. Every built-in Tray is also shown under every Light Rig (#45,
+ * ADR-0010), with the 7-die set resting in it.
  *
  * <p>It is behind a flag, never part of a normal run: {@value #FLAG} on the app's command line (once the app
  * routes it here), or in dev {@code mvn -pl andysdice-render -am process-classes -Pgallery}, which writes to
@@ -59,6 +63,9 @@ public final class Gallery {
     // Room round the Die's bounding sphere.
     private static final double MARGIN = 1.1;
     private static final long STILL_TIMEOUT_SECONDS = 30;
+    // The Tray-and-Light-Rig stills: their directory, and the gap between the resting Dice's centres.
+    private static final String LIGHT_RIG_DIRECTORY = "light-rigs";
+    private static final double REST_SPACING_MM = 34;
 
     /** The fixed poses each Die Kind is shown in. */
     public enum Pose {
@@ -91,13 +98,16 @@ public final class Gallery {
 
     /**
      * Renders every still into {@code directory}: one sub-directory per built-in Dice Set, named by its identity,
-     * holding {@code <die kind>-<pose>.png} (for example {@code 08-steel/d20-edge-on.png}); then, for each Die Kind,
-     * a sheet of all its Numerals as its atlas lays them out, {@code <die kind>-numerals.png}. Replaces any of the
-     * same name. Starts and closes the JVM's one render thread.
+     * holding {@code <die kind>-<pose>.png} (for example {@code 08-steel/d20-edge-on.png}); then, in
+     * {@code light-rigs/}, each built-in Tray under each Light Rig, {@code <tray identity>-<rig>.png} (for example
+     * {@code light-rigs/01-green-felt-window.png}); then, for each Die Kind, a sheet of all its Numerals as its atlas
+     * lays them out, {@code <die kind>-numerals.png}. Replaces any of the same name. Starts and closes the JVM's one
+     * render thread.
      *
      * @param directory where to write; created if missing
      * @return the files written: the stills Dice Set by Dice Set in catalogue order, each Die Kind in enum order
-     *     and its poses in enum order; then the sheets, Die Kind by Die Kind
+     *     and its poses in enum order; then the Trays in built-in order, each under the rigs in enum order; then the
+     *     sheets, Die Kind by Die Kind
      * @throws IOException if the directory or a still can't be written
      * @throws GlUnavailableException if there is no OpenGL 3.3 core context
      * @throws IllegalStateException if a render thread was already started in this JVM, or a still timed out
@@ -124,6 +134,24 @@ public final class Gallery {
                         png(still.toImage(), file);
                         written.add(file);
                     }
+                }
+            }
+            // After the Dice Sets: once the scene has a Tray it always draws one.
+            Path rigDirectory = Files.createDirectories(directory.resolve(LIGHT_RIG_DIRECTORY));
+            for (Tray tray : BuiltInTrays.all()) {
+                DiceScene.Camera camera = Framing.of(tray.geometry()).wholeTray(1).camera();
+                for (LightRig rig : LightRig.values()) {
+                    Still still = await(capture.take(renderer, () -> {
+                        scene.setDiceSet(DiceSetCatalogue.builtIn().fallback());
+                        scene.setTray(tray);
+                        scene.setLightRig(rig);
+                        scene.setCamera(camera);
+                        scene.setDice(restingSet());
+                    }));
+                    Path file = rigDirectory.resolve(tray.identity() + "-" + rig.name().toLowerCase(Locale.ROOT)
+                            + ".png");
+                    png(still.toImage(), file);
+                    written.add(file);
                 }
             }
         }
@@ -178,6 +206,21 @@ public final class Gallery {
         }
         double distance = MARGIN * radius / Math.sin(Math.toRadians(FOV_Y_DEGREES / 2));
         return new DiceScene.Camera(new Vector3d(towardCamera()).mul(distance), new Vector3d(), FOV_Y_DEGREES);
+    }
+
+    /**
+     * One Die of every Kind (the 7-die set) resting face up in a row across the Tray's middle, each on the floor:
+     * its centre an inradius up, as its lowest face lies flat.
+     */
+    private static List<DiceScene.Die> restingSet() {
+        List<DiceScene.Die> dice = new ArrayList<>();
+        DieKind[] kinds = DieKind.values();
+        for (int i = 0; i < kinds.length; i++) {
+            DieKind kind = kinds[i];
+            double x = (i - (kinds.length - 1) / 2.0) * REST_SPACING_MM;
+            dice.add(new DiceScene.Die(kind, new Vector3d(x, kind.inradius(), 0), orientation(kind, Pose.FACE_UP)));
+        }
+        return dice;
     }
 
     /** The model-to-world rotation of a pose: which way the Die's z-up model frame turns. */

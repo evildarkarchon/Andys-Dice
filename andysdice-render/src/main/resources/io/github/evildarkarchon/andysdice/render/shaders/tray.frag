@@ -1,15 +1,23 @@
 #version 330 core
 // The Tray's surfaces (ticket #44, ADR-0010): a procedural, tiling texture per surface kind (felt, leather, walnut),
 // tinted by the Tray file's colour, with a bump normal from its height channel and felt's sheen at grazing angles.
-// The tray prototype's lit.frag, lit like the Dice (the Studio key and fill, GGX, the analytic room) and tone-mapped
-// with the same curve, which #43's translucency inverts for whatever lies under the Dice. Shadows and contact
-// occlusion come with the Light Rigs (#45).
+// The tray prototype's lit.frag, lit like the Dice (the Light Rig's key and fill, GGX, the analytic room) and tone-mapped
+// with the same curve, which #43's translucency inverts for whatever lies under the Dice. The chosen Light Rig (#45)
+// lights it: its key and fill (light.glsl), its room (env.glsl) and the key's PCSS shadow (shadow.glsl), and each Die
+// darkens the floor beneath it with a cheap contact occlusion (ADR-0010).
 //
 // The bump uses Mikkelsen's screen-space surface gradient (dFdx/dFdy of the height): no tangents and no mip-level
 // bookkeeping, and it fades on its own as the texture minifies.
 
 #include "tonemap.glsl"
+#include "light.glsl"
 #include "env.glsl"
+#include "shadow.glsl"
+
+// Contact occlusion: one sphere per Die, xyz its centre and w its radius, in mm. Sized like TrayRenderer.MAX_DICE.
+const int MAX_DICE = 24;
+uniform vec4 uDice[MAX_DICE];
+uniform int uDiceCount;
 
 in vec3 vWorldPosition;
 in vec3 vWorldNormal;
@@ -22,10 +30,6 @@ uniform float uRoughness;
 uniform float uSheen;         // felt's bright rim at grazing angles
 uniform float uBumpMm;        // the height of g = 1, in mm
 uniform vec3 uEye;            // camera position, world mm
-uniform vec3 uKeyDirection;   // toward the key light, normalised
-uniform vec3 uKeyColour;      // its radiance, linear RGB
-uniform vec3 uFillDirection;  // toward the fill light, normalised
-uniform vec3 uFillColour;
 
 out vec4 fragColour;
 
@@ -90,22 +94,37 @@ void main() {
         N = -N;
     }
 
+    // Each Die near this point hides part of the sky above it: roughly the solid angle of its sphere, weighted by how
+    // squarely it faces the surface. Only the room's light (the ambient terms) is occluded; the key has the shadow map.
+    float occlusion = 0.0;
+    for (int i = 0; i < uDiceCount; i++) {
+        vec3 d = uDice[i].xyz - vWorldPosition;
+        float dist = length(d);
+        float r = uDice[i].w;
+        occlusion += max(dot(N, d / dist), 0.0) * (r * r) / (dist * dist);
+    }
+    float ao = 1.0 - clamp(occlusion, 0.0, 1.0) * 0.85;
+
     float rough = uRoughness;
     vec3 f0 = vec3(0.04);
     float a = max(rough * rough, 0.002);
 
-    vec3 colour = directLight(N, V, uKeyDirection, uKeyColour, albedo, f0, a);
+    vec3 L;
+    vec3 keyColour = keyLight(vWorldPosition, L);
+    float shadow = keyShadow(vWorldPosition);
+    vec3 colour = directLight(N, V, L, keyColour, albedo, f0, a) * shadow;
     colour += directLight(N, V, uFillDirection, uFillColour, albedo, f0, a);
 
     float NoV = max(dot(N, V), 1e-3);
     vec2 ab = envBRDF(rough, NoV);
     vec3 R = reflect(-V, N);
-    vec3 specEnv = env(R, rough) * (f0 * ab.x + ab.y);
+    // In shadow the room's brightest part, the key's own softbox, lamp or window, is hidden too, so it dims.
+    vec3 specEnv = env(R, rough) * (f0 * ab.x + ab.y) * mix(0.35, 1.0, shadow);
     vec3 diffEnv = env(N, 1.0) * albedo;
-    colour += diffEnv + specEnv;
+    colour += (diffEnv + specEnv) * ao;
     // Felt fibres catch light at grazing angles; lit by the key where it reaches, a little by the room.
-    float keyFacing = max(dot(N, uKeyDirection), 0.0);
-    colour += uSheen * albedo * pow(1.0 - NoV, 4.0) * (0.25 * env(N, 1.0) + 0.12 * uKeyColour * keyFacing);
+    float keyFacing = max(dot(N, L), 0.0);
+    colour += uSheen * albedo * pow(1.0 - NoV, 4.0) * (0.25 * env(N, 1.0) + 0.12 * keyColour * keyFacing * shadow) * ao;
 
     // Opaque: the bridge hands JavaFX premultiplied pixels, and alpha 1 makes them plain ones.
     fragColour = vec4(toneMap(colour), 1.0);

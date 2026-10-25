@@ -7,6 +7,7 @@ import io.github.evildarkarchon.andysdice.physics.PhysicsWorker;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import io.github.evildarkarchon.andysdice.render.GlDriver;
+import io.github.evildarkarchon.andysdice.render.LightRig;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
@@ -43,6 +44,12 @@ final class Skeleton implements AutoCloseable {
      * (ADR-0010), until the Look tab (#57) lets the Player choose and remembers the choice.
      */
     static final Tray TRAY = BuiltInTrays.defaultTray();
+
+    /**
+     * The Light Rig the Tray is drawn under: the default, Studio (ADR-0010), until the Look tab (#57) lets the Player
+     * choose it, separately from the Tray, and remembers the choice.
+     */
+    static final LightRig LIGHT_RIG = LightRig.DEFAULT;
 
     private final PhysicsWorker worker;
     private final RenderThread renderer;
@@ -117,6 +124,7 @@ final class Skeleton implements AutoCloseable {
         DiceScene scene = new DiceScene();
         // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
         scene.setTray(TRAY);
+        scene.setLightRig(LIGHT_RIG);
         // Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
         TrayCamera camera = new TrayCamera(clock, Framing.of(TRAY.geometry()), REDUCED_MOTION);
         scene.setCamera(camera.camera());

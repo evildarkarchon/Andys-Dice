@@ -7,12 +7,15 @@
 // From the tray prototype's die.frag. A translucent Dice Set (#43, the prototype's technique C) refracts the view
 // ray into the body, finds where it leaves against the Die Kind's face planes (a Die is convex), marches the path
 // for clouds and glitter, shows the far face's Numerals from behind, and refracts the exit ray onto a copy of the
-// opaque pass (or reflects the room, past the critical angle). Shadows and the other Light Rigs are #45, the
-// reroll glow #47.
+// opaque pass (or reflects the room, past the critical angle). The reroll glow is #47.
+// The lights, the reflection room and the key light's PCSS shadow are the chosen Light Rig's (#45): light.glsl,
+// env.glsl and shadow.glsl, shared with the Tray.
 
 #include "hash.glsl"
 #include "engraving.glsl"
+#include "light.glsl"
 #include "env.glsl"
+#include "shadow.glsl"
 #include "tonemap.glsl"
 
 in vec3 vWorldPosition;
@@ -25,10 +28,6 @@ uniform mat4 uModel;          // rotation and translation only: mat3(uModel) tur
 uniform mat4 uViewProjection; // world to clip, to find where a refracted ray lands in the opaque pass
 
 uniform vec3 uEye;            // camera position, world mm
-uniform vec3 uKeyDirection;   // toward the key light, normalised
-uniform vec3 uKeyColour;      // its radiance, linear RGB
-uniform vec3 uFillDirection;  // toward the fill light, normalised
-uniform vec3 uFillColour;
 
 // The Dice Set, colours in linear RGB.
 uniform vec3 uBase;
@@ -148,8 +147,9 @@ float exitDistance(vec3 p, vec3 d, out int face) {
 
 // What the eye sees through a translucent body at model-space point p, where the view ray enters along the
 // model-space surface normal n: light carried from behind the Die, plus the light its clouds and glitter send to
-// the eye. R turns model directions into the world; KL is toward the key light.
-vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL) {
+// the eye. R turns model directions into the world; KL is toward the key light, KC its radiance here and shadow how
+// much of it reaches this point (#45).
+vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL, vec3 KC, float shadow) {
     vec3 d = refract(-viewModel, n, 1.0 / uIor);
     // A grazing ray the maths can't bend (it can't really happen going into a denser body) goes straight in.
     if (dot(d, d) < 1e-6) d = -n;
@@ -158,7 +158,7 @@ vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL) {
     // Beer-Lambert: the colour given for 10 mm of body sets the absorption per mm.
     vec3 sigma = -log(max(uTransmissionColour, vec3(1e-3))) / 10.0;
     // The light that reaches the inside of the body to be scattered: the room above and a share of the key.
-    vec3 inside = env(vec3(0.0, 1.0, 0.0), 1.0) + uKeyColour * 0.15;
+    vec3 inside = env(vec3(0.0, 1.0, 0.0), 1.0) + KC * 0.15 * shadow;
 
     // March the body: swirl clouds absorb and scatter, glitter flakes glint. The swirl texture is sampled at an
     // explicit LOD, so the loop's non-uniform control flow is harmless.
@@ -180,7 +180,7 @@ vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL) {
         if (fl > 0.0) {
             vec3 H = normalize(towardEye + KL);
             float g = pow(abs(dot(R * fn, H)), 40.0);
-            glints += Tr * fl * uFlakeColour * (uKeyColour * g * 3.0 + inside * 0.2);
+            glints += Tr * fl * uFlakeColour * (KC * g * 3.0 + inside * 0.2);
             Tr *= 1.0 - 0.6 * fl;
         }
         Tr *= stepTr;
@@ -220,7 +220,8 @@ vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL) {
 void main() {
     vec3 V = normalize(uEye - vWorldPosition);
     vec3 Ng = normalize(vWorldNormal);
-    vec3 KL = uKeyDirection;
+    vec3 KL;
+    vec3 KC = keyLight(vWorldPosition, KL);
 
     // --- ADR-0008 Numerals: parallax occlusion through the atlas, with the recess's own shadow. ---
     Engraving e = engrave(vUv, vWorldTangent, Ng, V, KL);
@@ -257,14 +258,18 @@ void main() {
     vec3 diffColour = albedo * (1.0 - metal) * (1.0 - tw);
     float a = max(rough * rough, 0.002);
 
-    vec3 colour = directLight(Ns, V, KL, uKeyColour, diffColour, f0, a) * e.keyOcclusion;
+    // The key reaches this point past the other Dice and the walls (the shadow map) and out of the engraving's
+    // recess (its own self-shadow march).
+    float shadow = keyShadow(vWorldPosition) * e.keyOcclusion;
+    vec3 colour = directLight(Ns, V, KL, KC, diffColour, f0, a) * shadow;
     colour += directLight(Ns, V, uFillDirection, uFillColour, diffColour, f0, a) * mix(1.0, e.keyOcclusion, 0.5);
 
     // The environment, by the split-sum: this reflection is what keeps a metal from looking like grey plastic.
+    // In shadow the room's brightest part, the key's own softbox, lamp or window, is hidden too, so it dims.
     float NoV = max(dot(Ns, V), 1e-3);
     vec2 ab = envBRDF(rough, NoV);
     vec3 Rv = reflect(-V, Ns);
-    vec3 specEnv = env(Rv, rough) * (f0 * ab.x + ab.y);
+    vec3 specEnv = env(Rv, rough) * (f0 * ab.x + ab.y) * mix(0.35, 1.0, shadow);
     vec3 diffEnv = env(Ns, 1.0) * diffColour;
     colour += (diffEnv + specEnv) * e.cavity;
 
@@ -275,7 +280,7 @@ void main() {
         vec3 H = normalize(V + KL);
         float lobe = D_GGX(max(dot(N, H), 0.0), 0.12) * max(dot(N, KL), 0.0);
         colour += uPearl * s * (1.0 - ink) * tint
-                * (lobe * 0.08 * uKeyColour * e.keyOcclusion + env(Rv, 0.6) * 0.12 + 0.05 * fres);
+                * (lobe * 0.08 * KC * shadow + env(Rv, 0.6) * 0.12 + 0.05 * fres);
     }
 
     // Translucency, worked in model space where the face planes live. What the surface doesn't reflect (by the
@@ -284,7 +289,7 @@ void main() {
         mat3 R = mat3(uModel);
         mat3 toModel = transpose(R);
         float Fv = 0.04 * ab.x + ab.y;
-        colour += throughTheBody(vModelPosition, toModel * N, toModel * V, R, KL) * tw * (1.0 - Fv);
+        colour += throughTheBody(vModelPosition, toModel * N, toModel * V, R, KL, KC, shadow) * tw * (1.0 - Fv);
     }
 
     // The reroll glow (#47, the tray prototype's): warm and weighted to the rim, so the Player sees which Dice go
