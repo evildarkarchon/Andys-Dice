@@ -16,6 +16,10 @@ _Avoid_: Die type, die size
 A matched visual style (material, colour, numeral ink) applied to the dice in a roll, modelled on the 7-piece D&D set: d4, d6, d8, d10, percentile d10, d12, d20.
 _Avoid_: Skin, theme, pack
 
+**Numeral**:
+A number engraved into a die face and filled with ink. Most faces carry one, and a d4 face carries three, one per corner. It is what a die shows, as distinct from the Face Value it stands for.
+_Avoid_: Number, label, pip
+
 **Percentile Roll**:
 A d100 result produced by rolling a percentile d10 and a d10 together, the percentile die giving the tens and the d10 the units, with 00 + 0 read as 100.
 _Avoid_: d100 die
