@@ -28,6 +28,9 @@ import java.util.random.RandomGenerator;
  */
 public final class SoundOutput implements AutoCloseable {
 
+    /** The one audio thread's name (spec §5): the only thread that touches a sink. */
+    static final String THREAD_NAME = "andysdice-audio";
+
     /** Told what happened to the device. */
     @FunctionalInterface
     public interface Listener {
@@ -75,7 +78,7 @@ public final class SoundOutput implements AutoCloseable {
         this.delayNanos = audioDelay.toNanos();
         this.tunables = Objects.requireNonNull(tunables, "tunables");
         this.observer = Objects.requireNonNull(observer, "observer");
-        this.thread = Thread.ofPlatform().name(AudioThread.NAME).daemon().unstarted(this::run);
+        this.thread = Thread.ofPlatform().name(THREAD_NAME).daemon().unstarted(this::run);
     }
 
     /**
@@ -269,7 +272,7 @@ public final class SoundOutput implements AutoCloseable {
             for (List<SoundThrow> batch; (batch = pending.poll()) != null; ) {
                 batch.forEach(m::play);
             }
-            AudioThread.writeNext(m, follower, sink, nanoTime, delayNanos, block);
+            writeNext(m, follower, sink, nanoTime, delayNanos, block);
             if (!m.idle() || !pending.isEmpty()) {
                 silentLeft = -1;
             } else if (silentLeft < 0) {
@@ -278,6 +281,28 @@ public final class SoundOutput implements AutoCloseable {
                 return;
             }
         }
+    }
+
+    /**
+     * Renders the next block for the moment it will be heard (now, plus what the sink has queued, less the A/V
+     * offset) and writes it, waiting while the sink's queue is full, so the sink paces the audio thread. Audio
+     * thread only.
+     *
+     * @param mixer the mixer to pull the block from
+     * @param follower the playback clock as the audio thread sees it, on {@code nanoTime}'s time base
+     * @param sink the open sink
+     * @param nanoTime the real-time source, read once per block
+     * @param delayNanos the A/V offset (ADR-0012, set on the release checklist): how much later than its playback
+     *     moment each sound is heard; positive makes audio later
+     * @param block a scratch block, overwritten
+     * @throws SinkException if the sink stopped taking sound
+     */
+    static void writeNext(StreamingMixer mixer, ClockFollower follower, AudioSink sink, LongSupplier nanoTime,
+            long delayNanos, short[] block) throws SinkException {
+        long queued = sink.queuedFrames() * 1_000_000_000L / MixFormat.SAMPLE_RATE;
+        ClockFollower.Timing heard = follower.at(nanoTime.getAsLong() + queued - delayNanos);
+        mixer.render(heard.time(), heard.speed(), block);
+        sink.write(block);
     }
 
     /** Opens the device once at start-up and closes it again, so that a missing one is known (and noticed) early. */

@@ -136,6 +136,25 @@ class DiceSceneTest {
     }
 
     @Test
+    void theDiceAndTheCameraHandedOverTogetherAreDrawnTogether() throws Exception {
+        // A Die 3 cm right of the origin, and a camera moved over to look straight at it: in one call, so no frame
+        // can show the moved Die from the old camera or the old Dice from the moved one.
+        DiceScene.Die die = new DiceScene.Die(DieKind.D6, new Vector3d(30, 0, 0), new Quaterniond());
+        DiceScene.Camera facingIt = new DiceScene.Camera(new Vector3d(30, 0, 150), new Vector3d(30, 0, 0), 32);
+
+        Still still = capture.take(renderer, () -> {
+            scene.setCamera(new DiceScene.Camera(new Vector3d(0, 0, 150), new Vector3d(), 32));
+            scene.setDice(List.of());
+            scene.setDiceAndCamera(List.of(die), facingIt);
+        }).get(10, TimeUnit.SECONDS);
+
+        assertThat(still.argb(SIZE / 2, SIZE / 2)).as("the die at the centre, where the camera looks")
+                .isNotEqualTo(DiceScene.BACKGROUND_ARGB);
+        assertThat(still.argb(SIZE / 8, SIZE / 2)).as("nothing far left of it")
+                .isEqualTo(DiceScene.BACKGROUND_ARGB);
+    }
+
+    @Test
     void aDieAboutToBeRerolledGlowsWarmerThanTheSameDieUnlit() throws Exception {
         // Onyx, the default: a dark body, so a warm glow over it shows plainly.
         Quaterniond turned = new Quaterniond().rotationXYZ(0.4, 0.7, 0.2);

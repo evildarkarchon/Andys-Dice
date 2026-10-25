@@ -2,6 +2,7 @@ package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.render.HeadlessPlatform;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -45,10 +46,10 @@ import org.junit.jupiter.api.io.TempDir;
  * tab ({@link #history}) over it, dated by a {@link #wallClock} the test sets. {@link #restartApp} quits and opens
  * the app again on the same folder, as the next run would.
  *
- * <p><b>This class owns the headless flags.</b> It is the only place app's tests choose JavaFX's platform:
- * {@code glass.platform=Headless} and Prism's {@code sw} pipeline, set before the toolkit starts once per test JVM.
- * If a JavaFX update breaks or removes the headless platform, delete those two properties here and the same tests
- * run in real windows on the Windows runner. It also points the data-folder override property
+ * <p><b>The headless flags are {@link HeadlessPlatform}'s.</b> This class starts the toolkit through it, once per
+ * test JVM, on {@code glass.platform=Headless} and Prism's {@code sw} pipeline, as render's tests do; that render class
+ * is the one owner of those flags (ADR-0011). If a JavaFX update breaks or removes the headless platform, delete the
+ * two properties there and the same tests run in real windows on the Windows runner. This class also points the data-folder override property
  * ({@value #DATA_FOLDER_PROPERTY}) at a fresh temp folder for every test, so nothing a test persists survives it.
  *
  * <p><b>Threads.</b> JUnit runs on its own thread; everything touching JavaFX goes through {@link #onFx} (or {@link #fromFx} for a result), which runs
@@ -73,8 +74,6 @@ abstract class HeadlessUiTest {
 
     /** The longest {@link #playToRest} plays before giving up: far past any scripted chain. */
     private static final double PLAY_LIMIT_SECONDS = 120;
-
-    private static boolean started;
 
     /** A fresh data folder for this test; JUnit deletes it afterwards. */
     @TempDir
@@ -119,18 +118,9 @@ abstract class HeadlessUiTest {
      * test class, including ones that don't extend this one.
      */
     @BeforeAll
-    static synchronized void startToolkit() {
-        if (started) {
-            return;
-        }
-        // Read by the toolkit when it starts, so they must be set before Platform.startup. These two lines are the
-        // whole headless choice (ADR-0011): remove them to watch the same tests in real windows.
-        System.setProperty("glass.platform", "Headless");
-        System.setProperty("prism.order", "sw");
-        Platform.startup(() -> {});
-        // Closing a test's window must not stop the toolkit for the next test.
-        Platform.setImplicitExit(false);
-        started = true;
+    static void startToolkit() {
+        // The headless choice itself (ADR-0011) is HeadlessPlatform's, shared with render's tests.
+        HeadlessPlatform.start();
     }
 
     /** Opens the app window with its stand-ins, on a fresh data folder, as a first run sees it. */
@@ -402,6 +392,9 @@ abstract class HeadlessUiTest {
             if (fromFx(condition::getAsBoolean)) {
                 return true;
             }
+            // A poll, not a wait on time: the condition is any state another thread changes (the failure guard's
+            // panel, the physics worker, the audio thread, a gl test's render thread), with no completion signal of its own to block
+            // on. Playback never waits here; tests advance it by hand.
             Thread.sleep(5);
         }
         return false;

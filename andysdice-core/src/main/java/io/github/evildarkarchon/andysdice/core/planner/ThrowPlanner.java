@@ -106,8 +106,11 @@ public final class ThrowPlanner {
         return new Simulation(choice, releases).run();
     }
 
-    /** One roll of a Dice Group while its Face Values are chosen. */
-    private record Roll(DiceGroup group, List<Integer> values) {
+    /**
+     * The Face Values drawn so far for one roll of a Dice Group (one Die, or a Percentile Roll's pair), while they
+     * are chosen. Not a Roll: in the glossary that is the whole Roll Expression's.
+     */
+    private record DieDraws(DiceGroup group, List<Integer> values) {
 
         /** Whether the roll's group rerolls it again after the values it has shown so far. */
         boolean rerollsAgain() {
@@ -134,10 +137,10 @@ public final class ThrowPlanner {
     private static Choice choose(RollExpression expression, FaceValueGenerator faceValues) {
         List<PlannedDie> dice = new ArrayList<>();
         List<GroupKind> rollKinds = new ArrayList<>();
-        List<Roll> rolls = new ArrayList<>();
+        List<DieDraws> draws = new ArrayList<>();
         for (DiceGroup group : expression.diceGroups()) {
             for (int i = 0; i < group.count(); i++) {
-                int roll = rolls.size();
+                int roll = draws.size();
                 if (group.kind() == GroupKind.PERCENTILE) {
                     dice.add(new PlannedDie(DieKind.PERCENTILE_D10, roll));
                     dice.add(new PlannedDie(DieKind.D10, roll));
@@ -145,12 +148,12 @@ public final class ThrowPlanner {
                     dice.add(new PlannedDie(dieKind(group.kind()), roll));
                 }
                 rollKinds.add(group.kind());
-                rolls.add(new Roll(group, new ArrayList<>(List.of(draw(group.kind(), faceValues)))));
+                draws.add(new DieDraws(group, new ArrayList<>(List.of(draw(group.kind(), faceValues)))));
             }
         }
         List<List<Integer>> rounds = new ArrayList<>();
         while (true) {
-            List<Integer> again = IntStream.range(0, rolls.size()).filter(r -> rolls.get(r).rerollsAgain())
+            List<Integer> again = IntStream.range(0, draws.size()).filter(r -> draws.get(r).rerollsAgain())
                     .boxed().toList();
             if (again.isEmpty()) {
                 break;
@@ -159,11 +162,11 @@ public final class ThrowPlanner {
                 return null;
             }
             for (int roll : again) {
-                rolls.get(roll).values().add(draw(rolls.get(roll).group().kind(), faceValues));
+                draws.get(roll).values().add(draw(draws.get(roll).group().kind(), faceValues));
             }
             rounds.add(again);
         }
-        List<FaceValueChain> chains = rolls.stream().map(r -> new FaceValueChain(r.values())).toList();
+        List<FaceValueChain> chains = draws.stream().map(r -> new FaceValueChain(r.values())).toList();
         return new Choice(expression, dice, rollKinds, chains, rounds);
     }
 

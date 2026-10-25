@@ -165,11 +165,12 @@ public record Tray(String identity, String name, TrayOutline outline, Walls wall
      * Returns the physics materials of a Throw into this Tray, as the combined pair values the simulator takes
      * (ADR-0010, ADR-0013): each set by the floor's surface and the walls' material.
      *
-     * <p>They reproduce the flat-rest prototype, whose numbers the soak's gates were measured with. Its Dice had
-     * friction {@value #REFERENCE_DIE_FRICTION} and the floor's restitution, and Jolt combines frictions by their
-     * geometric mean and restitutions by their maximum. So a Die against the floor has friction sqrt(0.4 f) and the
-     * floor's restitution; against a wall, sqrt(0.4 f<sub>wall</sub>) and the larger of the floor's and the wall's
-     * restitution (padded leather's 0.2 wall bounce comes out at leather's 0.25); and against another Die, ADR-0013's
+     * <p>Friction reproduces the flat-rest prototype, whose numbers the soak's gates were measured with. Its Dice had
+     * friction {@value #REFERENCE_DIE_FRICTION}, and Jolt combines frictions by their geometric mean. So a Die
+     * against the floor has friction sqrt(0.4 f) and the floor's restitution; against a wall, sqrt(0.4
+     * f<sub>wall</sub>) and the wall's own restitution, spec Appendix C's wall bounce. That is not Jolt's maximum of
+     * the two (which would lift padded leather's 0.2 to the leather floor's 0.25): the simulator sets each contact's
+     * combined restitution from these values; and against another Die, ADR-0013's
      * {@link TrayMaterials#DIE_ON_DIE_FRICTION} with the floor's restitution. The floor also sets the Dice's spin
      * damping.
      *
@@ -182,7 +183,7 @@ public record Tray(String identity, String name, TrayOutline outline, Walls wall
                 new ContactMaterial((float) Math.sqrt(REFERENCE_DIE_FRICTION * surface.friction()),
                         surface.restitution()),
                 new ContactMaterial((float) Math.sqrt(REFERENCE_DIE_FRICTION * wall.friction()),
-                        Math.max(surface.restitution(), wall.restitution())),
+                        wall.restitution()),
                 surface.spinDamping());
     }
 }

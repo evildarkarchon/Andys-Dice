@@ -14,7 +14,6 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -87,6 +86,8 @@ final class RollController {
     private RollStatus status = new RollStatus.Ready();
     private boolean underWay;
     private Playing playing;
+    /** Set once the session has failed ({@link #abandon}); never cleared. */
+    private boolean abandoned;
 
     /**
      * Creates a controller and starts it listening to the clock.
@@ -177,6 +178,10 @@ final class RollController {
      */
     void roll(String input, Optional<String> savedRollName) {
         Objects.requireNonNull(savedRollName, "savedRollName");
+        if (abandoned) {
+            // The session has failed (abandon): nothing rolls behind the failure panel.
+            return;
+        }
         if (underWay) {
             // A Roll asked for during another is queued in front of the controller (RollQueue, #50), so one that
             // still reaches it here is ignored.
@@ -208,9 +213,25 @@ final class RollController {
         planned.whenCompleteAsync((plan, error) -> arrived(expression, savedRollName, plan, error), fxThread);
     }
 
+    /**
+     * Ends the session's Rolling for good, as the failure panel does (spec §3.2 "Runtime failure"): a Roll in motion
+     * stops where it is and is never revealed, so it never joins the Roll History (ADR-0007: a Roll interrupted
+     * before it rests is lost, because it was never shown), and one still pre-simulating never plays. Nothing is
+     * recovered in-process: every later {@link #roll} is ignored. Calling it again does nothing.
+     */
+    void abandon() {
+        abandoned = true;
+        playing = null;
+        underWay = false;
+    }
+
     /** The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was. */
     private void arrived(RollExpression expression, Optional<String> savedRollName, RollPlan plan,
             Throwable error) {
+        if (abandoned) {
+            // The session failed while this Roll pre-simulated: it was never shown, so it is simply lost.
+            return;
+        }
         if (error != null) {
             fail(RollStatus.Failed.broken(expression, describe(error)), error);
             return;
@@ -251,7 +272,7 @@ final class RollController {
             // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
             // carries its name (#56), which the result strip shows and the Roll History records.
             setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
-                    now.chain().plan().throwChain().size(), now.savedRollName()));
+                    now.chain().throwCount(), now.savedRollName()));
         }
     }
 
@@ -261,8 +282,7 @@ final class RollController {
     }
 
     private static String describe(Throwable error) {
-        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause()
-                : error;
+        Throwable cause = Failure.unwrap(error);
         return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 }

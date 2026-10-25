@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.render;
 
+import static org.lwjgl.opengl.GL11C.glFinish;
 import static org.lwjgl.opengl.GL11C.glViewport;
 import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
@@ -183,6 +184,21 @@ public final class RenderThread implements AutoCloseable {
     }
 
     /**
+     * Waits for the GPU to finish every frame drawn so far ({@code glFinish}), then hands each outstanding GPU time
+     * to the current listener at once (or drops them, with none set), as the loop would on some later turn. For
+     * tests, which can then check what was reported without sleeping; the loop itself never waits on the GPU.
+     *
+     * <p>Render thread only: call it from a {@link #submit} task.
+     *
+     * @throws IllegalStateException off the render thread
+     */
+    void finishGpuTimes() {
+        checkRenderThread();
+        glFinish();
+        gpuTimer.poll(gpuTimeListener);
+    }
+
+    /**
      * Tells when the render thread has ended, and why. v1 is crash-only (spec §3.2 "Runtime failure"): a render
      * thread that ends without {@link #close()} is a dead one, and the app shows its failure panel. Nothing is
      * recovered, since no second render thread can be started in this JVM (ADR-0002).
@@ -220,6 +236,17 @@ public final class RenderThread implements AutoCloseable {
         }
     }
 
+    /**
+     * The render thread's body: sets up the context, the render target, the GPU timer, the transport and the
+     * renderer, in that order, then runs {@link #loop} until {@link #close()} or a death, and releases whatever was
+     * made, in reverse order, however it ends.
+     *
+     * <p>A set-up failure completes both {@code ready} and {@link #stopped()} exceptionally and returns, so
+     * {@link #start} rethrows it to its caller. A failure in the loop completes {@link #stopped()} exceptionally and
+     * is rethrown too, so it also reaches the thread's uncaught-exception handler (the app's failure guard).
+     *
+     * @param ready completed with the driver's description once set-up has succeeded, or with set-up's failure
+     */
     private void run(CompletableFuture<GlDriver> ready) {
         renderThread = Thread.currentThread();
         try {
@@ -269,6 +296,18 @@ public final class RenderThread implements AutoCloseable {
         }
     }
 
+    /**
+     * Draws on demand until {@link #close()}. Each turn waits for a message (a millisecond while frames are in
+     * flight, else up to {@value #IDLE_POLL_MILLIS} ms, which keeps the context's hidden window answering the
+     * system), runs every queued message, pumps the context's window events, applies the latest requested size,
+     * draws one frame if one was requested and the transport can take it, collects whatever GPU times are ready,
+     * and pumps the transport's readbacks.
+     *
+     * <p>Returns only when closed or interrupted; {@link #ended} tells those apart.
+     *
+     * @throws GlContextLostException when the driver reports the context lost (ADR-0002 allows no second one)
+     * @throws RuntimeException whatever a message, the renderer or the transport threw, which ends the thread
+     */
     private void loop() {
         boolean busy = false;
         while (running) {

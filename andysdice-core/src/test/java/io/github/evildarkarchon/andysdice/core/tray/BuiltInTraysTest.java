@@ -113,8 +113,8 @@ class BuiltInTraysTest {
         TrayMaterials materials = BuiltInTrays.defaultTray().materials();
 
         // The combined pair values the flat-rest prototype was measured with (#39's soak): a Die of friction 0.4
-        // against felt's 0.5 and the walls' 0.5, Jolt's geometric mean; the floor's restitution, and a wall's bounce
-        // the larger of the floor's and the wall's (Jolt combines restitutions by their maximum).
+        // against felt's 0.5 and the walls' 0.5, Jolt's geometric mean; the floor's restitution, and the wall's own
+        // bounce (spec Appendix C).
         assertThat(materials.floor().friction()).isCloseTo(0.4472f, CLOSE);
         assertThat(materials.floor().restitution()).isEqualTo(0.15f);
         assertThat(materials.walls().friction()).isCloseTo(0.4472f, CLOSE);
@@ -129,7 +129,8 @@ class BuiltInTraysTest {
         assertThat(leather.floor().friction()).isCloseTo(0.4690f, CLOSE);
         assertThat(leather.floor().restitution()).isEqualTo(0.25f);
         assertThat(leather.walls().friction()).isCloseTo(0.4472f, CLOSE);
-        assertThat(leather.walls().restitution()).as("max(leather floor 0.25, padded wall 0.2)").isEqualTo(0.25f);
+        // Spec Appendix C: the padded leather walls bounce 0.2, under leather's floor 0.25 (set per contact).
+        assertThat(leather.walls().restitution()).as("padded leather wall bounce").isEqualTo(0.2f);
         assertThat(leather.dieAngularDamping()).isEqualTo(0.45f);
 
         TrayMaterials walnut = BuiltInTrays.find("03-walnut-board").orElseThrow().materials();
@@ -147,8 +148,8 @@ class BuiltInTraysTest {
                         + "\nwalls.material = " + wall + "\n").materials();
 
                 assertThat(materials.floor().restitution()).isEqualTo(surface.restitution());
-                assertThat(materials.walls().restitution())
-                        .isEqualTo(Math.max(surface.restitution(), wall.restitution()));
+                // The wall's own bounce, whatever the floor: the combined value is set on each contact.
+                assertThat(materials.walls().restitution()).isEqualTo(wall.restitution());
                 assertThat(materials.dieAngularDamping()).isEqualTo(surface.spinDamping());
                 assertThat(materials.dieOnDie().friction()).isEqualTo(TrayMaterials.DIE_ON_DIE_FRICTION)
                         .isEqualTo(0.2f);

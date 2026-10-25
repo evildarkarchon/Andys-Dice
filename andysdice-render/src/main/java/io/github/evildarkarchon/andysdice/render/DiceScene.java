@@ -29,10 +29,16 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.mesh.DieMesh;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 import org.joml.Matrix4d;
 import org.joml.Matrix4dc;
 import org.joml.Quaterniond;
@@ -172,8 +178,11 @@ public final class DiceScene implements FrameRenderer {
     private static final Camera DEFAULT_CAMERA = new Camera(
             new Vector3d(0, 5 + 400 * Math.sin(Math.toRadians(50)), -400 * Math.cos(Math.toRadians(50))),
             new Vector3d(0, 5, 0), 32);
-    private volatile List<Die> dice = List.of();
-    private volatile Camera camera = DEFAULT_CAMERA;
+    /** The Dice and the camera a frame draws, published as one, so a frame never mixes two hand-overs. */
+    private record DiceView(List<Die> dice, Camera camera) {}
+
+    // One reference for both: draw() reads it once, so setDiceAndCamera's pair always reaches the same frame.
+    private final AtomicReference<DiceView> diceView = new AtomicReference<>(new DiceView(List.of(), DEFAULT_CAMERA));
     private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
     private volatile LightRig lightRig = LightRig.DEFAULT;
     private volatile int volumeSteps = DEFAULT_VOLUME_STEPS;
@@ -221,6 +230,9 @@ public final class DiceScene implements FrameRenderer {
     // NumeralLayout.faceTable()'s three vec4 per face, as die.frag's uFaces reads them.
     private static final int FACE_TABLE_FLOATS = 12;
 
+    /** At most this many numeral atlases are rasterised at once, in {@link #init()}. */
+    private static final int ATLAS_THREADS = 4;
+
     /** The model matrix of what is already in world space: the Tray's walls, in the shadow pass. */
     private static final float[] IDENTITY = columns(new Matrix4d());
 
@@ -233,7 +245,8 @@ public final class DiceScene implements FrameRenderer {
      * @param dice the Dice, drawn in this order
      */
     public void setDice(List<Die> dice) {
-        this.dice = List.copyOf(dice);
+        List<Die> copy = List.copyOf(dice);
+        diceView.updateAndGet(now -> new DiceView(copy, now.camera()));
     }
 
     /**
@@ -242,7 +255,20 @@ public final class DiceScene implements FrameRenderer {
      * @param camera the new camera
      */
     public void setCamera(Camera camera) {
-        this.camera = Objects.requireNonNull(camera, "camera");
+        Objects.requireNonNull(camera, "camera");
+        diceView.updateAndGet(now -> new DiceView(now.dice(), camera));
+    }
+
+    /**
+     * Replaces the Dice drawn and moves the camera at once: the next frame draws both, and no frame draws one
+     * without the other, as two separate calls could allow. Playback hands over each moment's Dice and the camera
+     * that frames them this way. Any thread.
+     *
+     * @param dice the Dice, drawn in this order
+     * @param camera the camera they are seen from
+     */
+    public void setDiceAndCamera(List<Die> dice, Camera camera) {
+        diceView.set(new DiceView(List.copyOf(dice), Objects.requireNonNull(camera, "camera")));
     }
 
     /**
@@ -278,6 +304,25 @@ public final class DiceScene implements FrameRenderer {
      */
     public void setLightRig(LightRig lightRig) {
         this.lightRig = Objects.requireNonNull(lightRig, "lightRig");
+    }
+
+    /**
+     * Sets the whole look the scene is drawn in: the Dice Set, the Tray and the Light Rig, as the Look tab picks
+     * them (ADR-0010), with the same effect as {@link #setDiceSet}, {@link #setTray} and {@link #setLightRig} in
+     * turn. Takes effect at the next frame; any thread.
+     *
+     * @param diceSet the Dice Set every Die is drawn in
+     * @param tray the Tray the Dice lie in
+     * @param lightRig the Light Rig the scene is lit by
+     * @throws NullPointerException if any part is {@code null}; then nothing is changed
+     */
+    public void setLook(DiceSet diceSet, Tray tray, LightRig lightRig) {
+        Objects.requireNonNull(diceSet, "diceSet");
+        Objects.requireNonNull(tray, "tray");
+        Objects.requireNonNull(lightRig, "lightRig");
+        setDiceSet(diceSet);
+        setTray(tray);
+        setLightRig(lightRig);
     }
 
     /**
@@ -371,12 +416,63 @@ public final class DiceScene implements FrameRenderer {
         shadowMap = new ShadowMap();
         frame = new SceneFrame();
         // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
-        // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
+        // The 7 atlases are most of the launch's wait (ADR-0014's 3 s), so they are rasterised on CPU threads in
+        // parallel while this thread uploads the meshes; every GL upload stays here, on the render thread.
+        Map<DieKind, NumeralLayout> layouts = new EnumMap<>(DieKind.class);
         for (DieKind kind : DieKind.values()) {
-            meshes.put(kind, new GlMesh(kind));
-            NumeralLayout layout = NumeralLayout.of(kind);
-            atlases.put(kind, new GlAtlas(NumeralAtlas.rasterise(layout)));
-            faceTables.put(kind, layout.faceTable());
+            layouts.put(kind, NumeralLayout.of(kind));
+        }
+        List<DieKind> largestFirst = layouts.keySet().stream()
+                .sorted(Comparator.comparingInt((DieKind kind) -> layouts.get(kind).grid()).reversed())
+                .toList();
+        // Bounded, and largest first: the d20's atlas alone is about a quarter of the work, so a few threads finish
+        // as soon as seven would, while holding fewer half-built atlases (some hundred MB each at peak) at once.
+        int threads = Math.clamp(Runtime.getRuntime().availableProcessors(), 1, ATLAS_THREADS);
+        ExecutorService rasteriser = Executors.newFixedThreadPool(threads,
+                Thread.ofPlatform().name("andysdice-atlas-", 0).daemon(true).factory());
+        try {
+            Map<DieKind, Future<NumeralAtlas>> rasterised = new EnumMap<>(DieKind.class);
+            for (DieKind kind : largestFirst) {
+                NumeralLayout layout = layouts.get(kind);
+                rasterised.put(kind, rasteriser.submit(() -> NumeralAtlas.rasterise(layout)));
+            }
+            for (DieKind kind : DieKind.values()) {
+                meshes.put(kind, new GlMesh(kind));
+                faceTables.put(kind, layouts.get(kind).faceTable());
+            }
+            for (DieKind kind : largestFirst) {
+                // Removed as it is uploaded, so each atlas's arrays can be collected as soon as they are on the GPU.
+                atlases.put(kind, new GlAtlas(await(rasterised.remove(kind))));
+            }
+        } finally {
+            // Only does anything if an upload threw: the remaining rasterisations are no longer wanted.
+            rasteriser.shutdownNow();
+        }
+    }
+
+    /**
+     * Waits for an atlas being rasterised off the render thread.
+     *
+     * @param atlas the rasterisation
+     * @return the atlas
+     * @throws IllegalStateException if the render thread is interrupted while it waits (its interrupt is kept)
+     * @throws RuntimeException or {@link Error} as the rasterisation threw it
+     */
+    private static NumeralAtlas await(Future<NumeralAtlas> atlas) {
+        try {
+            return atlas.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while rasterising the numeral atlases", e);
+        } catch (ExecutionException e) {
+            // Rethrown as itself, so a failure reads the same as it did when the atlases were made on this thread.
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (e.getCause() instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("a numeral atlas couldn't be rasterised", e.getCause());
         }
     }
 
@@ -398,12 +494,13 @@ public final class DiceScene implements FrameRenderer {
         int clear = clearColour;
         glClearColor(((clear >> 16) & 0xff) / 255f, ((clear >> 8) & 0xff) / 255f, (clear & 0xff) / 255f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        List<Die> drawn = dice;
+        DiceView diceAndCamera = diceView.get();
+        List<Die> drawn = diceAndCamera.dice();
         Tray shown = tray;
         if (drawn.isEmpty() && shown == null) {
             return;
         }
-        Camera view = camera;
+        Camera view = diceAndCamera.camera();
         DiceSet set = diceSet;
         LightRig rig = lightRig;
 

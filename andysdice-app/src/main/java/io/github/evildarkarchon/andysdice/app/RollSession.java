@@ -32,8 +32,10 @@ final class RollSession {
     private final FastForward fastForward;
     /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
     private final TraySurface tray;
-    private Consumer<RollStatus> onStatusChanged = status -> {};
-    /** The app's own pieces that follow the Roll's status (the Roll History, #55), told after the strip. */
+    /**
+     * Everything else that follows the Roll's status (the Roll History, #55; the smoke test; the bench's first-motion
+     * timer), told after the strip.
+     */
     private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
     private ChainShown onChainShown = (chain, start) -> {};
 
@@ -106,6 +108,9 @@ final class RollSession {
         entry = new RollEntry(ui, queue);
         // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up.
         ui.addFailureListener(queue::close);
+        // Nor may a Roll in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost
+        // rather than revealed or kept in the Roll History (ADR-0007).
+        ui.addFailureListener(controller::abandon);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
         ui.showStatus(controller.status());
@@ -122,7 +127,6 @@ final class RollSession {
                 // stopped moving (the camera settled in), let JavaFX idle.
                 pulses.stop();
             }
-            onStatusChanged.accept(status);
             for (Consumer<RollStatus> listener : statusListeners) {
                 listener.accept(status);
             }
@@ -224,15 +228,6 @@ final class RollSession {
     }
 
     /**
-     * Sets who else is told each time the Roll's status changes, after the result strip has shown it.
-     *
-     * @param listener the listener; it replaces any earlier one
-     */
-    void setOnStatusChanged(Consumer<RollStatus> listener) {
-        onStatusChanged = Objects.requireNonNull(listener, "listener");
-    }
-
-    /**
      * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
      * (#59, {@link Clatter}).
      *
@@ -243,10 +238,9 @@ final class RollSession {
     }
 
     /**
-     * Adds a listener told each time the Roll's status changes, after the result strip and the
-     * {@link #setOnStatusChanged one replaceable listener}. Unlike that one, listeners added here are never replaced,
-     * so the app's own pieces (the Roll History joining a revealed Roll, #55) and the smoke test don't displace each
-     * other.
+     * Adds a listener told each time the Roll's status changes, after the result strip has shown it. Listeners are
+     * never replaced, so the app's own pieces (the Roll History joining a revealed Roll, #55) and the smoke test
+     * don't displace each other.
      *
      * @param listener told every status, in the order added
      */

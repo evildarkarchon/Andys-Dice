@@ -295,6 +295,43 @@ class FailurePanelTest extends HeadlessUiTest {
     }
 
     @Test
+    void aRollInMotionWhenTheSessionFailsIsNeverRevealedNorJoinsTheHistory() throws Exception {
+        // ADR-0007: a Roll interrupted before it rests is lost, because it was never shown.
+        roll("1d6");
+        assertThat(tray.shows()).isEqualTo(1);
+        advance(FRAME);
+
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+        // Far past the chain's rest: nothing plays on behind the panel.
+        advance(30);
+
+        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> history.list().getItems())).isEmpty();
+        // Nor is it kept for the next run.
+        restartApp();
+        assertThat(fromFx(() -> history.list().getItems())).isEmpty();
+    }
+
+    @Test
+    void aRollStillPreSimulatingWhenTheSessionFailsNeverPlays() throws Exception {
+        physics.setHolding(true);
+        roll("1d6");
+
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+        // The pre-simulation finishes after the session has failed.
+        onFx(physics::finish);
+        onFx(() -> {});
+        advance(30);
+
+        assertThat(tray.shows()).isZero();
+        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> history.list().getItems())).isEmpty();
+    }
+
+    @Test
     void theWindowsShortcutsDoNothingBehindThePanel() throws Exception {
         dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
         assertThat(await(this::panelShown, WAIT)).isTrue();

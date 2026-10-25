@@ -244,6 +244,11 @@ public final class StreamingMixer {
         blockFrame += MixFormat.BLOCK_FRAMES;
     }
 
+    /**
+     * Applies what other threads queued since the last block, in the order queued: a {@code Play} starts following
+     * a Throw's events; a {@code Stop} drops every Throw and silences every voice at once. Audio thread only, at the
+     * start of each block, so a block is always mixed from one consistent state.
+     */
     private void applyCommands() {
         for (Command command; (command = commands.poll()) != null; ) {
             switch (command) {
@@ -256,6 +261,21 @@ public final class StreamingMixer {
         }
     }
 
+    /**
+     * Forgets the impact starts no decision from this block on can be affected by, so the start history stays a
+     * few windows long however long the app runs. Every frame is counted in output frames, which run in real time.
+     *
+     * <ul>
+     *   <li>{@code recentStarts} feeds the window cap. The earliest frame this block can still weigh is a late event
+     *       started up to {@code lateTolerance} before the block ({@link #startDue} drops anything later than that,
+     *       and {@link #admit} predicts frames down to the same bound), and a cap window holding that frame reaches
+     *       back one cap window further. So a start before {@code blockFrame - capFrames - lateFrames} can never
+     *       share a cap window with anything still to be decided.</li>
+     *   <li>{@code lastStartOfPair} feeds the merge window, checked only for impacts started in this block or
+     *       later, at {@code frame >= blockFrame}. A pair's last start before {@code blockFrame - mergeFrames} is
+     *       already a whole merge window behind any of them.</li>
+     * </ul>
+     */
     private void pruneRecentStarts() {
         long oldest = blockFrame - capFrames() - lateFrames();
         while (!recentStarts.isEmpty() && recentStarts.peekFirst() < oldest) {
@@ -472,6 +492,10 @@ public final class StreamingMixer {
         return slice;
     }
 
+    /**
+     * Sums every sounding voice's next block into {@code mix}, from silence, and retires each voice that has played
+     * to its end. The sum is unlimited here; {@link #writeOut} limits it.
+     */
     private void mixVoices() {
         java.util.Arrays.fill(mix, 0);
         for (Iterator<Voice> it = voices.iterator(); it.hasNext(); ) {
@@ -481,6 +505,13 @@ public final class StreamingMixer {
         }
     }
 
+    /**
+     * Turns the mixed block into 16-bit samples: the headroom, then the soft {@link #limit limiter} (so no sum of
+     * impacts can clip), then the Player's volume, or silence while muted. Muting scales the output rather than
+     * skipping the mix, so voices keep advancing and unmuting doesn't replay them.
+     *
+     * @param out receives the block, interleaved left and right
+     */
     private void writeOut(short[] out) {
         double gain = muted ? 0 : volume;
         for (int i = 0; i < out.length; i++) {
