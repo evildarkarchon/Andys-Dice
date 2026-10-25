@@ -5,7 +5,10 @@
 > and is kept as a primary source. It is built on the `prototype/numerals` code, with ADR-0008's numerals
 > as they were locked.
 
-**Verdict:** pending. The human's reaction is recorded on the ticket.
+**Verdict (2026-10-24).** Translucent Dice Sets ship in v1, drawn by technique **C** with the swirl
+**baked**. All **14** candidates ship as built-in Dice Sets, tuned during the build. Players can add
+their own `.diceset` files to the data folder. Recorded in
+[ADR-0009](https://github.com/evildarkarchon/Andys-Dice/blob/main/docs/adr/0009-dice-sets-are-data-files-and-translucency-is-analytic-refraction.md).
 
 **Question.** How is a Dice Set's material defined and fed to our GL 3.3 PBR shaders, and which Dice Sets
 ship in v1? Can translucent and gemstone looks be reached in GL 3.3 within the integrated-GPU budget?
