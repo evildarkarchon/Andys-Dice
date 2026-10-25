@@ -89,7 +89,8 @@ class TranslucentDiceSetTest {
         // lights and its analytic room, which no backdrop changes.
         double translucentShift = redMinusBlue(smoke, RED_BACKDROP) - redMinusBlue(smoke, BLUE_BACKDROP);
         double opaqueShift = redMinusBlue(opaque, RED_BACKDROP) - redMinusBlue(opaque, BLUE_BACKDROP);
-        // On the dev GPU: 76 inside the translucent Die, exactly 0 inside the opaque one.
+        // On the dev GPU: 76 inside the translucent Die, exactly 0 inside the opaque one (78 and 0 with #60's MSAA,
+        // the silhouette left out).
         assertThat(translucentShift).as("mean red-blue shift inside the translucent Die").isGreaterThan(30);
         assertThat(Math.abs(opaqueShift)).as("the same shift inside the opaque Die").isLessThan(1);
     }
@@ -151,15 +152,32 @@ class TranslucentDiceSetTest {
         Still still = draw(set, DieKind.D20);
         long sum = 0;
         int covered = 0;
-        for (int argb : still.pixels()) {
-            if (argb == backdrop) {
-                continue;
+        // Only the Die's inside: a pixel on its silhouette is partly backdrop once the scene draws with MSAA (the
+        // default High preset, #60), whatever the body is made of.
+        for (int y = 1; y < SIZE - 1; y++) {
+            for (int x = 1; x < SIZE - 1; x++) {
+                if (!insideTheDie(still, x, y, backdrop)) {
+                    continue;
+                }
+                int argb = still.argb(x, y);
+                covered++;
+                sum += ((argb >> 16) & 0xff) - (argb & 0xff);
             }
-            covered++;
-            sum += ((argb >> 16) & 0xff) - (argb & 0xff);
         }
         assertThat(covered).isGreaterThan(SIZE * SIZE / 10);
         return sum / (double) covered;
+    }
+
+    /** Whether a pixel and its eight neighbours all show the Die rather than the backdrop. */
+    private static boolean insideTheDie(Still still, int x, int y, int backdrop) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (still.argb(x + dx, y + dy) == backdrop) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /** How many pixels differ clearly between two stills. */

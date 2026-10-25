@@ -99,6 +99,9 @@ public final class AndysDice extends Application {
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        // The Settings tab's Quality Preset (#60): the saved one (Medium at first run) goes to the renderer now, and
+        // a new choice is saved and applied at once.
+        QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.

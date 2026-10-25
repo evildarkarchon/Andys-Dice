@@ -191,6 +191,28 @@ class RollControllerTest {
     }
 
     @Test
+    void eachThrowIsInMotionFromItsReleaseUntilItsDiceRest() {
+        // 4d6rr1 with these faces plans three Throws (see the test below).
+        RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+
+        ChainPlayback chain = tray.chains.getLast();
+        List<PlannedThrow> throwChain = chain.plan().throwChain();
+        assertThat(throwChain).hasSize(3);
+        assertThat(chain.throwInMotion(-0.01)).as("before the first Release").isEqualTo(-1);
+        for (int k = 0; k < throwChain.size(); k++) {
+            double release = chain.throwStart(k);
+            double rest = release + throwChain.get(k).recording().restTime();
+            assertThat(chain.throwInMotion(release)).as("Throw %d at its Release", k).isEqualTo(k);
+            assertThat(chain.throwInMotion((release + rest) / 2)).as("Throw %d tumbling", k).isEqualTo(k);
+            assertThat(chain.throwInMotion(rest)).as("Throw %d at rest", k).isEqualTo(-1);
+            assertThat(chain.throwInMotion(rest + 0.5)).as("after Throw %d, before the next", k).isEqualTo(-1);
+        }
+        assertThat(chain.throwInMotion(chain.restTime() + 1)).isEqualTo(-1);
+    }
+
+    @Test
     void rerollThrowsPlayInOrderWithTheOtherDiceLyingStill() {
         // 4d6rr1: rolls 0 and 2 show 1, so round 1 rerolls both; roll 0 shows 1 again, so round 2 rerolls it alone.
         RollController controller = controller(1, 4, 1, 6, 1, 3, 2);

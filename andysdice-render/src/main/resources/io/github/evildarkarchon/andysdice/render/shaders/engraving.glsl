@@ -10,6 +10,9 @@ uniform sampler2D uMask;   // r = ink coverage, g = engraving profile (0 face, 1
 uniform sampler2D uSlope;  // d(profile)/d(mm) along u and along v (image-down)
 uniform float uDepth;      // visible recess depth in mm: the engraving's depth less the ink film
 uniform float uMmPerUv;    // mm on a flat face per unit of atlas UV
+// The Quality Preset's sample counts (ADR-0014; ADR-0008's full quality is 12-48 and 12):
+uniform vec2 uParallaxSamples;    // profile samples looking straight at a face (x) and at grazing angles (y), <= 64
+uniform int uParallaxShadowSamples; // samples of the self-shadow march toward the key light
 
 // What the engraving does to one pixel of a Die.
 struct Engraving {
@@ -59,7 +62,7 @@ Engraving engrave(vec2 uv0, vec3 tangent, vec3 n, vec3 v, vec3 l) {
         // Steep parallax: more layers at grazing angles, where the ray crosses more of the profile.
         float nz = max(vTs.z, 0.12);
         vec2 full = -vTs.xy / nz * parUv;
-        float layers = mix(48.0, 12.0, clamp(vTs.z, 0.0, 1.0));
+        float layers = mix(uParallaxSamples.y, uParallaxSamples.x, clamp(vTs.z, 0.0, 1.0));
         float stepSize = 1.0 / layers;
         float cur = 0.0;
         float p = engravingProfile(uv, dx, dy);
@@ -78,7 +81,7 @@ Engraving engrave(vec2 uv0, vec3 tangent, vec3 n, vec3 v, vec3 l) {
         // Self-shadow: march from the hit toward the key light and see whether the rim is in the way.
         vec3 lTs = toTangent * l;
         if (hit > 0.002 && lTs.z > 0.0) {
-            const int SHADOW_STEPS = 12;
+            int SHADOW_STEPS = max(uParallaxShadowSamples, 1);
             vec2 toLight = lTs.xy / max(lTs.z, 0.08) * parUv * hit / float(SHADOW_STEPS);
             float d = hit;
             float occ = 0.0;

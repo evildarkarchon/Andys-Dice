@@ -1,6 +1,7 @@
 package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.render.FrameView;
+import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import java.util.Objects;
 
 /**
@@ -10,8 +11,9 @@ import java.util.Objects;
  * the cap. Without it a maximised Tray on a 4K screen at 150% (about 4.6 Mpx) would blow the GPU budget twice
  * over.
  *
- * <p>The Settings tab's Quality Preset (High lifts the cap) arrives later; until then the cap always applies.
- * Pure functions; safe on any thread.
+ * <p>The Settings tab's Quality Preset decides whether it applies: High lifts it (#60). {@link #capping(
+ * FrameView.SizeListener, QualityPreset)} follows the preset, resizing the target when it changes; the older
+ * {@link #capping(FrameView.SizeListener)} always caps. The functions are pure and safe on any thread.
  */
 final class RenderTargetCap {
 
@@ -61,6 +63,82 @@ final class RenderTargetCap {
             }
         }
         return new Size(w, h);
+    }
+
+    /**
+     * Fits a wanted render target under the cap if the Quality Preset has one (every preset below High).
+     *
+     * @param width the view's width in physical pixels, at least 1
+     * @param height the view's height in physical pixels, at least 1
+     * @param preset the Quality Preset in force
+     * @return the size itself under High; otherwise as {@link #fit(int, int)}
+     */
+    static Size fit(int width, int height, QualityPreset preset) {
+        return preset.capsRenderTarget() ? fit(width, height) : new Size(width, height);
+    }
+
+    /**
+     * Wraps a size listener (normally {@code RenderThread::resize}) so it is told whatever a {@link FrameView}
+     * reports, capped as the Quality Preset says; a later {@link Capping#setPreset} tells it again, from the last size
+     * the view reported.
+     *
+     * @param target told each size, capped or not
+     * @param preset the Quality Preset in force until {@link Capping#setPreset} says otherwise
+     * @return a listener to give {@link FrameView#setOnTargetSizeChanged}
+     */
+    static Capping capping(FrameView.SizeListener target, QualityPreset preset) {
+        return new Capping(target, preset);
+    }
+
+    /**
+     * A size listener that caps what it passes on as the current Quality Preset says, and passes the last size on
+     * again when the preset changes. Used on the JavaFX Application Thread, where the view reports and the Settings
+     * tab sets the preset.
+     */
+    static final class Capping implements FrameView.SizeListener {
+
+        private final FrameView.SizeListener target;
+        private QualityPreset preset;
+        // The last size the view reported, uncapped; null until it reports one.
+        private Size reported;
+
+        private Capping(FrameView.SizeListener target, QualityPreset preset) {
+            this.target = Objects.requireNonNull(target, "target");
+            this.preset = Objects.requireNonNull(preset, "preset");
+        }
+
+        @Override
+        public void sizeChanged(int width, int height) {
+            reported = new Size(width, height);
+            tell();
+        }
+
+        /**
+         * Changes the Quality Preset, and tells the target the last reported size capped under it (if the view has
+         * reported one): High's full size, or the capped one below it.
+         *
+         * @param next the Quality Preset now in force
+         */
+        void setPreset(QualityPreset next) {
+            preset = Objects.requireNonNull(next, "next");
+            if (reported != null) {
+                tell();
+            }
+        }
+
+        /**
+         * Returns the Quality Preset in force.
+         *
+         * @return the preset last set
+         */
+        QualityPreset preset() {
+            return preset;
+        }
+
+        private void tell() {
+            Size size = fit(reported.width(), reported.height(), preset);
+            target.sizeChanged(size.width(), size.height());
+        }
     }
 
     /**
