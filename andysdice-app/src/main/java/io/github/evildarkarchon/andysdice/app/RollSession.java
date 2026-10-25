@@ -26,6 +26,7 @@ final class RollSession {
     private final Notices notices = new Notices();
     private final RollQueue queue;
     private final RollEntry entry;
+    private final FastForward fastForward;
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     /**
@@ -86,6 +87,18 @@ final class RollSession {
                 pulses.stop();
             }
         });
+        // Shift held alone speeds the clock up (#51); everything that plays follows the clock.
+        fastForward = new FastForward(clock);
+        fastForward.install(ui);
+    }
+
+    /**
+     * Returns Fast-forward, which speeds the playback clock up while Shift is held alone.
+     *
+     * @return the session's Fast-forward
+     */
+    FastForward fastForward() {
+        return fastForward;
     }
 
     /**
