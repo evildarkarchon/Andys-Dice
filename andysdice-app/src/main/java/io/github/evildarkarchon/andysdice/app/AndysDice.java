@@ -5,6 +5,8 @@ import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
 import io.github.evildarkarchon.andysdice.sound.LineSink;
 import io.github.evildarkarchon.andysdice.sound.SoundOutput;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -45,6 +47,9 @@ public final class AndysDice extends Application {
     private static volatile int exitStatus;
     private static volatile Path dataFolder;
 
+    private LaunchMode mode = LaunchMode.PLAYER;
+    /** Where {@link #persistence} writes: the data folder, or the bench's throwaway folder. */
+    private Path stateFolder;
     private Skeleton skeleton;
     private Persistence persistence;
     private WindowGeometry.Tracker geometry;
@@ -74,21 +79,23 @@ public final class AndysDice extends Application {
 
     @Override
     public void start(Stage stage) {
-        boolean smoke = getParameters().getRaw().contains(SmokeTest.FLAG);
-        // The dev-only bench (#61); the smoke test wins if both are asked for.
-        boolean bench = !smoke && getParameters().getRaw().contains(Bench.FLAG);
+        // The smoke test, the dev-only bench (#61) or the Player's app; the smoke test wins if both are asked for.
+        mode = LaunchMode.of(getParameters().getRaw());
         // Neither hidden mode waits on a person: a failure exits at once.
-        boolean unattended = smoke || bench;
+        boolean unattended = mode.unattended();
         PlaybackClock clock = new PlaybackClock();
-        if (smoke) {
-            clock.setSpeed(SmokeTest.SPEED);
-        } else if (bench) {
-            clock.setSpeed(Bench.SPEED);
-        }
+        clock.setSpeed(mode.speed());
         // The persisted state first (spec §3.6): the window opens at the saved geometry. The one Notices goes to the
-        // session too, so a file set aside while loading shows behind the bell.
+        // session too, so a file set aside while loading shows behind the bell. The bench keeps its state in a
+        // throwaway folder, so its Rolls never join the Player's Roll History.
         Notices notices = new Notices();
-        persistence = new Persistence(dataFolder, notices::post);
+        try {
+            stateFolder = mode.openState(dataFolder);
+        } catch (IOException e) {
+            // Only the bench makes a folder; without one it must not fall back to the Player's Roll History.
+            throw new UncheckedIOException("Couldn't make the " + mode + " run's state folder", e);
+        }
+        persistence = new Persistence(stateFolder, notices::post);
         SettingsStore settings = new SettingsStore(persistence);
         // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
         // SecureRandom.
@@ -144,11 +151,7 @@ public final class AndysDice extends Application {
             }
         }, Platform::runLater);
 
-        if (smoke) {
-            SmokeTest.run(skeleton, this::quit);
-        } else if (bench) {
-            Bench.run(skeleton, launchToWindow, this::quit);
-        }
+        mode.run(skeleton, launchToWindow, this::quit);
     }
 
     @Override
@@ -160,6 +163,14 @@ public final class AndysDice extends Application {
         }
         if (persistence != null) {
             persistence.close();
+        }
+        if (stateFolder != null) {
+            // After the writer has finished: the bench's throwaway folder goes now (the data folder stays).
+            try {
+                mode.closeState(stateFolder);
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Couldn't delete " + stateFolder + ": " + e);
+            }
         }
         if (sound != null) {
             sound.close();

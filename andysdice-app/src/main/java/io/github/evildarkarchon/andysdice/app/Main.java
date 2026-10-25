@@ -35,7 +35,7 @@ public final class Main {
     public static void main(String[] args) {
         // The process's own start, launcher included, so "launch to window" covers what the user waits for.
         Instant launched = ProcessHandle.current().info().startInstant().orElseGet(Instant::now);
-        boolean smoke = List.of(args).contains(SmokeTest.FLAG);
+        LaunchMode mode = LaunchMode.of(List.of(args));
 
         DataFolder data = DataFolder.choose();
         // One instance (spec §3.6). Taken before the log is installed: the running copy owns the log file, and a
@@ -64,7 +64,7 @@ public final class Main {
         }
         LOG.log(Level.INFO, "Andy's Dice " + version() + " starting on Java " + Runtime.version() + ", "
                 + System.getProperty("os.name") + " " + System.getProperty("os.arch")
-                + (smoke ? ", in smoke-test mode" : List.of(args).contains(Bench.FLAG) ? ", in bench mode" : ""));
+                + mode.logSuffix());
         LOG.log(Level.INFO, "Data folder: " + data.folder() + " (" + data.reason() + ")");
         if (log != null) {
             LOG.log(Level.INFO, "Log file: " + log.file());
@@ -77,9 +77,8 @@ public final class Main {
         // v1 is crash-only (spec §3): whatever escapes a thread is on record, and ends the session in the failure
         // panel once the window is up.
         FailureGuard failures = FailureGuard.install(log == null ? null : log.file());
-        if (smoke) {
-            SmokeTest.prepare();
-        }
+        // The smoke test's verbose reports must be on before JavaFX starts.
+        mode.prepare();
 
         int status = AndysDice.launch(launched, data.folder(), args, failures);
 

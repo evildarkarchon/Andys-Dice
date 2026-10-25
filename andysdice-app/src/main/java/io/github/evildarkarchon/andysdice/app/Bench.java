@@ -34,8 +34,9 @@ import javafx.application.Platform;
  * checklist's to judge, not a gate of the bench.
  *
  * <p>The Rolls play at {@value #SPEED}× so the bench doesn't wait out every chain; playback speed doesn't touch
- * pre-simulation or the first frame. They go into the Roll History of the data folder the run uses (the dev run's is
- * {@code andysdice-app\target\data}). Leave the window alone while it runs: a resize would resize the render target
+ * pre-simulation or the first frame. They never reach the Player's Roll History: the bench keeps its persisted state
+ * in a throwaway folder of its own ({@link LaunchMode#BENCH}), deleted when it exits, and starts from a first run's
+ * settings; only the log stays in the data folder. Leave the window alone while it runs: a resize would resize the render target
  * under the GPU bench.
  *
  * <p>Thread contract: {@link #run} on the JavaFX Application Thread; the GPU bench runs on a thread of its own.
