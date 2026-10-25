@@ -13,7 +13,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import javafx.application.Platform;
 import javafx.scene.input.Clipboard;
+import javafx.scene.input.KeyCode;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -235,6 +237,79 @@ class FailurePanelTest extends HeadlessUiTest {
         } finally {
             onFx(window::close);
         }
+    }
+
+    @Test
+    void aPopupOpenWhenTheSessionFailsIsClosedSoNothingStaysOverThePanel() throws Exception {
+        // The Notice list and the parse-error popup, both open at once.
+        onFx(() -> ui().bell().fire());
+        onFx(() -> {
+            ui().expressionBox().setText("2d6+1d7kh1");
+            pressEnterInBox();
+        });
+        assertThat(fromFx(() -> showingPopups().size())).isEqualTo(2);
+
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+
+        assertThat(fromFx(HeadlessUiTest::showingPopups)).isEmpty();
+        assertThat(fromFx(() -> panel().quitButton().isFocused())).isTrue();
+    }
+
+    @Test
+    void aDialogOpenWhenTheSessionFailsIsClosedSoQuitCanBeReached() throws Exception {
+        onFx(() -> saved.askNew("2d6"));
+        assertThat(fromFx(() -> saved.dialog().isPresent())).isTrue();
+
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+
+        assertThat(fromFx(() -> saved.dialog().isPresent())).isFalse();
+        assertThat(fromFx(() -> Window.getWindows().stream().filter(Window::isShowing).toList()))
+                .containsExactly(stage);
+        // Nothing was saved by closing it.
+        assertThat(fromFx(() -> saved.saved().rolls())).isEmpty();
+    }
+
+    @Test
+    void aQueuedRollNeverStartsBehindThePanel() throws Exception {
+        roll("1d6");
+        onFx(() -> {
+            ui().expressionBox().setText("1d8");
+            pressEnterInBox();
+        });
+        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+        playToRest();
+        advance(RollQueue.BEAT_SECONDS + 1);
+
+        assertThat(tray.shows()).isEqualTo(1);
+        assertThat(fromFx(() -> session.entry().queue().queued())).isEmpty();
+        assertThat(fromFx(() -> session.entry().nextChip().isVisible())).isFalse();
+        // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing.
+        onFx(() -> session.roll("1d4"));
+        advance(RollQueue.BEAT_SECONDS + 1);
+        assertThat(tray.shows()).isEqualTo(1);
+    }
+
+    @Test
+    void theWindowsShortcutsDoNothingBehindThePanel() throws Exception {
+        dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+
+        for (KeyCode key : List.of(KeyCode.S, KeyCode.DIGIT1, KeyCode.L, KeyCode.R)) {
+            onFx(() -> {
+                robot().keyPress(KeyCode.CONTROL);
+                robot().keyType(key);
+                robot().keyRelease(KeyCode.CONTROL);
+            });
+        }
+
+        assertThat(fromFx(() -> saved.dialog().isPresent())).isFalse();
+        assertThat(fromFx(() -> ui().tabs().getSelectionModel().getSelectedItem())).isSameAs(ui().historyTab());
+        assertThat(fromFx(() -> panel().quitButton().isFocused())).isTrue();
     }
 
     /** Throws {@code error} on a new thread with that name, uncaught, and waits for the thread to end. */

@@ -35,6 +35,8 @@ final class RollQueue {
     private Optional<String> queuedName = Optional.empty();
     /** When on the clock the Queued Roll starts; NaN until the current Roll has ended. */
     private double startsAt = Double.NaN;
+    /** Set once the session has failed ({@link #close}): nothing rolls from then on. */
+    private boolean closed;
 
     /**
      * Creates an empty queue in front of a controller and starts it listening to the clock.
@@ -69,6 +71,9 @@ final class RollQueue {
     void roll(String text, Optional<String> savedRollName) {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(savedRollName, "savedRollName");
+        if (closed) {
+            return;
+        }
         if (controller.underWay() || queued != null) {
             queued = text;
             queuedName = savedRollName;
@@ -89,6 +94,15 @@ final class RollQueue {
         }
         clear();
         return true;
+    }
+
+    /**
+     * Ends the queue for good, as the failure panel does (spec §3.2 "Runtime failure"): the Queued Roll is dropped,
+     * and every later request is ignored, so nothing starts behind the panel.
+     */
+    void close() {
+        closed = true;
+        cancel();
     }
 
     /**

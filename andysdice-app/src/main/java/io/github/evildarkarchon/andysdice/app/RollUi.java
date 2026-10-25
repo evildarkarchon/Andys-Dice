@@ -15,7 +15,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+import javafx.stage.PopupWindow;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
 /**
  * The Roll UI's window content: Layout C, "Notebook sidebar" (spec §3.2 "Layout").
@@ -29,6 +31,10 @@ import javafx.scene.layout.VBox;
  * Enter in the box and the Roll button both hand the box's text to {@link #setOnRoll the roll handler}; a die-strip
  * button appends its Die to the box ({@link DieStrip}), even to a selected expression. Every icon is code-drawn
  * ({@link Icons}) and every colour comes from the {@link Palette} through the {@link Stylesheet}.
+ *
+ * <p>Tab runs in spec §3.2's focus order: the box, the die strip, the Roll button, the tabs, the open tab's content,
+ * the bell, and round to the box. JavaFX takes that order from the order nodes were added, so the layout adds them in
+ * it, whatever order they are drawn in. The window-wide shortcuts are {@link KeyboardMap}'s.
  *
  * <p>This is the shell later tickets fill: the Breakdown in the result strip (#49), the error popup and the
  * "next: …" chip (#50), the bell's Notices (#52), and the tabs' contents (#55–#57, Settings). Each tab's content
@@ -56,10 +62,12 @@ final class RollUi extends BorderPane {
     private final Tab historyTab = tab("History");
     private final Tab lookTab = tab("Look");
     private final Tab settingsTab = tab("Settings");
-    private final VBox sidebar;
+    private final BorderPane sidebar;
     private final ResultStrip resultStrip = new ResultStrip();
     private final Node tray;
     private Consumer<String> onRoll = expression -> {};
+    private final List<Runnable> failureListeners = new ArrayList<>();
+    private boolean failed;
 
     /**
      * Lays out Layout C around a Tray.
@@ -83,8 +91,13 @@ final class RollUi extends BorderPane {
         tabs.getTabs().addAll(List.of(savedTab, historyTab, lookTab, settingsTab));
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabs.getSelectionModel().select(historyTab);
-        VBox.setVgrow(tabs, Priority.ALWAYS);
-        sidebar = new VBox(header, tabs);
+        tabs.setAccessibleText("Sidebar tabs");
+        // Tab follows the order children were added, not where they are drawn (spec §3.2 "Keyboard": the tabs and
+        // the open tab's content come before the bell). So the header goes in after the tabs, drawn on top all the
+        // same.
+        sidebar = new BorderPane();
+        sidebar.setCenter(tabs);
+        sidebar.setTop(header);
         sidebar.getStyleClass().add("sidebar");
         sidebar.setMinWidth(SIDEBAR_WIDTH);
         sidebar.setPrefWidth(SIDEBAR_WIDTH);
@@ -117,12 +130,16 @@ final class RollUi extends BorderPane {
         trayArea.getStyleClass().add("tray-area");
         // The Tray may be as small as the window allows; its render target follows whatever size it gets.
         trayArea.setMinSize(0, 0);
-        BorderPane main = new BorderPane(trayArea);
+        // Added in focus order (the toolbar first), as with the sidebar: the Tray and the result strip take no Tab
+        // stop, but the toolbar must come before them all the same.
+        BorderPane main = new BorderPane();
         main.setTop(toolbar);
+        main.setCenter(trayArea);
         main.setBottom(resultStrip);
 
-        setLeft(sidebar);
+        // The main area before the sidebar, so Tab runs from the Roll button on into the tabs.
         setCenter(main);
+        setLeft(sidebar);
     }
 
     /**
@@ -210,7 +227,7 @@ final class RollUi extends BorderPane {
      *
      * @return the column holding the header and the tabs
      */
-    VBox sidebar() {
+    BorderPane sidebar() {
         return sidebar;
     }
 
@@ -298,17 +315,85 @@ final class RollUi extends BorderPane {
     /**
      * Ends the session on screen (spec §3.2 "Runtime failure", #53): the Tray area holds only the failure panel,
      * the Tray's own node taken out of the window, and the sidebar and the toolbar are disabled behind it, so
-     * nothing can be rolled, chosen or changed once the session has failed.
+     * nothing can be rolled, chosen or changed once the session has failed. Any popup or dialog open over the window
+     * is closed first, and the {@link #addFailureListener failure listeners} are told last.
      *
      * @param panel the failure panel
      */
     void showFailure(Node panel) {
         Objects.requireNonNull(panel, "panel");
+        failed = true;
+        // A popup (the Notice list, the error popup, a menu) or a dialog open at the moment of failure would
+        // otherwise stay over the panel, and a modal one would keep the Player from reaching Quit.
+        hideWindowsOver();
         // The main area's centre is the Tray area the constructor made around the Tray.
         StackPane trayArea = (StackPane) ((BorderPane) getCenter()).getCenter();
         trayArea.getChildren().setAll(panel);
         sidebar.setDisable(true);
         toolbar.setDisable(true);
+        for (Runnable listener : List.copyOf(failureListeners)) {
+            listener.run();
+        }
+    }
+
+    /**
+     * Tells whether the session has ended in the failure panel ({@link #showFailure}). From then on nothing may roll,
+     * open or change: the window-wide shortcuts check this, since a filter on this root still hears keys while the
+     * sidebar and toolbar are disabled.
+     *
+     * @return {@code true} once the failure panel is shown
+     */
+    boolean failed() {
+        return failed;
+    }
+
+    /**
+     * Adds a listener told once the failure panel is shown, after the sidebar and toolbar are disabled: the session
+     * drops its Queued Roll there, so nothing starts behind the panel.
+     *
+     * @param listener run on the JavaFX thread, in the order added
+     */
+    void addFailureListener(Runnable listener) {
+        failureListeners.add(Objects.requireNonNull(listener, "listener"));
+    }
+
+    /** Hides every popup and dialog owned, directly or through another, by this UI's window. */
+    private void hideWindowsOver() {
+        Window own = getScene() == null ? null : getScene().getWindow();
+        if (own == null) {
+            return;
+        }
+        // A copy: hiding a window takes it out of the live list.
+        for (Window window : List.copyOf(Window.getWindows())) {
+            if (window != own && window.isShowing() && ownedBy(window, own)) {
+                window.hide();
+            }
+        }
+    }
+
+    /**
+     * Tells whether a window is owned by another, directly or through a chain of owners (a popup over a dialog over
+     * the main window, say).
+     *
+     * @param window a popup or a stage
+     * @param owner the possible owner
+     * @return {@code true} if {@code owner} is somewhere up {@code window}'s chain of owners
+     */
+    static boolean ownedBy(Window window, Window owner) {
+        for (Window at = ownerOf(window); at != null; at = ownerOf(at)) {
+            if (at == owner) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Window ownerOf(Window window) {
+        return switch (window) {
+            case PopupWindow popup -> popup.getOwnerWindow();
+            case Stage stage -> stage.getOwner();
+            default -> null;
+        };
     }
 
     /** A tab whose content is an empty pane for its ticket to fill. */
