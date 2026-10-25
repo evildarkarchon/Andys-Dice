@@ -7,4 +7,11 @@
  * build's native-access option set leaves it denied.
  */
 module io.github.evildarkarchon.andysdice.core {
+    // Transitive: the geometry API (solids, poses) is written in JOML types (spec §6: the math library).
+    requires transitive org.joml;
+
+    exports io.github.evildarkarchon.andysdice.core.expression;
+    exports io.github.evildarkarchon.andysdice.core.facevalue;
+    exports io.github.evildarkarchon.andysdice.core.geometry;
+    exports io.github.evildarkarchon.andysdice.core.simulation;
 }
