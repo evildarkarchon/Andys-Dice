@@ -15,7 +15,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SplittableRandom;
-import java.util.concurrent.atomic.AtomicInteger;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -39,33 +38,16 @@ class WalkingSkeletonTest {
     private static final double FRAME = 1.0 / 60;
     private static final Duration WAIT = Duration.ofSeconds(30);
 
-    /** Pulses that only count starts and stops: the test advances the clock itself. */
-    private static final class HandPulses implements Pulses {
-        final AtomicInteger starts = new AtomicInteger();
-        volatile boolean running;
-
-        @Override
-        public void start() {
-            starts.incrementAndGet();
-            running = true;
-        }
-
-        @Override
-        public void stop() {
-            running = false;
-        }
-    }
-
     @Test
     void enterPlansTheWholeChainPlaysEveryThrowAndShowsTheResultOnlyAtRest() throws Exception {
-        HeadlessFx.start();
+        HeadlessUiTest.startToolkit();
         PlaybackClock clock = new PlaybackClock();
         HandPulses pulses = new HandPulses();
         // The first Die shows a 1, so it is rerolled once, to a 3: the others show 4, 5 and 6.
         Generators generators = new Generators(new ScriptedRandom(1, 4, 5, 6, 3), new SplittableRandom(7),
                 new SplittableRandom(9));
-        Skeleton skeleton = HeadlessFx.call(() -> Skeleton.start(clock, pulses, generators));
-        Stage stage = HeadlessFx.call(() -> {
+        Skeleton skeleton = HeadlessUiTest.fromFx(() -> Skeleton.start(clock, pulses, generators));
+        Stage stage = HeadlessUiTest.fromFx(() -> {
             Stage s = new Stage();
             s.setScene(new Scene(skeleton.pane(), 640, 480));
             s.show();
@@ -73,17 +55,17 @@ class WalkingSkeletonTest {
         });
         try {
             // The empty first-run Tray is drawn before anything is rolled.
-            assertThat(HeadlessFx.await(() -> skeleton.view().framesPresented() > 0, WAIT)).isTrue();
+            assertThat(HeadlessUiTest.await(() -> skeleton.view().framesPresented() > 0, WAIT)).isTrue();
 
-            HeadlessFx.run(() -> {
+            HeadlessUiTest.onFx(() -> {
                 skeleton.pane().expressionBox().setText("4d6rr1kh3");
                 skeleton.pane().expressionBox().fireEvent(
                         new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
             });
-            assertThat(HeadlessFx.call(() -> skeleton.pane().resultStrip().getText())).isEqualTo("Rolling…");
+            assertThat(HeadlessUiTest.fromFx(() -> skeleton.pane().resultStrip().text())).isEqualTo("Rolling…");
 
             // Pre-simulation of the whole chain runs on the physics worker; playback starts only once it is done.
-            assertThat(HeadlessFx.await(() -> skeleton.showing() != null, WAIT)).isTrue();
+            assertThat(HeadlessUiTest.await(() -> skeleton.showing() != null, WAIT)).isTrue();
             ChainPlayback chain = skeleton.showing();
             List<PlannedThrow> throwChain = chain.plan().throwChain();
             assertThat(throwChain.getFirst().kind()).isEqualTo(ThrowKind.FIRST);
@@ -96,11 +78,11 @@ class WalkingSkeletonTest {
             List<Double> times = new ArrayList<>();
             List<String> strips = new ArrayList<>();
             List<List<DiceScene.Die>> drawn = new ArrayList<>();
-            HeadlessFx.run(() -> {
+            HeadlessUiTest.onFx(() -> {
                 while (!(skeleton.controller().status() instanceof RollStatus.Rested) && clock.time() < 30) {
                     clock.advance(FRAME);
                     times.add(clock.time());
-                    strips.add(skeleton.pane().resultStrip().getText());
+                    strips.add(skeleton.pane().resultStrip().text());
                     drawn.add(chain.diceAt(clock.time()));
                 }
             });
@@ -113,7 +95,7 @@ class WalkingSkeletonTest {
             assertThat(times.getLast()).isGreaterThanOrEqualTo(rest).isLessThan(rest + FRAME);
             // The clock runs on while the camera settles in on the Dice at rest (#46), then JavaFX may idle.
             assertThat(pulses.running).isTrue();
-            double settled = HeadlessFx.call(() -> {
+            double settled = HeadlessUiTest.fromFx(() -> {
                 while (pulses.running && clock.time() < 30) {
                     clock.advance(FRAME);
                 }
@@ -121,8 +103,8 @@ class WalkingSkeletonTest {
             });
             assertThat(settled).isGreaterThanOrEqualTo(rest + TrayCamera.SETTLE_SECONDS)
                     .isLessThan(rest + TrayCamera.SETTLE_SECONDS + 2 * FRAME);
-            assertThat(HeadlessFx.call(() -> skeleton.camera().camera())).isEqualTo(
-                    HeadlessFx.call(() -> Framing.of(Skeleton.TRAY.geometry()).resting(chain.diceAt(rest + 1),
+            assertThat(HeadlessUiTest.fromFx(() -> skeleton.camera().camera())).isEqualTo(
+                    HeadlessUiTest.fromFx(() -> Framing.of(Skeleton.TRAY.geometry()).resting(chain.diceAt(rest + 1),
                             skeleton.view().getWidth() / skeleton.view().getHeight()).camera()));
 
             // While a Throw plays, every Die it doesn't throw stays exactly where it lay.
@@ -143,14 +125,14 @@ class WalkingSkeletonTest {
                 assertThat(up.cocked()).isFalse();
             }
             // The playback frames reached the screen through the bridge.
-            assertThat(HeadlessFx.await(() -> skeleton.view().framesPresented() > framesBefore, WAIT)).isTrue();
+            assertThat(HeadlessUiTest.await(() -> skeleton.view().framesPresented() > framesBefore, WAIT)).isTrue();
 
             // The Dice stay on the Tray, and the result stays shown, until the next Roll.
-            HeadlessFx.run(() -> clock.advance(2));
+            HeadlessUiTest.onFx(() -> clock.advance(2));
             assertThat(skeleton.showing()).isSameAs(chain);
-            assertThat(HeadlessFx.call(() -> skeleton.pane().resultStrip().getText())).isEqualTo("4d6rr1kh3 = 15");
+            assertThat(HeadlessUiTest.fromFx(() -> skeleton.pane().resultStrip().text())).isEqualTo("4d6rr1kh3 = 15");
         } finally {
-            HeadlessFx.run(() -> {
+            HeadlessUiTest.onFx(() -> {
                 stage.close();
                 skeleton.close();
             });
