@@ -2,6 +2,8 @@ package io.github.evildarkarchon.andysdice.render;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
@@ -15,9 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The dev gallery on a real GL 3.3 core context (ADR-0005): one still of every Die Kind in every fixed pose, each
- * showing a Die with inked Numerals, and a sheet of every Die Kind's Numerals as its atlas lays them out. Whether
- * they look right is for an eye to judge; this checks that they are all there.
+ * The dev gallery on a real GL 3.3 core context (ADR-0005): one still of every Die Kind in every fixed pose in every
+ * built-in Dice Set, each showing a Die with inked Numerals, and a sheet of every Die Kind's Numerals as its atlas
+ * lays them out. Whether they look right is for an eye to judge; this checks that they are all there.
  *
  * <p>The gallery starts the JVM's one render thread itself, so it has a test class (and a JVM) of its own.
  */
@@ -25,25 +27,32 @@ import org.junit.jupiter.api.io.TempDir;
 class GalleryTest {
 
     @Test
-    void writesAStillOfEveryDieKindInEveryPoseAndASheetOfItsNumerals(@TempDir Path directory) throws Exception {
+    void writesAStillOfEveryDieKindInEveryPoseInEveryDiceSetAndASheetOfItsNumerals(@TempDir Path directory)
+            throws Exception {
         List<Path> written = Gallery.write(directory);
 
         List<Path> expected = new ArrayList<>();
         List<Path> stills = new ArrayList<>();
         List<Path> faceUp = new ArrayList<>();
         List<Path> sheets = new ArrayList<>();
-        for (DieKind kind : DieKind.values()) {
-            String name = kind.name().toLowerCase(Locale.ROOT);
-            for (Gallery.Pose pose : Gallery.Pose.values()) {
-                Path still = directory.resolve(name + "-"
-                        + pose.name().toLowerCase(Locale.ROOT).replace('_', '-') + ".png");
-                expected.add(still);
-                stills.add(still);
-                if (pose == Gallery.Pose.FACE_UP) {
-                    faceUp.add(still);
+        // Ticket #42: every Die Kind in every built-in Dice Set, a directory per Dice Set, in catalogue order.
+        for (DiceSet set : DiceSetCatalogue.builtIn().diceSets()) {
+            for (DieKind kind : DieKind.values()) {
+                String name = kind.name().toLowerCase(Locale.ROOT);
+                for (Gallery.Pose pose : Gallery.Pose.values()) {
+                    Path still = directory.resolve(set.identity()).resolve(name + "-"
+                            + pose.name().toLowerCase(Locale.ROOT).replace('_', '-') + ".png");
+                    expected.add(still);
+                    stills.add(still);
+                    // Ivory / black's dark ink on a light body is told apart by colour alone.
+                    if (pose == Gallery.Pose.FACE_UP && set.identity().equals("02-ivory")) {
+                        faceUp.add(still);
+                    }
                 }
             }
-            Path sheet = directory.resolve(name + "-numerals.png");
+        }
+        for (DieKind kind : DieKind.values()) {
+            Path sheet = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-numerals.png");
             expected.add(sheet);
             sheets.add(sheet);
         }
@@ -66,8 +75,8 @@ class GalleryTest {
             assertThat(image.getWidth()).isEqualTo(image.getHeight()).isLessThanOrEqualTo(Gallery.SHEET_MAX_PX);
             assertThat(inkFraction(image)).as("%s shows Numerals", file).isGreaterThan(0.005);
         }
-        try (var listing = Files.list(directory)) {
-            assertThat(listing.count()).isEqualTo(written.size());
+        try (var listing = Files.walk(directory)) {
+            assertThat(listing.filter(Files::isRegularFile).count()).isEqualTo(written.size());
         }
     }
 

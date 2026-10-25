@@ -1,0 +1,16 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Speckle: matte flakes (flakes.metallic = 0) in a granite-grey body with a faint cloud swirl.
+format = 1
+name = Speckled stone / black
+base = #6f6c66
+roughness = 0.38
+swirl.color = #8e8a80
+swirl.scale = 4
+swirl.warp = 1.0
+swirl.amount = 0.5
+swirl.softness = 0.2
+flakes.color = #1c1a18
+flakes.density = 0.55
+flakes.size = 0.35
+flakes.metallic = 0
+ink = #101010
