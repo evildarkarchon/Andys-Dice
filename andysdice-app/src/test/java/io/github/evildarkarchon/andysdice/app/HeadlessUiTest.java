@@ -4,6 +4,8 @@ import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.SplittableRandom;
 import java.util.concurrent.Callable;
@@ -38,6 +40,10 @@ import org.junit.jupiter.api.io.TempDir;
  * </ul>
  * Face Values come from {@link #faces}: script the ones a test checks ({@code faces.then(1, 4, 5)}) before it
  * rolls; any draw past the script comes from a fixed seed.
+ *
+ * <p>The persisted state is real too: a {@link Persistence} writer over the test's data folder, with the History
+ * tab ({@link #history}) over it, dated by a {@link #wallClock} the test sets. {@link #restartApp} quits and opens
+ * the app again on the same folder, as the next run would.
  *
  * <p><b>This class owns the headless flags.</b> It is the only place app's tests choose JavaFX's platform:
  * {@code glass.platform=Headless} and Prism's {@code sw} pipeline, set before the toolkit starts once per test JVM.
@@ -90,6 +96,18 @@ abstract class HeadlessUiTest {
     protected RollSession session;
     /** The app window. */
     protected Stage stage;
+    /**
+     * The wall clock the Roll History stamps Rolls with and dates its day headers by (#55): 2026-10-25 12:00 UTC
+     * at the start of every test, in UTC, and moved only by the test.
+     */
+    protected SettableClock wallClock;
+    /** The persisted files' writer, over {@link #dataFolder}; closed after each test and on {@link #restartApp}. */
+    protected Persistence persistence;
+    /** The History tab (#55), over {@link #persistence} and {@link #wallClock}. */
+    protected HistoryTab history;
+
+    /** Where every test's wall clock starts: a Sunday. */
+    static final Instant WALL_CLOCK_START = Instant.parse("2026-10-25T12:00:00Z");
 
     private String previousDataFolder;
     private Robot robot;
@@ -117,17 +135,41 @@ abstract class HeadlessUiTest {
     @BeforeEach
     final void openApp() throws Exception {
         previousDataFolder = System.setProperty(DATA_FOLDER_PROPERTY, dataFolder.toString());
+        wallClock = new SettableClock(WALL_CLOCK_START, ZoneOffset.UTC);
+        open();
+    }
+
+    /**
+     * Closes the window and the persisted files' writer, as quitting the app does, then opens the app again on the
+     * same data folder, wall clock and Face Value script, as the next run would: whatever was persisted is loaded
+     * again, and a Roll still under way is lost.
+     *
+     * @throws Exception if the JavaFX thread failed or timed out
+     */
+    protected final void restartApp() throws Exception {
+        close();
+        open();
+    }
+
+    /** Builds the app's pieces and opens its window over {@link #dataFolder}. */
+    private void open() throws Exception {
         clock = new PlaybackClock();
         simulator = new ScriptedSimulator();
         physics = new HeldPhysics(simulator);
         physics.setHolding(false);
-        faces = new ScriptedRandom().orElse(new SplittableRandom(48));
+        if (faces == null) {
+            // Kept across a restart, so a script a test wrote before restarting still applies.
+            faces = new ScriptedRandom().orElse(new SplittableRandom(48));
+        }
         pulses = new HandPulses();
         Generators generators = new Generators(faces, new SplittableRandom(7), new SplittableRandom(9));
         onFx(() -> {
             tray = new StandInTray(clock);
             session = new RollSession(clock, pulses, physics, Platform::runLater, generators,
                     BuiltInTrays.defaultTray(), tray);
+            // As AndysDice.start does: one writer over the data folder, its Notices behind the bell.
+            persistence = new Persistence(dataFolder, session.notices()::post);
+            history = HistoryTab.install(session, persistence, wallClock);
             stage = new Stage();
             MainWindow.open(stage, session.ui());
         });
@@ -158,18 +200,29 @@ abstract class HeadlessUiTest {
         }
     }
 
-    /** Closes the window and restores the data-folder property. */
+    /** Closes the window and the writer, and restores the data-folder property. */
     @AfterEach
     final void closeApp() throws Exception {
         try {
-            if (stage != null) {
-                onFx(stage::close);
-            }
+            close();
         } finally {
             if (previousDataFolder == null) {
                 System.clearProperty(DATA_FOLDER_PROPERTY);
             } else {
                 System.setProperty(DATA_FOLDER_PROPERTY, previousDataFolder);
+            }
+        }
+    }
+
+    /** Closes the window, then the writer, which finishes every queued write first (as AndysDice.stop does). */
+    private void close() throws Exception {
+        try {
+            if (stage != null) {
+                onFx(stage::close);
+            }
+        } finally {
+            if (persistence != null) {
+                persistence.close();
             }
         }
     }
