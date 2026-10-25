@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PROTOTYPE - throwaway. Lives only on the prototype/roll-ui branch; never merge to main.
+  Answers "How should the v1 Roll UI look and behave?"
+  (https://github.com/evildarkarchon/Andys-Dice/issues/19).
+
+  Run (from the repo root):  mvn.cmd -q -f prototypes/roll-ui/pom.xml package exec:exec
+  See README.md next to this file for keys and options.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>andysdice.prototype</groupId>
+    <artifactId>roll-ui</artifactId>
+    <version>0-PROTOTYPE</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.release>27</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <javafx.version>27.0.1</javafx.version>
+        <!-- Run options, overridable with -D on the mvn command line (see README.md). -->
+        <rollui.main>andysdice.prototype.rollui.Launcher</rollui.main>
+        <rollui.variant>A</rollui.variant>
+        <rollui.capture></rollui.capture>
+    </properties>
+
+    <dependencies>
+        <!-- The tray is a 2D placeholder: no GL, no Jolt. The question is the UI around it. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <!-- Only for the capture tour: SwingFXUtils turns a scene snapshot into a PNG. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.1</version>
+            </plugin>
+
+            <!-- JavaFX goes on the module path (target/fx). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-fx</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-dependencies</goal></goals>
+                        <configuration>
+                            <includeGroupIds>org.openjfx</includeGroupIds>
+                            <outputDirectory>${project.build.directory}/fx</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <executable>${java.home}/bin/java</executable>
+                    <workingDirectory>${project.basedir}</workingDirectory>
+                    <arguments>
+                        <!-- One token on purpose: exec-maven-plugin rewrites the value after a bare "module-path" flag. -->
+                        <argument>--module-path=${project.build.directory}/fx</argument>
+                        <argument>--add-modules</argument>
+                        <argument>javafx.controls,javafx.swing</argument>
+                        <argument>--enable-native-access=javafx.graphics</argument>
+                        <argument>-Drollui.variant=${rollui.variant}</argument>
+                        <argument>-Drollui.capture=${rollui.capture}</argument>
+                        <argument>-classpath</argument>
+                        <argument>${project.build.outputDirectory}</argument>
+                        <argument>${rollui.main}</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
