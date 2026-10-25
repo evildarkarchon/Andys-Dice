@@ -1,0 +1,11 @@
+# Andy's Dice Tray. Colours are sRGB hex; the wall height is in mm (30 to 100).
+# Bare walnut in a walnut rectangle, square tops (spec Appendix C).
+format = 1
+name = Walnut board
+outline = rectangle
+walls.profile = square
+walls.material = wood
+walls.color = #957355
+walls.height = 30
+floor.surface = wood
+floor.color = #957355

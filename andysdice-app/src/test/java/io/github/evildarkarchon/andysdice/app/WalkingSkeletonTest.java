@@ -122,7 +122,7 @@ class WalkingSkeletonTest {
             assertThat(settled).isGreaterThanOrEqualTo(rest + TrayCamera.SETTLE_SECONDS)
                     .isLessThan(rest + TrayCamera.SETTLE_SECONDS + 2 * FRAME);
             assertThat(HeadlessFx.call(() -> skeleton.camera().camera())).isEqualTo(
-                    HeadlessFx.call(() -> Framing.of(SkeletonTray.GEOMETRY).resting(chain.diceAt(rest + 1),
+                    HeadlessFx.call(() -> Framing.of(Skeleton.TRAY.geometry()).resting(chain.diceAt(rest + 1),
                             skeleton.view().getWidth() / skeleton.view().getHeight()).camera()));
 
             // While a Throw plays, every Die it doesn't throw stays exactly where it lay.
