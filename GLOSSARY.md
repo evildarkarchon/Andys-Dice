@@ -64,3 +64,15 @@ Rolling 2d20 and keeping the higher (advantage) or the lower (disadvantage).
 **Keep Highest / Keep Lowest**:
 Keeping only the N highest or N lowest Face Values of a group of dice, as in `4d6kh3`.
 _Avoid_: Drop lowest (use the keep form)
+
+**Roll**:
+One rolling of a Roll Expression: its Throws and the Roll Result they produce.
+_Avoid_: Roll event, history entry
+
+**Roll History**:
+The most recent Rolls, newest first, each remembered with its Roll Expression, Face Values and, if it came from one, its Saved Roll's name at the time.
+_Avoid_: Log, roll log
+
+**Saved Roll**:
+A Roll Expression kept under a name the player chose, so it can be rolled again without retyping.
+_Avoid_: Favourite, macro, preset
