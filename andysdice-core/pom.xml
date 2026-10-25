@@ -15,4 +15,13 @@
 
     <artifactId>andysdice-core</artifactId>
     <name>Andy's Dice: core</name>
+
+    <dependencies>
+        <!-- The math library (spec §6). Pure Java with no natives, so core stays native-free. The Die Kind
+             solids and poses are JOML types, which physics and render read directly. -->
+        <dependency>
+            <groupId>org.joml</groupId>
+            <artifactId>joml</artifactId>
+        </dependency>
+    </dependencies>
 </project>
