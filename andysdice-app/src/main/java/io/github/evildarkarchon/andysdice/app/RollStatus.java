@@ -2,6 +2,7 @@ package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollResult;
+import io.github.evildarkarchon.andysdice.core.planner.FailureReason;
 import java.util.Objects;
 
 /**
@@ -17,7 +18,7 @@ sealed interface RollStatus {
     record Ready() implements RollStatus {
         @Override
         public String text() {
-            return "Type 1d6 and press Enter.";
+            return "Type a Roll Expression and press Enter.";
         }
     }
 
@@ -80,23 +81,48 @@ sealed interface RollStatus {
     }
 
     /**
-     * A Failed Roll: its Throw never came to rest flat, or the physics worker failed. Nothing moved, no result
-     * is shown and the Tray keeps its previous Dice (spec §3.1).
+     * A Failed Roll: its Dice wouldn't settle, it needed too many rerolls, or the physics worker failed. Nothing
+     * moved, no result is shown and the Tray keeps its previous Dice (spec §3.1).
      *
      * @param expression what was being rolled
-     * @param reason why it failed
+     * @param message what the result strip shows in place of the total
      */
-    record Failed(RollExpression expression, String reason) implements RollStatus {
+    record Failed(RollExpression expression, String message) implements RollStatus {
 
         /** Checks both parts are present. */
         public Failed {
             Objects.requireNonNull(expression, "expression");
-            Objects.requireNonNull(reason, "reason");
+            Objects.requireNonNull(message, "message");
+        }
+
+        /**
+         * The Failed Roll the planner reported, with the spec's message for its reason (spec §3.2).
+         *
+         * @param expression what was being rolled
+         * @param reason why the planner failed it
+         * @return the status
+         */
+        static Failed of(RollExpression expression, FailureReason reason) {
+            return new Failed(expression, switch (reason) {
+                case WOULDNT_SETTLE -> "The Dice wouldn't settle. Nothing was rolled. Press Enter to try again.";
+                case TOO_MANY_REROLLS -> "Too many rerolls. Nothing was rolled.";
+            });
+        }
+
+        /**
+         * A Roll that failed because pre-simulation itself broke. #53's runtime-failure panel takes these over.
+         *
+         * @param expression what was being rolled
+         * @param cause what went wrong, in a few words
+         * @return the status
+         */
+        static Failed broken(RollExpression expression, String cause) {
+            return new Failed(expression, "The Roll failed: " + cause);
         }
 
         @Override
         public String text() {
-            return "The Roll failed: " + reason;
+            return message;
         }
     }
 }

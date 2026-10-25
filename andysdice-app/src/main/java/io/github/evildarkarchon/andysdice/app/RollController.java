@@ -1,59 +1,37 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.DiceGroup;
-import io.github.evildarkarchon.andysdice.core.expression.FaceValueChain;
 import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
-import io.github.evildarkarchon.andysdice.core.expression.RollEvaluator;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
-import io.github.evildarkarchon.andysdice.core.expression.RollResult;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
-import io.github.evildarkarchon.andysdice.core.facevalue.FaceValues;
-import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
-import io.github.evildarkarchon.andysdice.core.geometry.NumberingRotation;
-import io.github.evildarkarchon.andysdice.core.geometry.UpFace;
+import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
+import io.github.evildarkarchon.andysdice.core.planner.ThrowPlanner;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
-import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
-import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
-import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
-import io.github.evildarkarchon.andysdice.core.simulation.Ending;
-import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
-import io.github.evildarkarchon.andysdice.core.simulation.Recording;
-import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
-import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
-import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
-import org.joml.Quaterniond;
-import org.joml.Quaterniondc;
 
 /**
- * Runs a Roll from Enter to rest (spec §3.1) for the walking skeleton, which rolls {@code 1d6} with an optional
- * Modifier: parse, choose the Face Value, pre-simulate the cube's Throw on the physics worker, play its
- * Recording back on the playback clock, and show the Roll Result only once the cube is at rest. The cube then
- * stays on the Tray until the next Roll is ready to play.
+ * Runs a Roll from Enter to rest (spec §3.1) for any Roll Expression: parse, then hand the Roll to
+ * {@code core}'s {@link ThrowPlanner} on the physics worker, which chooses every Face Value and pre-simulates the
+ * whole chain of Throws (first Throw, Reroll Throws, Cocked Rethrows) before anything moves; then play that chain
+ * back on the playback clock as a {@link ChainPlayback}, and show the Roll Result only once the last Throw is at
+ * rest. The Dice then stay on the Tray until the next Roll is ready to play.
  *
- * <p>The Face Value is chosen before anything is simulated (ADR-0001), and the cube is drawn turned by its
- * Numbering Rotation, so whichever face Jolt landed up shows the chosen value. An Attempt that doesn't come to
- * rest flat is retried silently, up to {@value #MAX_ATTEMPTS} times (ADR-0013); past that the Roll fails and
- * the Tray keeps its Dice. Ticket #36's planner takes over the Attempts (and adds Cocked Rethrows), and #38
- * widens this to any Roll Expression.
+ * <p>A Failed Roll (the Dice wouldn't settle, or too many rerolls) is known before anything moves: the Tray
+ * keeps the previous Roll's Dice and the status carries the spec's message. So does a pre-simulation that broke.
  *
  * <p>Thread contract: everything here runs on one thread, the one that advances the clock (the JavaFX
- * Application Thread in the app). Only the pre-simulation job runs on the physics worker, and its result is
- * handed back through the given executor.
+ * Application Thread in the app). Only the planning job runs on the physics worker, and its result is handed
+ * back through the given executor. The Face Value and Release generators are drawn from only inside that job,
+ * one Roll at a time (a second Enter while a Roll is under way is ignored), so the worker is their one user.
  */
 final class RollController {
-
-    /** The Attempts a Throw gets to come to rest flat before the Roll fails (spec §4). */
-    static final int MAX_ATTEMPTS = 24;
 
     private static final System.Logger LOG = System.getLogger(RollController.class.getName());
 
@@ -66,28 +44,28 @@ final class RollController {
          * @param job the job
          * @return its result, completed exceptionally if it threw
          */
-        CompletableFuture<Optional<ThrowPlayback>> submit(Function<Simulator, Optional<ThrowPlayback>> job);
+        CompletableFuture<RollPlan> submit(Function<Simulator, RollPlan> job);
     }
 
-    /** Where the Throw is drawn: the Tray. */
+    /** Where the Roll is drawn: the Tray. */
     interface TrayView {
         /**
-         * Puts a Throw on the Tray at its Release, in place of the Dice there.
+         * Puts a Roll's chain of Throws on the Tray at its first Release, in place of the Dice there.
          *
-         * @param playback the pre-simulated Throw, with each Die's Die Kind and Numbering Rotation
+         * @param chain the pre-simulated chain, with each Die's Die Kind and Numbering Rotations
          */
-        void show(ThrowPlayback playback);
+        void show(ChainPlayback chain);
 
         /**
-         * Draws the Throw on the Tray at a moment of its playback.
+         * Draws the chain on the Tray at a moment of its playback.
          *
-         * @param seconds playback time since the Throw's Release
+         * @param seconds playback time since the first Throw's Release
          */
         void showTime(double seconds);
     }
 
-    /** The Throw now playing, with when it started on the clock and the Roll Result it reveals at rest. */
-    private record Playing(RollExpression expression, RollResult result, double start, double restTime) {}
+    /** The chain now playing, with when it started on the clock and the expression it reveals at rest. */
+    private record Playing(RollExpression expression, ChainPlayback chain, double start) {}
 
     private final PlaybackClock clock;
     private final PhysicsJobs physics;
@@ -107,9 +85,9 @@ final class RollController {
      * @param clock the playback clock, advanced on this controller's thread
      * @param physics where pre-simulation runs
      * @param fxThread runs the pre-simulation's result on this controller's thread ({@code Platform::runLater})
-     * @param faceValues the Face Value generator (ADR-0001)
+     * @param faceValues the Face Value generator (ADR-0001); used only on the physics worker, one Roll at a time
      * @param releases the Release generator (ADR-0003); used only on the physics worker, one Roll at a time
-     * @param tray where the Throw is drawn
+     * @param tray where the Roll is drawn
      */
     RollController(PlaybackClock clock, PhysicsJobs physics, Executor fxThread, FaceValueGenerator faceValues,
             RandomGenerator releases, TrayView tray) {
@@ -150,14 +128,14 @@ final class RollController {
     }
 
     /**
-     * Rolls what was typed, as Enter does. An invalid Roll Expression, or one the skeleton can't roll yet, rolls
-     * nothing and says why. While a Roll is under way this does nothing.
+     * Rolls what was typed, as Enter does. An invalid Roll Expression rolls nothing and says why, without
+     * reaching the physics worker. While a Roll is under way this does nothing.
      *
      * @param input the Roll Expression as typed
      */
     void roll(String input) {
         if (underWay) {
-            // A Roll typed during another becomes the Queued Roll in #49; the skeleton just ignores it.
+            // A Roll typed during another becomes the Queued Roll in #49; until then it is ignored.
             return;
         }
         RollExpression expression;
@@ -168,72 +146,50 @@ final class RollController {
             }
             case ParseResult.Valid valid -> expression = valid.expression();
         }
-        if (!isOneD6(expression)) {
-            setStatus(new RollStatus.Refused(input, "This build rolls only 1d6, with an optional Modifier."));
-            return;
-        }
-
-        // ADR-0001: the Face Value is chosen first; physics only animates a Throw that shows it.
-        int value = faceValues.faceValue(DieKind.D6);
-        RollResult result = RollEvaluator.evaluate(expression, List.of(FaceValueChain.of(value)));
-        int targetFace = FaceValues.face(DieKind.D6, value);
 
         underWay = true;
         setStatus(new RollStatus.Rolling(expression));
-        RandomGenerator releaseGenerator = releases;
-        CompletableFuture<Optional<ThrowPlayback>> planned;
+        CompletableFuture<RollPlan> planned;
         try {
-            planned = physics.submit(simulator -> plan(simulator, releaseGenerator, targetFace));
+            // Choose and pre-simulate the whole chain on the worker before anything plays (ADR-0001, ADR-0014).
+            planned = physics.submit(simulator -> new ThrowPlanner(simulator, SkeletonTray.GEOMETRY,
+                    SkeletonTray.MATERIALS).plan(expression, faceValues, releases));
         } catch (RuntimeException e) {
             // A worker that has been closed rejects the job outright rather than through the future.
             planned = CompletableFuture.failedFuture(e);
         }
-        planned.whenCompleteAsync((throwPlan, error) -> arrived(expression, result, throwPlan, error), fxThread);
+        planned.whenCompleteAsync((plan, error) -> arrived(expression, plan, error), fxThread);
     }
 
-    /**
-     * Pre-simulates the cube's Throw on the physics worker: Attempts with Releases drawn from the Release
-     * generator until one comes to rest flat, then the Numbering Rotation that shows the target face.
-     *
-     * @return the Throw ready to play, or empty if no Attempt came to rest flat
-     */
-    private static Optional<ThrowPlayback> plan(Simulator simulator, RandomGenerator releases, int targetFace) {
-        // The d6's own solid as a rounded hull (#37), the same solid #40's rounded mesh draws.
-        AttemptRequest request = new AttemptRequest(List.of(DieKindBody.of(DieKind.D6)),
-                new Release.Drawn(releases), List.of(), SkeletonTray.GEOMETRY, SkeletonTray.MATERIALS);
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            Attempt result = simulator.simulate(request);
-            if (result.ending() == Ending.AT_REST) {
-                Orientation landed = result.recording().finalPose(0).orientation();
-                UpFace up = UpFace.read(DieKind.D6, new Quaterniond(landed.x(), landed.y(), landed.z(), landed.w()));
-                Quaterniondc turn = NumberingRotation.of(up, targetFace).rotation();
-                return Optional.of(new ThrowPlayback(result.recording(), List.of(DieKind.D6), List.of(turn)));
-            }
-            LOG.log(System.Logger.Level.DEBUG, "Attempt {0} of {1} ended {2}; retrying", attempt, MAX_ATTEMPTS,
-                    result.ending());
-        }
-        // #36's planner keeps the best Attempt and makes a Cocked Rethrow here; the skeleton just fails.
-        return Optional.empty();
-    }
-
-    /** The pre-simulation is done: play its Throw, or fail the Roll leaving the Tray as it was. */
-    private void arrived(RollExpression expression, RollResult result, Optional<ThrowPlayback> planned,
-            Throwable error) {
-        if (error != null || planned.isEmpty()) {
-            underWay = false;
-            String reason = error != null ? describe(error)
-                    : "no Attempt came to rest flat in " + MAX_ATTEMPTS + " tries";
-            LOG.log(System.Logger.Level.WARNING, "Roll of " + expression.canonical() + " failed: " + reason, error);
-            setStatus(new RollStatus.Failed(expression, reason));
+    /** The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was. */
+    private void arrived(RollExpression expression, RollPlan plan, Throwable error) {
+        if (error != null) {
+            fail(RollStatus.Failed.broken(expression, describe(error)), error);
             return;
         }
-        Recording recording = planned.get().recording();
-        tray.show(planned.get());
-        // Playback starts now on the clock, wherever the clock has got to.
-        playing = new Playing(expression, result, clock.time(), recording.restTime());
+        switch (plan) {
+            case RollPlan.Planned planned -> {
+                ChainPlayback chain = new ChainPlayback(planned);
+                tray.show(chain);
+                // Playback starts now on the clock, wherever the clock has got to.
+                playing = new Playing(expression, chain, clock.time());
+            }
+            case RollPlan.Failed failed -> fail(RollStatus.Failed.of(expression, failed.reason()), null);
+            // The expression parsed here already, so the planner never sees an invalid one.
+            case RollPlan.Invalid invalid -> fail(RollStatus.Failed.broken(expression, invalid.error().message()),
+                    null);
+        }
     }
 
-    /** The clock moved on: draw the Throw at its new time, and reveal the result once every Die is at rest. */
+    /** Ends the Roll as failed: nothing was drawn, so the Tray still holds the previous Roll's Dice. */
+    private void fail(RollStatus.Failed failed, Throwable error) {
+        underWay = false;
+        LOG.log(System.Logger.Level.WARNING, "Roll of " + failed.expression().canonical() + " failed: "
+                + failed.message(), error);
+        setStatus(failed);
+    }
+
+    /** The clock moved on: draw the chain at its new time, and reveal the result once the last Throw rests. */
     private void advanced() {
         Playing now = playing;
         if (now == null) {
@@ -241,23 +197,16 @@ final class RollController {
         }
         double elapsed = clock.time() - now.start();
         tray.showTime(elapsed);
-        if (elapsed >= now.restTime()) {
+        if (elapsed >= now.chain().restTime()) {
             playing = null;
             underWay = false;
-            setStatus(new RollStatus.Rested(now.expression(), now.result()));
+            setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result()));
         }
     }
 
     private void setStatus(RollStatus next) {
         status = next;
         onStatusChanged.accept(next);
-    }
-
-    /** Whether the expression is one plain d6, with or without Modifiers: all the skeleton can Throw. */
-    private static boolean isOneD6(RollExpression expression) {
-        List<DiceGroup> groups = expression.diceGroups();
-        // The canonical form carries any keep (or reroll) clause, so only a plain single d6 reads "1d6".
-        return groups.size() == 1 && groups.getFirst().canonical().equals("1d6");
     }
 
     private static String describe(Throwable error) {

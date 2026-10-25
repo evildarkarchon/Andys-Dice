@@ -27,7 +27,7 @@ final class RollPane extends BorderPane {
      */
     RollPane(FrameView tray, Consumer<String> onRoll) {
         Objects.requireNonNull(onRoll, "onRoll");
-        expressionBox.setPromptText("1d6");
+        expressionBox.setPromptText("4d6rr1kh3");
         expressionBox.setOnAction(event -> onRoll.accept(expressionBox.getText()));
         BorderPane.setMargin(expressionBox, new Insets(8));
         BorderPane.setMargin(resultStrip, new Insets(8));

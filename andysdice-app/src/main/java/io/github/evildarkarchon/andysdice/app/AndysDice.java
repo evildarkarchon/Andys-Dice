@@ -3,8 +3,6 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
-import java.security.SecureRandom;
-import java.util.SplittableRandom;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -12,8 +10,8 @@ import javafx.stage.Stage;
 
 /**
  * Andy's Dice: the JavaFX application. In the walking skeleton (ticket #34) it shows the Roll Expression box,
- * the Tray and the result strip; typing {@code 1d6} and pressing Enter Throws the cube with real Jolt and plays
- * it back on the playback clock, which JavaFX's pulse advances at 60 Hz.
+ * the Tray and the result strip; typing a Roll Expression and pressing Enter Throws its Dice with real Jolt and
+ * plays the whole chain of Throws back on the playback clock, which JavaFX's pulse advances at 60 Hz.
  *
  * <p>Without Jolt's native or an OpenGL 3.3 core context it prints why and exits with status 1.
  */
@@ -36,11 +34,10 @@ public final class AndysDice extends Application {
     @Override
     public void start(Stage stage) {
         PlaybackClock clock = new PlaybackClock();
-        // Spec §6: the Face Value and Release generators are seeded independently from SecureRandom.
-        SecureRandom seeds = new SecureRandom();
+        // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
+        // SecureRandom.
         try {
-            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)),
-                    new SplittableRandom(seeds.nextLong()), new SplittableRandom(seeds.nextLong()));
+            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom());
         } catch (JoltStartupException | GlUnavailableException e) {
             System.err.println(e.getMessage());
             Platform.exit();
