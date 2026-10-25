@@ -1,0 +1,4 @@
+# Scripts whose interpreter breaks on the other platform's line endings: bash fails on a CRLF mvnw
+# ("$'\r': command not found"), and cmd.exe needs CRLF in batch files. Pin them regardless of core.autocrlf.
+mvnw      text eol=lf
+*.cmd     text eol=crlf

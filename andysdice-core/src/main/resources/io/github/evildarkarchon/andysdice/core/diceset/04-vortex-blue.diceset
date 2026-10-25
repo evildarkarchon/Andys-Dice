@@ -1,0 +1,13 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Two resins poured together: bands > 0 folds the warped noise into ribbons.
+format = 1
+name = Vortex blue / white
+base = #1d3f9a
+roughness = 0.17
+swirl.color = #e6e9f2
+swirl.scale = 11
+swirl.warp = 1.8
+swirl.bands = 3.5
+swirl.amount = 0.45
+swirl.softness = 0.14
+ink = #f2f2ec

@@ -1,0 +1,110 @@
+# The release (ADR-0004, spec §3.7): pushing a v* tag publishes AndysDice-<version>-windows-x64.zip as a GitHub
+# Release, once everything has passed.
+#
+# - version: fails at once unless the tag is "v" plus the POM version. The check is the parent POM's release-tag
+#   profile, so it runs the same locally: mvn validate -N -Dandysdice.release.tag=v1.2.3
+# - ci: the whole CI workflow (ci.yml: Windows mvn verify on Mesa, including the assembly's tests of the built
+#   app-image and zip; the no-Mesa GL fail-fast launch; Ubuntu), whose Windows job also hands on the zip it built
+#   and tested.
+# - soak: the nightly soak (soak.yml): 1,000 Throws per built-in Tray against core's Soak gates.
+# - release: attaches that very zip to a GitHub Release of the tag, with docs/release-notes.md as its notes.
+#
+# Work docs/release-checklist.md before pushing the tag: it covers what only an eye or ear can judge.
+#
+# A dry run is a workflow_dispatch (on a branch, or on a tag to check it too) or a test tag pushed to a fork. A
+# dispatch runs everything and leaves the zip as the run's release-zip artifact, but never publishes a Release.
+#
+# Third-party actions are pinned to commit SHAs; the comment beside each names the release it is.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release run per tag at a time; a second push of the same tag waits rather than cancelling a half-made release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: '27'
+  JAVA_DISTRIBUTION: temurin
+  # Keeps Maven's log readable in the Actions UI.
+  MAVEN_ARGS: --batch-mode --no-transfer-progress --errors
+
+jobs:
+  version:
+    name: Tag matches the POM version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # The parent POM only (-N): its enforcer rule fails the build unless the tag is "v" plus the version.
+      - name: Check the tag against the POM version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./mvnw validate -N "-Dandysdice.release.tag=$TAG"
+
+      - name: No tag to check
+        if: github.ref_type != 'tag'
+        run: echo "A dispatch on a branch is a dry run; there is no tag to check against the POM version."
+
+  ci:
+    name: CI
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      upload-zip: true
+
+  soak:
+    name: Soak
+    needs: version
+    uses: ./.github/workflows/soak.yml
+
+  release:
+    name: Publish the GitHub Release
+    needs: [version, ci, soak]
+    # Only a pushed tag publishes; a dispatch, even on a tag, is a dry run.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # To create the Release and upload its asset.
+      contents: write
+    steps:
+      # For docs/release-notes.md.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the tested zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-zip
+          path: dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          zip="dist/AndysDice-${version}-windows-x64.zip"
+          if [ ! -f "$zip" ]; then
+            echo "::error::The CI run left no $zip (it has: $(ls dist))"
+            exit 1
+          fi
+          # --verify-tag: publish only for a tag that exists on GitHub, never create one.
+          gh release create "$TAG" "$zip" --verify-tag --title "Andy's Dice $version" \
+            --notes-file docs/release-notes.md

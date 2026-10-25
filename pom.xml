@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Andy's Dice: the parent POM of the v1 reactor (spec §5).
+
+  Everything shared lives here, once: the library and plugin versions, the javac gate
+  (-Xlint:all -Werror, ADR-0005) and the native-access option set (ADR-0004). Modules declare their
+  dependencies without versions and inherit the plugin configuration; they should not repeat any of it.
+
+  Build (Windows, JDK 27):  mvn verify
+  Build without GL tests:   mvn verify -Pno-gl
+  The soak (slow tests):    mvn verify -Psoak -pl andysdice-physics -am
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.github.evildarkarchon.andysdice</groupId>
+    <artifactId>andysdice-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Andy's Dice</name>
+    <description>A desktop dice roller with physically thrown 3D dice.</description>
+    <url>https://github.com/evildarkarchon/Andys-Dice</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>MIT</name>
+            <url>https://opensource.org/license/mit</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <!-- Dependencies flow downward only (spec §5): core <- physics, render, sound <- app <- assembly. -->
+    <modules>
+        <module>andysdice-core</module>
+        <module>andysdice-physics</module>
+        <module>andysdice-render</module>
+        <module>andysdice-sound</module>
+        <module>andysdice-app</module>
+        <module>andysdice-assembly</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>27</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Library versions. The runtime ones are the prototypes' working set (spec Appendix D). -->
+        <javafx.version>27.0.1</javafx.version>
+        <lwjgl.version>3.4.3</lwjgl.version>
+        <jolt-jni.version>6.2.0</jolt-jni.version>
+        <joml.version>1.10.8</joml.version>
+        <junit.version>6.1.3</junit.version>
+        <assertj.version>3.27.7</assertj.version>
+
+        <!-- Plugin versions. -->
+        <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+        <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
+        <maven-dependency-plugin.version>3.8.1</maven-dependency-plugin.version>
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
+        <maven-install-plugin.version>3.1.4</maven-install-plugin.version>
+        <maven-jar-plugin.version>3.5.0</maven-jar-plugin.version>
+        <maven-resources-plugin.version>3.4.0</maven-resources-plugin.version>
+        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
+        <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
+        <jpackage-maven-plugin.version>1.8.0</jpackage-maven-plugin.version>
+        <download-maven-plugin.version>1.13.0</download-maven-plugin.version>
+        <build-helper-maven-plugin.version>3.6.2</build-helper-maven-plugin.version>
+        <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
+
+        <!--
+          The one native-access option set (ADR-0004). It grants native access to exactly jolt-jni, LWJGL,
+          our native loader's module (physics, spec §5) and javafx.graphics, and denies it to everything else,
+          so an unexpected restricted call fails instead of warning. Surefire and Failsafe apply it below;
+          dev runs (exec-maven-plugin) and the jpackage launcher must reuse this property, not copy it.
+
+          A test JVM that doesn't resolve one of these modules (core's tests have no LWJGL, for instance)
+          prints an "Unknown module ... specified to enable-native-access" warning for it. That is expected
+          and harmless; only the packaged app, which resolves all four, must print no native-access warnings
+          (ADR-0005's smoke test).
+        -->
+        <andysdice.nativeAccess>--enable-native-access=com.github.stephengold.joltjni,org.lwjgl,io.github.evildarkarchon.andysdice.physics,javafx.graphics --illegal-native-access=deny</andysdice.nativeAccess>
+
+        <!-- The one natives directory (ADR-0004): $APPDIR\natives in the image, target\natives in dev and tests. -->
+        <andysdice.nativesDir>${project.build.directory}/natives</andysdice.nativesDir>
+
+        <!--
+          LWJGL's part of the shared option set (ADR-0004), used beside andysdice.nativeAccess everywhere it is.
+          - org.lwjgl.opengl binds its GL and WGL entry points as JNI natives of its own, so under deny it needs
+            native access as well as org.lwjgl. A second enable-native-access option adds to the first.
+          - jdk.internal.misc is exported to org.lwjgl only, never ALL-UNNAMED; without it LWJGL falls back to
+            sun.misc.Unsafe and warns.
+          - LWJGL loads lwjgl.dll and lwjgl_opengl.dll from the natives directory and never extracts them.
+        -->
+        <andysdice.lwjglOptions>--enable-native-access=org.lwjgl.opengl --add-exports=java.base/jdk.internal.misc=org.lwjgl -Dorg.lwjgl.librarypath=${andysdice.nativesDir}</andysdice.lwjglOptions>
+
+        <!-- ADR-0004: the app-owned natives-directory property our Jolt loader reads ($APPDIR\natives in the
+             image). Dev and test runs point it at the module's build-time target/natives, which physics fills
+             by unpacking jolt-jni's native; a module whose tests load Jolt must unpack it the same way. -->
+        <andysdice.joltNatives>-Dandysdice.natives.dir=${andysdice.nativesDir}</andysdice.joltNatives>
+
+        <!-- JOML's part of the shared option set (ADR-0004): without it JOML's matrix copies go through
+             sun.misc.Unsafe, which JDK 27 warns about. -->
+        <andysdice.jomlOptions>-Djoml.nounsafe=true</andysdice.jomlOptions>
+
+        <!-- The app's entry point as module/class, for the dev run (app) and the jpackage launcher (assembly). -->
+        <andysdice.launcherMain>io.github.evildarkarchon.andysdice.app/io.github.evildarkarchon.andysdice.app.Main</andysdice.launcherMain>
+
+        <!-- Extra JVM options for a module's tests. Modules set this; they never override argLine itself,
+             so the native-access set can't be dropped by accident. -->
+        <andysdice.test.jvmArgs></andysdice.test.jvmArgs>
+
+        <!--
+          The slow-tagged tests (the soak, ADR-0005) are left out of every build but the soak profile's, which
+          empties this. It is kept apart from the gl exclusion below so the two profiles combine.
+        -->
+        <andysdice.test.excludedSlow>slow</andysdice.test.excludedSlow>
+
+        <!-- JUnit tags of test groups to leave out, comma-separated. The no-gl profile adds gl. -->
+        <andysdice.test.excludedGroups>${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Our modules. -->
+            <dependency>
+                <groupId>io.github.evildarkarchon.andysdice</groupId>
+                <artifactId>andysdice-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.evildarkarchon.andysdice</groupId>
+                <artifactId>andysdice-physics</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.evildarkarchon.andysdice</groupId>
+                <artifactId>andysdice-render</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.evildarkarchon.andysdice</groupId>
+                <artifactId>andysdice-sound</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.evildarkarchon.andysdice</groupId>
+                <artifactId>andysdice-app</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Test stack (ADR-0005): JUnit 6 (Jupiter) and AssertJ. -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+            </dependency>
+
+            <!-- Runtime libraries, managed here so that modules add them without a version. -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bom</artifactId>
+                <version>${lwjgl.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-base</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-graphics</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-controls</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.joml</groupId>
+                <artifactId>joml</artifactId>
+                <version>${joml.version}</version>
+            </dependency>
+            <!-- jolt-jni publishes one artifact per platform (ADR-0003); the Java module is
+                 com.github.stephengold.joltjni in each, and the ReleaseSp classifier holds the native. -->
+            <dependency>
+                <groupId>com.github.stephengold</groupId>
+                <artifactId>jolt-jni-Windows64</artifactId>
+                <version>${jolt-jni.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.stephengold</groupId>
+                <artifactId>jolt-jni-Linux64</artifactId>
+                <version>${jolt-jni.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- Every module gets the test stack. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${maven-clean-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven-resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <!-- ADR-0005: the only static gate. Applies to main and test sources of every module. -->
+                        <compilerArgs>
+                            <arg>-Xlint:all</arg>
+                            <arg>-Werror</arg>
+                        </compilerArgs>
+                        <showWarnings>true</showWarnings>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                    <configuration>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
+                        <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
+                        <systemPropertyVariables>
+                            <!-- Lets the gl tag guard test see which groups this build meant to leave out. -->
+                            <andysdice.test.excludedGroups>${andysdice.test.excludedGroups}</andysdice.test.excludedGroups>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven-failsafe-plugin.version}</version>
+                    <configuration>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
+                        <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
+                        <systemPropertyVariables>
+                            <andysdice.test.excludedGroups>${andysdice.test.excludedGroups}</andysdice.test.excludedGroups>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven-jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven-install-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${maven-dependency-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven-enforcer-plugin.version}</version>
+                </plugin>
+                <!-- Packaging (ADR-0004); only the assembly module uses these. -->
+                <plugin>
+                    <groupId>org.panteleyev</groupId>
+                    <artifactId>jpackage-maven-plugin</artifactId>
+                    <version>${jpackage-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>com.googlecode.maven-download-plugin</groupId>
+                    <artifactId>download-maven-plugin</artifactId>
+                    <version>${download-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>${build-helper-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>${maven-assembly-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <!-- Fail early, with a clear message, on the wrong JDK or an old Maven. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-toolchain</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[27,)</version>
+                                    <message>Andy's Dice builds with JDK 27 or later.</message>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9.6,)</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          Leaves out gl-tagged tests, for machines with no OpenGL 3.3 (the ubuntu-latest CI job). The tests are
+          excluded by tag, never skipped from inside: a gl test that runs without a context fails (ADR-0005).
+        -->
+        <profile>
+            <id>no-gl</id>
+            <properties>
+                <!-- With -Psoak as well, excludedSlow is empty and this is "gl,", which Surefire reads as gl. -->
+                <andysdice.test.excludedGroups>gl,${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
+            </properties>
+        </profile>
+        <!--
+          The soak (ADR-0005, ADR-0013, ADR-0014): also runs the slow-tagged tests, chiefly physics' JoltSoakTest,
+          which throws 1,000 20-Dice Rolls into each built-in Tray through the real planner and Jolt and fails on
+          core's Soak gates. Run by the nightly workflow: mvn verify -Psoak -pl andysdice-physics -am
+        -->
+        <profile>
+            <id>soak</id>
+            <properties>
+                <andysdice.test.excludedSlow></andysdice.test.excludedSlow>
+            </properties>
+        </profile>
+        <!--
+          The release tag check (ADR-0004): a release build is given the pushed tag as -Dandysdice.release.tag=<tag>
+          and fails, before anything is compiled, unless the tag is exactly "v" plus this POM's version. The release
+          workflow (.github/workflows/release.yml) runs it first; locally the same check is
+              mvn validate -N -Dandysdice.release.tag=v1.2.3
+          The rule runs once, on this parent, which leads every reactor (inherited=false): the modules share its
+          version.
+        -->
+        <profile>
+            <id>release-tag</id>
+            <activation>
+                <property>
+                    <name>andysdice.release.tag</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-release-tag</id>
+                                <inherited>false</inherited>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <requireProperty>
+                                            <property>andysdice.release.tag</property>
+                                            <!-- \Q..\E: the version's dots are literal, not "any character". -->
+                                            <regex>\Qv${project.version}\E</regex>
+                                            <regexMessage>The tag "${andysdice.release.tag}" doesn't match the POM version: a release of ${project.version} must be tagged v${project.version}.</regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

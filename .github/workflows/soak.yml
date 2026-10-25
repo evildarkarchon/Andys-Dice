@@ -1,0 +1,81 @@
+# The nightly soak (ADR-0005, ADR-0013, ADR-0014).
+#
+# Runs the soak profile: physics' slow-tagged JoltSoakTest throws 1,000 Rolls of the 20-Dice cap into each
+# built-in Tray through the real Throw planner and real Jolt, and fails if any Tray's p95 time to rest exceeds
+# 1.5 s, its mean Attempts exceed 2.5, or any Cocked Rethrow (or Failed Roll) occurs. The gates are core's
+# Soak constants, the same ones the test reads. Only core and physics are built: the soak needs no GL, so the
+# runner needs no Mesa.
+#
+# It runs on Windows because the shipped app does: the soak measures the ReleaseSp Windows native the zip ships
+# (ADR-0003, ADR-0004).
+#
+# Third-party actions are pinned to commit SHAs; the comment beside each names the release it is.
+name: Nightly soak
+
+on:
+  schedule:
+    # 03:17 UTC every day: off the hour, when scheduled runs queue up.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  # release.yml runs the soak too: a release must pass it, not only the latest night.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Never two soaks of one ref at once; a manual run waits for the scheduled one rather than cancelling it.
+concurrency:
+  group: soak-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: '27'
+  JAVA_DISTRIBUTION: temurin
+  # Keeps Maven's log readable in the Actions UI.
+  MAVEN_ARGS: --batch-mode --no-transfer-progress --errors
+
+jobs:
+  soak:
+    name: Soak (1,000 Throws per built-in Tray, real Jolt)
+    runs-on: windows-latest
+    # A full soak takes under a minute on a desktop (ADR-0014 expects the same on a runner); this is headroom.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: mvn verify -Psoak (core and physics)
+        run: ./mvnw.cmd verify -Psoak -pl andysdice-physics -am
+
+      # The per-Tray reports (measured p95 time to rest, mean Attempts, Cocked Rethrows) go on the run's summary
+      # page whether the gates passed or not. No report at all means the soak never ran (a broken slow-tag
+      # filter, say), which must not pass as a green night.
+      - name: Publish the soak report
+        if: always()
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem -Path andysdice-physics/target/soak -Filter *.txt -ErrorAction SilentlyContinue)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Soak"
+          foreach ($report in $reports) {
+            Get-Content -Path $report.FullName | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $_" }
+          }
+          if ($reports.Count -eq 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "No soak report was written: the soak did not run."
+            Write-Error "No soak report in andysdice-physics/target/soak: JoltSoakTest did not run."
+            exit 1
+          }
+
+      - name: Upload the soak and test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-reports
+          path: |
+            andysdice-physics/target/soak/
+            **/target/surefire-reports/
+          if-no-files-found: ignore

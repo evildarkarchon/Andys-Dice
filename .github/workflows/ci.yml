@@ -1,0 +1,220 @@
+# CI on every branch push and pull request (ADR-0005's "CI shape"), and inside every release (release.yml).
+#
+# - windows: the full `mvn verify` (unit, Jolt, gl and smoke tests) on a pinned Mesa and its llvmpipe driver,
+#   which gives the runner a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
+#   of the built app-image: `AndysDice.exe --smoke-test` must exit 0 (ADR-0005).
+# - windows-no-mesa: the packaged zip on the bare runner, whose only OpenGL is GDI Generic 1.1. The launch must
+#   fail fast (ADR-0002): the failure panel, then a non-zero exit once its window is closed, logging the GL 3.3
+#   requirement and the renderer and driver it found.
+# - ubuntu: compile plus every test except the gl-tagged ones, which keeps the build Linux-capable (ADR-0004).
+#   The no-gl profile excludes them by tag; a gl test never skips itself (ADR-0005).
+#
+# Third-party actions are pinned to commit SHAs; the comment beside each names the release it is.
+name: CI
+
+on:
+  # Branches only: a pushed v* tag runs this workflow through release.yml instead, so it doesn't run twice.
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+  # release.yml runs the whole CI before it publishes, and takes the zip the windows job built and tested.
+  workflow_call:
+    inputs:
+      upload-zip:
+        description: Upload the windows job's AndysDice-<version>-windows-x64.zip as the release-zip artifact
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '27'
+  JAVA_DISTRIBUTION: temurin
+  # Keeps Maven's log readable in the Actions UI.
+  MAVEN_ARGS: --batch-mode --no-transfer-progress --errors
+
+jobs:
+  windows:
+    name: Windows (mvn verify, Mesa GL)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # Mesa as a system-wide OpenGL driver (ADR-0005), from pal1000/mesa-dist-win.
+      #   version 26.2.4 (released 2026-10-04): the newest mesa-dist-win release when CI was set up. It is
+      #     pinned, not "latest", so a Mesa update can't change GL behaviour under an unchanged commit; bump
+      #     it deliberately and watch the gl tests.
+      #   build-type release-msvc: the MSVC release build, the action's default flavour.
+      #   deployment-choice 1: "Core desktop OpenGL drivers". It copies Mesa's WGL driver into System32 as
+      #     mesadrv.dll and registers it as the OpenGL ICD, so Windows' own opengl32.dll loads it and the
+      #     renderer takes the same native WGL path as on a real machine.
+      - uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
+        with:
+          version: '26.2.4'
+          build-type: release-msvc
+          deployment-choice: '1'
+
+      - name: mvn verify
+        run: ./mvnw.cmd verify
+        env:
+          # Pinned to llvmpipe, Mesa's software rasteriser. Left to itself, Mesa's WGL driver tries d3d12 first
+          # (GL on Direct3D 12, which on this GPU-less runner means WARP) and only then llvmpipe. The target is
+          # GL 3.3 core on DX11-class GPUs (ADR-0014), so GL on D3D12 is not one we test against: on it, every
+          # draw of a Dice Set without a swirl raised GL_OUT_OF_MEMORY. FrameBridgeTest logs the driver that ran.
+          GALLIUM_DRIVER: llvmpipe
+
+      # Only when release.yml calls this workflow: the zip this job just built and ran its image tests on is the
+      # one the Release gets. On a push or PR inputs.upload-zip is unset, so nothing is uploaded.
+      - name: Upload the zip for the release
+        if: inputs.upload-zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-zip
+          path: andysdice-assembly/target/AndysDice-*-windows-x64.zip
+          if-no-files-found: error
+          # The zip is already compressed.
+          compression-level: 0
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-windows
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+            andysdice-assembly/target/image-tests/**/data/logs/
+            andysdice-assembly/target/image-tests/**/std*.txt
+          if-no-files-found: ignore
+
+  windows-no-mesa:
+    name: Windows without Mesa (GL fail-fast)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # No Mesa step here, on purpose. The tests ran in the windows job; this one only needs the zip.
+      - name: Build the zip
+        run: ./mvnw.cmd -DskipTests package
+
+      # Unzipped away from the build, as a user would, so the run also shows the launcher works from anywhere.
+      - name: Launch it and expect the GL fail-fast
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem andysdice-assembly/target/AndysDice-*-windows-x64.zip | Select-Object -First 1
+          if (-not $zip) { throw 'no AndysDice-<version>-windows-x64.zip was built' }
+          $unzipped = Join-Path $env:RUNNER_TEMP 'no-mesa'
+          Expand-Archive -Path $zip.FullName -DestinationPath $unzipped
+          $image = Join-Path $unzipped 'AndysDice'
+
+          # A plain launch, as the user's. Without GL 3.3 it shows the failure panel (spec §3.2) and waits for the
+          # Player, so once the log says the panel is up the window is closed as a Player would close it, which
+          # must exit non-zero. Should GL somehow work, no panel appears and the timeout fails the job.
+          $app = Start-Process -FilePath (Join-Path $image 'AndysDice.exe') -WorkingDirectory $unzipped -PassThru
+          # Reading Handle now keeps the process's handle open, without which ExitCode can read as empty.
+          $null = $app.Handle
+          $logFile = Join-Path $image 'data/logs/andysdice.log'
+          $deadline = (Get-Date).AddMinutes(2)
+          $panelShown = $false
+          while (-not $app.HasExited -and (Get-Date) -lt $deadline) {
+            if ((Test-Path $logFile) -and ((Get-Content -Raw -Encoding utf8 $logFile) -match 'Failure panel shown: ')) {
+              $panelShown = $true
+              break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $app.HasExited) {
+            if (-not $panelShown) {
+              $app.Kill($true)
+              throw 'AndysDice.exe showed no failure panel within 2 minutes; it should have failed fast without GL 3.3'
+            }
+            # The launcher runs the app in a child process of its own, which owns the window, so the window is
+            # looked for there too. It may take a moment to count as a main window; ask again for up to 10 s.
+            $closed = $false
+            for ($i = 0; $i -lt 20 -and -not $closed -and -not $app.HasExited; $i++) {
+              $ids = @($app.Id) + @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($app.Id)" |
+                  ForEach-Object { $_.ProcessId })
+              foreach ($id in $ids) {
+                $process = Get-Process -Id $id -ErrorAction SilentlyContinue
+                if ($process -and $process.MainWindowHandle -ne 0 -and $process.CloseMainWindow()) {
+                  $closed = $true
+                  break
+                }
+              }
+              if (-not $closed) { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $closed -and -not $app.HasExited) {
+              $app.Kill($true)
+              throw 'the failure panel is in the log, but AndysDice.exe has no window to close'
+            }
+            if (-not $app.WaitForExit(30000)) {
+              $app.Kill($true)
+              throw 'AndysDice.exe was still running 30 s after its failure panel window was closed'
+            }
+          }
+
+          if (-not (Test-Path $logFile)) { throw "no log at $logFile" }
+          $log = Get-Content -Raw -Encoding utf8 $logFile
+          Write-Output $log
+          Write-Output "AndysDice.exe exited with status $($app.ExitCode)"
+
+          if ($app.ExitCode -eq 0) { throw 'expected a non-zero exit without GL 3.3, got 0' }
+          if ($log -notmatch "Start-up failed: Andy's Dice needs OpenGL 3\.3 core, but ") {
+            throw 'the log has no start-up failure naming the OpenGL 3.3 core requirement'
+          }
+          if ($log -notmatch '\(renderer: (?!unknown)[^,]+, vendor: [^,]+, version: \d+\.\d+[^)]*\)') {
+            throw 'the start-up failure does not name the detected renderer and driver'
+          }
+          if ($log -notmatch "Failure panel shown: Andy's Dice needs OpenGL 3\.3 core, but ") {
+            throw 'the failure panel did not name the OpenGL 3.3 core requirement'
+          }
+
+  ubuntu:
+    name: Ubuntu (compile and non-GL tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # There is no GL driver here, so the gl-tagged tests are left out by tag (the no-gl profile). Render's
+      # GlTagGuardTest fails the job if that exclusion ever stops working.
+      - name: mvn verify, excluding gl-tagged tests
+        run: ./mvnw verify -Pno-gl
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-ubuntu
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          if-no-files-found: ignore

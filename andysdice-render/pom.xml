@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  render: mesh and numeral-atlas generation, the LWJGL GL renderer and shaders, native context creation and
+  the FBO/PBO bridge (spec §5, ADR-0002). Tests that need a GL 3.3 context carry the JUnit tag "gl".
+
+  Dev run of the bridge's test window (a flat-shaded cube in a JavaFX window, ticket #33):
+      mvn -pl andysdice-render -am process-classes -Ptest-window
+  Add -DtestWindow.seconds=5 to have it exit by itself and print how many frames it presented.
+
+  Dev-only gallery (ADR-0005, ticket #40): a still of every Die Kind in fixed poses, in every built-in Dice Set
+  (#42), written as PNGs to andysdice-render/target/gallery:
+      mvn -pl andysdice-render -am process-classes -Pgallery
+
+  Dev-only GPU bench (ADR-0014, ticket #61): the most expensive scene's GPU time at 1080p per Quality Preset:
+      mvn -pl andysdice-render -am process-classes -Pgpu-bench
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.evildarkarchon.andysdice</groupId>
+        <artifactId>andysdice-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>andysdice-render</artifactId>
+    <name>Andy's Dice: render</name>
+
+    <properties>
+        <!-- The LWJGL natives jar for this OS (the profiles below switch it). It is only ever unpacked into
+             the natives directory, never put on the module path (ADR-0004). -->
+        <lwjgl.natives>natives-windows</lwjgl.natives>
+        <!-- Seconds the dev test window runs before exiting by itself; empty runs it until closed. -->
+        <testWindow.seconds></testWindow.seconds>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-opengl</artifactId>
+        </dependency>
+        <!-- PixelBuffer, WritableImage and ImageView: the JavaFX end of the frame bridge. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- A fresh JVM per test class: only one render thread may ever start in a JVM (ADR-0002: one GL
+                 context per app run), and several test classes each need their own, with their own transport
+                 and renderer. The rest of the configuration comes from the parent's pluginManagement. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
+                </configuration>
+            </plugin>
+            <!-- LWJGL's natives, flattened into the one natives directory that -Dorg.lwjgl.librarypath names
+                 (ADR-0004), so LWJGL never extracts anything at runtime. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-lwjgl-natives</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.lwjgl</groupId>
+                                    <artifactId>lwjgl</artifactId>
+                                    <version>${lwjgl.version}</version>
+                                    <classifier>${lwjgl.natives}</classifier>
+                                    <fileMappers>
+                                        <org.codehaus.plexus.components.io.filemappers.FlattenFileMapper/>
+                                    </fileMappers>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.lwjgl</groupId>
+                                    <artifactId>lwjgl-opengl</artifactId>
+                                    <version>${lwjgl.version}</version>
+                                    <classifier>${lwjgl.natives}</classifier>
+                                    <fileMappers>
+                                        <org.codehaus.plexus.components.io.filemappers.FlattenFileMapper/>
+                                    </fileMappers>
+                                </artifactItem>
+                            </artifactItems>
+                            <includes>**/*.dll,**/*.so,**/*.dylib</includes>
+                            <outputDirectory>${andysdice.nativesDir}</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- The dev run of the test window, with the shared JVM option set (ADR-0004). A profile of this module
+             only, so -am can build the modules it needs without trying to run anything in them. -->
+        <profile>
+            <id>test-window</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>test-window</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- Maven's own JDK (27), not whatever java is first on PATH. -->
+                                    <executable>${java.home}/bin/java</executable>
+                                    <!-- The shared option sets hold several options each; the launcher splits
+                                         JDK_JAVA_OPTIONS on spaces, where a single <argument> would not. -->
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions}</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>io.github.evildarkarchon.andysdice.render/io.github.evildarkarchon.andysdice.render.TestSceneWindow</argument>
+                                        <argument>${testWindow.seconds}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The dev-only gallery (ADR-0005, ticket #40): a still of every Die Kind in fixed poses, written to
+             target/gallery. Same shared option sets as the test window. -->
+        <profile>
+            <id>gallery</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>gallery</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions}</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>io.github.evildarkarchon.andysdice.render/io.github.evildarkarchon.andysdice.render.Gallery</argument>
+                                        <argument>${project.build.directory}/gallery</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- The GPU half of the dev-only bench (ADR-0014, ticket #61), alone, with a render thread of its own: the
+             most expensive scene's GPU time at 1080p at each Quality Preset, exiting non-zero if Medium misses its
+             0.5 ms budget. The app's -Pbench also times Enter to first motion; this profile has another name so that
+             the app's -am build never runs it too. Same shared option sets as the gallery. -->
+        <profile>
+            <id>gpu-bench</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>gpu-bench</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <environmentVariables>
+                                        <JDK_JAVA_OPTIONS>${andysdice.nativeAccess} ${andysdice.lwjglOptions}</JDK_JAVA_OPTIONS>
+                                    </environmentVariables>
+                                    <arguments>
+                                        <argument>--module-path</argument>
+                                        <modulepath/>
+                                        <argument>--module</argument>
+                                        <argument>io.github.evildarkarchon.andysdice.render/io.github.evildarkarchon.andysdice.render.GpuBench</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>lwjgl-natives-linux</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>Linux</name>
+                </os>
+            </activation>
+            <properties>
+                <lwjgl.natives>natives-linux</lwjgl.natives>
+            </properties>
+        </profile>
+        <profile>
+            <id>lwjgl-natives-macos</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <properties>
+                <lwjgl.natives>natives-macos</lwjgl.natives>
+            </properties>
+        </profile>
+    </profiles>
+</project>

@@ -1,0 +1,420 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  assembly: the jpackage app-image and zip, app\legal\, and the Failsafe smoke tests that run the built
+  launcher (spec §5, ADR-0004, ADR-0005). The only module that knows about packaging, and the only one that
+  binds Failsafe.
+
+  On Windows (the windows-image profile, OS-activated) `mvn verify` builds
+      target\jpackage\AndysDice\             the app-image: AndysDice.exe, app\ (with app\natives\ and app\legal\),
+                                             runtime\
+      target\AndysDice-<version>-windows-x64.zip
+  and then runs the *ImageIT tests against them. Elsewhere only the module itself is built, so the Linux CI job
+  still passes.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.evildarkarchon.andysdice</groupId>
+        <artifactId>andysdice-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>andysdice-assembly</artifactId>
+    <name>Andy's Dice: assembly</name>
+
+    <properties>
+        <!--
+          ADR-0004: in the image the one natives directory is $APPDIR\natives, which the launcher expands to the
+          image's app\ folder. Setting the parent's natives-directory property to it here makes the shared option
+          sets (andysdice.lwjglOptions, andysdice.joltNatives) resolve to the launcher's values in this module, so
+          the launcher reuses them instead of copying them. The build lays the natives out in imageNatives.
+        -->
+        <andysdice.nativesDir>$APPDIR\natives</andysdice.nativesDir>
+
+        <!-- The launcher's whole JVM option set: the parent's shared sets, with the image's natives directory. -->
+        <image.javaOptions>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions}</image.javaOptions>
+
+        <!-- The file-system name (ADR-0004): the launcher's .cfg is looked up by the exe's base name. -->
+        <image.name>AndysDice</image.name>
+        <image.staging>${project.build.directory}/image-input</image.staging>
+        <!-- jpackage copies its input folder into the image's app\ folder, which is $APPDIR. -->
+        <image.appInput>${image.staging}/app</image.appInput>
+        <image.natives>${image.appInput}/natives</image.natives>
+        <image.legal>${image.appInput}/legal</image.legal>
+        <image.modules>${image.staging}/mods</image.modules>
+        <image.destination>${project.build.directory}/jpackage</image.destination>
+        <image.zipName>AndysDice-${project.version}-windows-x64</image.zipName>
+
+        <!--
+          JavaFX for the image comes from Gluon's official jmods (ADR-0004), never the Maven jars: jlink then puts
+          JavaFX's DLLs in runtime\bin, where JavaFX looks first, instead of JavaFX extracting them to
+          ~/.openjfx/cache. Same version as the Maven dependency; the SHA-256 is Gluon's published one
+          (openjfx-27.0.1_windows-x64_bin-jmods.zip.sha256), so bump both together.
+        -->
+        <javafx.jmods.url>https://download2.gluonhq.com/openjfx/${javafx.version}/openjfx-${javafx.version}_windows-x64_bin-jmods.zip</javafx.jmods.url>
+        <javafx.jmods.sha256>5c2a69a7ab42da347b0e8bb244a819e94af75d9f21ae4d129695a3ebc81e3979</javafx.jmods.sha256>
+        <javafx.jmods.dir>${project.build.directory}/javafx/javafx-jmods-${javafx.version}</javafx.jmods.dir>
+
+        <jolt-jni.flavour>ReleaseSp</jolt-jni.flavour>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.evildarkarchon.andysdice</groupId>
+            <artifactId>andysdice-app</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Configured (argLine with the native-access set) in the parent's pluginManagement. The tests of the
+                 built image (*ImageIT) need it built, so only the windows-image profile lets them in. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/*ImageIT.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          The Windows x64 app-image and zip (ADR-0004), and the tests that run them (ADR-0005). OS-activated, so
+          the build stays Linux-capable without trying to package there.
+        -->
+        <profile>
+            <id>windows-image</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <!-- jpackage on Windows takes only a numeric version, so 1.0.0-SNAPSHOT is given as 1.0.0. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>numeric-version</id>
+                                <goals>
+                                    <goal>parse-version</goal>
+                                </goals>
+                            </execution>
+                            <!--
+                              The launcher passes each java-options entry to the JVM as one option and never splits
+                              it on spaces, while the shared option sets hold several options each. This turns
+                              image.javaOptions into one "java-options <option>" pair per option (each with jpackage's
+                              double-dash), which the filtered argument file src/jpackage/java-options.args hands to
+                              jpackage.
+                            -->
+                            <execution>
+                                <id>java-option-args</id>
+                                <goals>
+                                    <goal>regex-property</goal>
+                                </goals>
+                                <configuration>
+                                    <name>image.javaOptionArgs</name>
+                                    <value>${image.javaOptions}</value>
+                                    <regex>(\S+)</regex>
+                                    <replacement>--java-options $1</replacement>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>jpackage-args</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${image.staging}</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/jpackage</directory>
+                                            <filtering>true</filtering>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <!--
+                              app\legal\ (ADR-0004, spec §6): Andy's Dice's own MIT licence from the repository root,
+                              and the third-party notices in src/legal. Only the index is filtered, for the versions it
+                              names; the licence texts are copied byte for byte. jlink adds the JDK's and JavaFX's own
+                              notices to runtime\legal\, and the sounds' SOURCES.md comes from the sound jar (below).
+                              The LegalNoticesImageIT checks every bundled third-party module and native has a notice.
+                            -->
+                            <execution>
+                                <id>legal-notices</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${image.legal}</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/legal</directory>
+                                            <filtering>true</filtering>
+                                            <includes>
+                                                <include>THIRD-PARTY-NOTICES.md</include>
+                                            </includes>
+                                        </resource>
+                                        <resource>
+                                            <directory>src/legal</directory>
+                                            <filtering>false</filtering>
+                                            <excludes>
+                                                <exclude>THIRD-PARTY-NOTICES.md</exclude>
+                                            </excludes>
+                                        </resource>
+                                        <resource>
+                                            <directory>${project.basedir}/..</directory>
+                                            <filtering>false</filtering>
+                                            <includes>
+                                                <include>LICENSE</include>
+                                            </includes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Gluon's JavaFX jmods, checked against the pinned SHA-256 before they are unpacked. -->
+                    <plugin>
+                        <groupId>com.googlecode.maven-download-plugin</groupId>
+                        <artifactId>download-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>javafx-jmods</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>wget</goal>
+                                </goals>
+                                <configuration>
+                                    <uri>${javafx.jmods.url}</uri>
+                                    <sha256>${javafx.jmods.sha256}</sha256>
+                                    <unpack>true</unpack>
+                                    <outputDirectory>${project.build.directory}/javafx</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <!--
+                              jolt-jni's default ReleaseSp native (never _avx2 or _fma) and LWJGL's natives, flattened
+                              into what becomes app\natives (ADR-0004). No natives jar is a dependency, so none reaches
+                              the module path, where LWJGL would extract it at runtime.
+                            -->
+                            <execution>
+                                <id>unpack-natives</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>unpack</goal>
+                                </goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <!-- fileMappers works only inside each artifactItem; at the goal level it is ignored. -->
+                                        <artifactItem>
+                                            <groupId>com.github.stephengold</groupId>
+                                            <artifactId>jolt-jni-Windows64</artifactId>
+                                            <version>${jolt-jni.version}</version>
+                                            <classifier>${jolt-jni.flavour}</classifier>
+                                            <fileMappers>
+                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                            </fileMappers>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>org.lwjgl</groupId>
+                                            <artifactId>lwjgl</artifactId>
+                                            <version>${lwjgl.version}</version>
+                                            <classifier>natives-windows</classifier>
+                                            <fileMappers>
+                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                            </fileMappers>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>org.lwjgl</groupId>
+                                            <artifactId>lwjgl-opengl</artifactId>
+                                            <version>${lwjgl.version}</version>
+                                            <classifier>natives-windows</classifier>
+                                            <fileMappers>
+                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                            </fileMappers>
+                                        </artifactItem>
+                                    </artifactItems>
+                                    <includes>**/*.dll</includes>
+                                    <outputDirectory>${image.natives}</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <!--
+                              The sample bank's SOURCES.md, taken from the sound jar the image links, so the credits
+                              that ship are those of the slices that ship (spec §6; #59 keeps it beside the slices).
+                            -->
+                            <execution>
+                                <id>sound-sources</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>unpack</goal>
+                                </goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>io.github.evildarkarchon.andysdice</groupId>
+                                            <artifactId>andysdice-sound</artifactId>
+                                            <version>${project.version}</version>
+                                            <includes>**/sample-bank/SOURCES.md</includes>
+                                            <fileMappers>
+                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                            </fileMappers>
+                                        </artifactItem>
+                                    </artifactItems>
+                                    <outputDirectory>${image.legal}</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <!-- Our modules and the third-party class jars, for jlink's module path. JavaFX's Maven
+                                 jars stay out: the image links Gluon's jmods instead. -->
+                            <execution>
+                                <id>stage-modules</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-dependencies</goal>
+                                </goals>
+                                <configuration>
+                                    <includeScope>runtime</includeScope>
+                                    <excludeGroupIds>org.openjfx</excludeGroupIds>
+                                    <outputDirectory>${image.modules}</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                      The one jpackage call (ADR-0004): it jlinks the runtime from the main module's requires (no
+                      bind-services) over our modules, the class jars and the JavaFX jmods, and lays out the
+                      unsigned app-image with the natives in app\natives.
+                    -->
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>app-image</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                                <configuration>
+                                    <type>APP_IMAGE</type>
+                                    <name>${image.name}</name>
+                                    <appVersion>${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.incrementalVersion}</appVersion>
+                                    <vendor>evildarkarchon</vendor>
+                                    <description>Andy's Dice: a desktop dice roller with physically thrown 3D dice</description>
+                                    <copyright>Copyright 2026 evildarkarchon. MIT licence.</copyright>
+                                    <destination>${image.destination}</destination>
+                                    <removeDestination>true</removeDestination>
+                                    <module>${andysdice.launcherMain}</module>
+                                    <modulePaths>
+                                        <modulePath>${image.modules}</modulePath>
+                                        <modulePath>${javafx.jmods.dir}</modulePath>
+                                    </modulePaths>
+                                    <input>${image.appInput}</input>
+                                    <jLinkOptions>
+                                        <jLinkOption>--strip-debug</jLinkOption>
+                                        <jLinkOption>--no-header-files</jLinkOption>
+                                        <jLinkOption>--no-man-pages</jLinkOption>
+                                        <jLinkOption>--compress=zip-6</jLinkOption>
+                                    </jLinkOptions>
+                                    <additionalOptions>
+                                        <additionalOption>@${image.staging}/java-options.args</additionalOption>
+                                    </additionalOptions>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- AndysDice-<version>-windows-x64.zip, holding the AndysDice\ folder. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>windows-zip</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/assembly/windows-zip.xml</descriptor>
+                                    </descriptors>
+                                    <finalName>${image.zipName}</finalName>
+                                    <appendAssemblyId>false</appendAssemblyId>
+                                    <!-- Not a Maven artifact: the release job attaches it to a GitHub Release. -->
+                                    <attach>false</attach>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                      The tests of the built image and zip (*ImageIT) join the module's one Failsafe execution: this
+                      lifts its exclusion and tells them where the image is. (A second execution would share, and on
+                      a rerun without clean merge into, Failsafe's summary file.)
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>default</id>
+                                <configuration>
+                                    <excludes combine.self="override"/>
+                                    <systemPropertyVariables>
+                                        <andysdice.image.dir>${image.destination}/${image.name}</andysdice.image.dir>
+                                        <andysdice.image.zip>${project.build.directory}/${image.zipName}.zip</andysdice.image.zip>
+                                        <andysdice.image.javaOptions>${image.javaOptions}</andysdice.image.javaOptions>
+                                        <andysdice.image.work>${project.build.directory}/image-tests</andysdice.image.work>
+                                        <andysdice.version>${project.version}</andysdice.version>
+                                        <!-- Where the jolt-jni native jars are, to check which flavour the image holds. -->
+                                        <andysdice.image.mavenRepo>${settings.localRepository}</andysdice.image.mavenRepo>
+                                        <andysdice.image.joltVersion>${jolt-jni.version}</andysdice.image.joltVersion>
+                                        <!-- The checkout, so app\legal\ can be checked against the files it copies. -->
+                                        <andysdice.image.repoRoot>${project.basedir}/..</andysdice.image.repoRoot>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
