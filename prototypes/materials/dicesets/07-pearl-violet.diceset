@@ -1,0 +1,16 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Lustrous: pearl adds a moving sheen where the swirl is, like mica in the resin.
+format = 1
+name = Pearl violet / silver
+base = #3c1c63
+roughness = 0.2
+swirl.color = #c8a8ee
+swirl.scale = 10
+swirl.warp = 1.8
+swirl.bands = 2.5
+swirl.amount = 0.5
+swirl.softness = 0.3
+pearl = 2.0
+ink = #d8dadf
+ink.metallic = 1
+ink.roughness = 0.3
