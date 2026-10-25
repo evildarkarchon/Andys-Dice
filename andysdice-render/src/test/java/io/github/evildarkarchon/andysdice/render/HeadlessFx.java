@@ -11,27 +11,16 @@ import javafx.application.Platform;
  * Starts JavaFX once per test JVM on its built-in headless platform (ADR-0011), so the bridge's JavaFX end runs
  * without a desktop session, and runs test code on the JavaFX Application Thread.
  *
- * <p>This is the one place render's tests set JavaFX's platform properties; swapping them here is how to watch
- * the same tests in real windows.
+ * <p>The platform's flags are {@link HeadlessPlatform}'s, the one owner of them for every module's tests; swapping
+ * them there is how to watch the same tests in real windows.
  */
 final class HeadlessFx {
 
-    private static boolean started;
-
     private HeadlessFx() {}
 
-    /** Starts the toolkit on the headless platform if no test has yet. */
-    static synchronized void start() {
-        if (started) {
-            return;
-        }
-        // Read by the toolkit when it starts, so they must be set before Platform.startup.
-        System.setProperty("glass.platform", "Headless");
-        System.setProperty("prism.order", "sw");
-        Platform.startup(() -> {});
-        // The tests open and close windows; closing the last must not stop the toolkit for the next test.
-        Platform.setImplicitExit(false);
-        started = true;
+    /** Starts the toolkit on the headless platform if no test has yet ({@link HeadlessPlatform#start}). */
+    static void start() {
+        HeadlessPlatform.start();
     }
 
     /**
@@ -68,6 +57,8 @@ final class HeadlessFx {
             if (call(condition::getAsBoolean)) {
                 return true;
             }
+            // A poll, not a wait on time: the conditions are frames the render thread reads back and the JavaFX
+            // thread presents on a later pulse, which no future of the bridge completes on.
             Thread.sleep(5);
         }
         return false;

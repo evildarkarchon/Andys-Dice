@@ -64,11 +64,8 @@ class GpuTimeTest {
         for (int i = 0; i < frames; i++) {
             capture.take(renderer, () -> {}).get(20, TimeUnit.SECONDS);
         }
-        // Results come back a frame or more late; the idle loop still collects them.
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (millis.size() < frames && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        // Results come back a frame or more late; once the GPU has finished, every one of them is collected.
+        finishGpuTimes();
 
         assertThat(millis).as("one time per frame").hasSize(frames);
         assertThat(millis).allSatisfy(ms -> assertThat(ms).isPositive().isLessThan(10_000.0));
@@ -79,13 +76,22 @@ class GpuTimeTest {
     void framesDrawnWithNoListenerAreNotReportedLater() throws Exception {
         renderer.setOnGpuTime(null);
         capture.take(renderer, () -> {}).get(20, TimeUnit.SECONDS);
-        // Long enough for the idle loop (50 ms a turn) to have collected any result of that frame.
-        Thread.sleep(200);
+        // Whatever that frame left on the GPU is finished and collected now, with no listener to hear it.
+        finishGpuTimes();
         List<Double> millis = new CopyOnWriteArrayList<>();
         renderer.setOnGpuTime(millis::add);
-        Thread.sleep(200);
+        // And nothing is still to come: a listener set now hears nothing, even once the GPU is idle.
+        finishGpuTimes();
 
         assertThat(millis).isEmpty();
         renderer.setOnGpuTime(null);
+    }
+
+    /** Waits for the GPU to finish every frame drawn so far and hands their times over, on the render thread. */
+    private static void finishGpuTimes() throws Exception {
+        renderer.submit(() -> {
+            renderer.finishGpuTimes();
+            return null;
+        }).get(20, TimeUnit.SECONDS);
     }
 }

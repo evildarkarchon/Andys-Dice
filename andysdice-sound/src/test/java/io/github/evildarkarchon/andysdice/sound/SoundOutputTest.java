@@ -115,6 +115,8 @@ class SoundOutputTest {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (!condition.getAsBoolean()) {
             assertThat(System.nanoTime()).as("waited 10 s").isLessThan(deadline);
+            // A poll, not a wait on time: the conditions are the fake sink's state as the audio thread leaves it
+            // (opened, written to, closed), which SoundOutput signals nowhere a test could block on.
             Thread.sleep(1);
         }
     }
