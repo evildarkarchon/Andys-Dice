@@ -18,9 +18,13 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class DataFolderTest {
 
-    private static final Path LAUNCHER = Path.of("C:/Games/AndysDice/AndysDice.exe");
-    private static final Path BESIDE = Path.of("C:/Games/AndysDice/data");
-    private static final Path LOCAL = Path.of("C:/Users/andy/AppData/Local");
+    // Every fixture hangs off the running platform's own filesystem root. A literal "C:/..." is only absolute on
+    // Windows: on the Ubuntu CI job it is a relative path, which DataFolder rightly resolves against the working
+    // directory, so Windows-shaped literals made these tests pass on Windows alone.
+    private static final Path ROOT = Path.of("").toAbsolutePath().getRoot();
+    private static final Path LAUNCHER = ROOT.resolve("Games/AndysDice/AndysDice.exe");
+    private static final Path BESIDE = ROOT.resolve("Games/AndysDice/data");
+    private static final Path LOCAL = ROOT.resolve("Users/andy/AppData/Local");
 
     private static final Map<String, String> PACKAGED = Map.of("jpackage.app-path", LAUNCHER.toString());
     private static final Map<String, String> WINDOWS_ENV = Map.of("LOCALAPPDATA", LOCAL.toString());
@@ -44,7 +48,7 @@ class DataFolderTest {
 
     @Test
     void theOverridePropertyWinsOverBoth() {
-        Path override = Path.of("D:/dev/andysdice-data");
+        Path override = ROOT.resolve("dev/andysdice-data");
         DataFolder chosen = DataFolder.choose(
                 Map.of("jpackage.app-path", LAUNCHER.toString(), "andysdice.data.dir", override.toString()),
                 WINDOWS_ENV, writableOnly(BESIDE, LOCAL.resolve("AndysDice"), override));
