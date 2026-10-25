@@ -42,7 +42,7 @@ v1's dice sound is mixed by our own pure-Java mixer. It renders small blocks (ab
   - a soft limiter on the output.
 
   The numbers are tunables, not contracts.
-- **Sync.** The one playback clock (the one ADR-0011's stand-in tray drives) is the master. Each block is rendered for the moment it will be heard: now plus the sink's queued latency, at the clock's current speed. At ×4 only the timing compresses, and samples keep their natural pitch. One tunable A/V offset is set on the release checklist with a click-and-flash test. The aim is the ATSC window (audio no more than 15 ms early or 45 ms late), with audio slightly late when in doubt.
+- **Sync.** The one playback clock (the one ADR-0011's stand-in tray drives) is the master. Each block is rendered for the moment it will be heard: now plus the sink's queued latency, at the clock's current speed. At ×4 only the timing compresses, and samples keep their natural pitch. One tunable A/V offset is set on the release checklist with a click-and-flash test. The aim is the ATSC window (audio no more than 15 ms early or 45 ms late), with audio slightly late when in doubt. *Amended by ADR-0014:* blocks are 480 frames (10 ms), and the sink queues 40 ms by default. If the release checklist hears glitches, the queue goes up to 60 ms before the OpenAL fallback is considered.
 - **Output.** The mixer outputs 48 kHz stereo 16-bit. Each impact is equal-power panned, with modest width, by its contact point's screen-space x at mix time, so an orbited camera still pans correctly.
 - **Lifecycle.**
   - One audio thread, owned by the sound module, pulls blocks from the mixer. The JavaFX, render and physics threads never touch the sink.
