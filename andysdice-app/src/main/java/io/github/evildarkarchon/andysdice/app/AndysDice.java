@@ -46,6 +46,7 @@ public final class AndysDice extends Application {
     private static volatile FailureGuard failures = new FailureGuard(null);
     private static volatile int exitStatus;
     private static volatile Path dataFolder;
+    private static volatile LaunchMode launchMode = LaunchMode.PLAYER;
 
     private LaunchMode mode = LaunchMode.PLAYER;
     /** Where {@link #persistence} writes: the data folder, or the bench's throwaway folder. */
@@ -63,24 +64,26 @@ public final class AndysDice extends Application {
      *
      * @param launchedAt when the process started, for the launch-to-window time in the log
      * @param data the data folder chosen for this run, where the persisted files live
-     * @param args the command line
+     * @param launch what this run is for, from the command line {@link Main} has already checked
      * @param guard where failures that end the session go; it shows them in the failure panel once the window
      *     is up
      * @return the process's exit status
      */
-    static int launch(Instant launchedAt, Path data, String[] args, FailureGuard guard) {
+    static int launch(Instant launchedAt, Path data, LaunchMode launch, FailureGuard guard) {
         launched = Objects.requireNonNull(launchedAt, "launchedAt");
         dataFolder = Objects.requireNonNull(data, "data");
+        launchMode = Objects.requireNonNull(launch, "launch");
         failures = Objects.requireNonNull(guard, "guard");
         exitStatus = 0;
-        Application.launch(AndysDice.class, args);
+        // No arguments for JavaFX: Main has checked the command line and handed over the mode it picked.
+        Application.launch(AndysDice.class);
         return exitStatus;
     }
 
     @Override
     public void start(Stage stage) {
-        // The smoke test, the dev-only bench (#61) or the Player's app; the smoke test wins if both are asked for.
-        mode = LaunchMode.of(getParameters().getRaw());
+        // The smoke test, the dev-only bench (#61) or the Player's app, as Main's checked command line picked it.
+        mode = launchMode;
         // Neither hidden mode waits on a person: a failure exits at once.
         boolean unattended = mode.unattended();
         PlaybackClock clock = new PlaybackClock();
