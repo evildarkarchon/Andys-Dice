@@ -1,0 +1,11 @@
+# Andy's Dice Tray. Colours are sRGB hex; the wall height is in mm (30 to 100).
+# Brown leather in a padded hexagon, rounded tops (spec Appendix C).
+format = 1
+name = Leather hexagon
+outline = hexagon
+walls.profile = padded
+walls.material = leather
+walls.color = #453022
+walls.height = 30
+floor.surface = leather
+floor.color = #453022
