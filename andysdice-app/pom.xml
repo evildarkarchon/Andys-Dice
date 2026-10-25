@@ -60,6 +60,37 @@
 
     <build>
         <plugins>
+            <!-- Only one render thread may ever start in a JVM (ADR-0002), and two test classes start the real app:
+                 WalkingSkeletonTest in the usual test run, and the bench's FirstMotionTest (#61) in a run of its
+                 own, so in a JVM of its own. Everything else comes from the parent's pluginManagement. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/FirstMotionTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>first-motion</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <!-- Set here rather than as includes, so a -Dtest=... on the command line narrows only the
+                             usual run and never sends its classes into this JVM too. Nothing to run (the no-gl
+                             profile leaves gl tests out) is not a failure. -->
+                        <configuration>
+                            <test>FirstMotionTest</test>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!--
               jolt-jni's default ReleaseSp native (never _avx2 or _fma) and LWJGL's natives, flattened into the one
               natives directory (ADR-0004), exactly as physics and render lay out their own; nothing is extracted
