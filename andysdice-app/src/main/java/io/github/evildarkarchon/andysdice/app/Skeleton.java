@@ -237,6 +237,15 @@ final class Skeleton implements AutoCloseable {
     }
 
     /**
+     * Returns the Roll UI wired to its controller, for the pieces the app adds around it (the History tab, #55).
+     *
+     * @return the session
+     */
+    RollSession session() {
+        return session;
+    }
+
+    /**
      * Returns the roll controller.
      *
      * @return the controller Enter rolls through

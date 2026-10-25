@@ -5,6 +5,7 @@ import io.github.evildarkarchon.andysdice.physics.JoltStartupException;
 import io.github.evildarkarchon.andysdice.render.GlUnavailableException;
 import java.lang.System.Logger.Level;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -102,6 +103,9 @@ public final class AndysDice extends Application {
         // The Settings tab's Quality Preset (#60): the saved one (Medium at first run) goes to the renderer now, and
         // a new choice is saved and applied at once.
         QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
+        // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
+        // time zone as it was at start-up.
+        HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.

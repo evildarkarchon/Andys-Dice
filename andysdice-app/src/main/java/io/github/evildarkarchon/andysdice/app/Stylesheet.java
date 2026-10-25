@@ -161,6 +161,10 @@ final class Stylesheet {
                 "." + ROOT_CLASS + " .icon-button:hover { -fx-background-color: " + raised + "; }",
                 "." + ROOT_CLASS + " .icon-button:focused { -fx-background-color: " + focus + ", " + surface
                         + "; -fx-background-insets: 0, 2; }",
+
+                // Context menus (#55's History menu) take the theme through their owner, but the .label rule above
+                // would keep a focused item's text light on Modena's accent bar; it takes the on-accent colour.
+                "." + ROOT_CLASS + " .context-menu .menu-item:focused .label { -fx-text-fill: " + onAccent + "; }",
                 "");
     }
 
