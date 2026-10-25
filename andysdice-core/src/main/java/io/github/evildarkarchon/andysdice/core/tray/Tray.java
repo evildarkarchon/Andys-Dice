@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.core.tray;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import io.github.evildarkarchon.andysdice.core.simulation.ContactMaterial;
 import io.github.evildarkarchon.andysdice.core.simulation.OutlinePoint;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
@@ -56,7 +57,7 @@ public record Tray(String identity, String name, TrayOutline outline, Walls wall
      * @param heightMm how far they rise above the floor, in mm: {@value #MIN_WALL_HEIGHT_MM} to
      *     {@value #MAX_WALL_HEIGHT_MM}
      */
-    public record Walls(WallProfile profile, WallMaterial material, TrayColour colour, double heightMm) {
+    public record Walls(WallProfile profile, WallMaterial material, SrgbColour colour, double heightMm) {
 
         /**
          * Checks every part is there and the height is in range.
@@ -81,7 +82,7 @@ public record Tray(String identity, String name, TrayOutline outline, Walls wall
      * @param surface what it is covered with
      * @param colour its colour
      */
-    public record Floor(FloorSurface surface, TrayColour colour) {
+    public record Floor(FloorSurface surface, SrgbColour colour) {
 
         /**
          * Checks every part is there.

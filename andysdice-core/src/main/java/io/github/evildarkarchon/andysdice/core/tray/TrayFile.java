@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.core.tray;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
@@ -44,9 +45,9 @@ public final class TrayFile {
     public static final String EXTENSION = ".tray";
 
     /** The tray prototype's walnut, linear (0.30, 0.17, 0.09), in sRGB. */
-    private static final TrayColour WALNUT = new TrayColour(0x95, 0x73, 0x55);
+    private static final SrgbColour WALNUT = new SrgbColour(0x95, 0x73, 0x55);
     /** The tray prototype's green felt, linear (0.030, 0.105, 0.052), in sRGB. */
-    private static final TrayColour GREEN_FELT = new TrayColour(0x30, 0x5b, 0x40);
+    private static final SrgbColour GREEN_FELT = new SrgbColour(0x30, 0x5b, 0x40);
 
     private TrayFile() {}
 
@@ -142,8 +143,8 @@ public final class TrayFile {
     }
 
     /** A key's value as an sRGB colour; empty if absent or not {@code #rrggbb}. */
-    private static Optional<TrayColour> colour(Properties keys, String key) {
-        return value(keys, key).flatMap(TrayColour::parse);
+    private static Optional<SrgbColour> colour(Properties keys, String key) {
+        return value(keys, key).flatMap(SrgbColour::parse);
     }
 
     /** A finite decimal number; empty for anything else, NaN and the infinities included. */

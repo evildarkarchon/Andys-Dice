@@ -3,10 +3,10 @@ package io.github.evildarkarchon.andysdice.render;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.lwjgl.opengl.GL20C.glDeleteProgram;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
-import io.github.evildarkarchon.andysdice.core.tray.TrayColour;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -125,7 +125,7 @@ class TraySceneTest {
     }
 
     /** The pixel's channels rank as the colour's do, wherever the colour's two leading channels differ clearly. */
-    private static void assertLeadingChannelsMatch(int argb, TrayColour colour) {
+    private static void assertLeadingChannelsMatch(int argb, SrgbColour colour) {
         int[] drawn = {red(argb), green(argb), blue(argb)};
         int[] given = {colour.red(), colour.green(), colour.blue()};
         int brightest = 0;

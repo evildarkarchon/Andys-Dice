@@ -3,6 +3,7 @@ package io.github.evildarkarchon.andysdice.render;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.lwjgl.opengl.GL20C.glDeleteProgram;
 
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Pose;
@@ -82,6 +83,8 @@ class DiceSceneTest {
         Vector3dc toward = new Vector3d(0, kind == DieKind.D4 ? -1 : 1, 0);
         Quaterniond rest = new Quaterniond().rotationTo(kind.solid().faces().getLast().normal(), toward);
         Still still = capture.take(renderer, () -> {
+            // Ivory / black: dark ink on a light body, so ink pixels are told apart by colour alone.
+            scene.setDiceSet(DiceSetCatalogue.builtIn().find("02-ivory").orElseThrow());
             scene.setCamera(new DiceScene.Camera(new Vector3d(0, 60, 0.01), new Vector3d(), 32));
             scene.setDice(List.of(new DiceScene.Die(kind, new Vector3d(), rest)));
         }).get(10, TimeUnit.SECONDS);
@@ -106,7 +109,7 @@ class DiceSceneTest {
         assertThat(ink).isLessThan(covered / 2);
     }
 
-    /** Dark and grey: the stand-in look's ink, and neither the felt-green background nor the shaded ivory. */
+    /** Dark and grey: Ivory / black's ink, and neither the felt-green background nor the shaded ivory. */
     private static boolean isInk(int argb) {
         int r = (argb >> 16) & 0xff;
         int g = (argb >> 8) & 0xff;

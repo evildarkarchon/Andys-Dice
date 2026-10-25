@@ -67,6 +67,10 @@
         <maven-resources-plugin.version>3.4.0</maven-resources-plugin.version>
         <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
         <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
+        <jpackage-maven-plugin.version>1.8.0</jpackage-maven-plugin.version>
+        <download-maven-plugin.version>1.13.0</download-maven-plugin.version>
+        <build-helper-maven-plugin.version>3.6.2</build-helper-maven-plugin.version>
+        <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
 
         <!--
           The one native-access option set (ADR-0004). It grants native access to exactly jolt-jni, LWJGL,
@@ -98,6 +102,13 @@
              image). Dev and test runs point it at the module's build-time target/natives, which physics fills
              by unpacking jolt-jni's native; a module whose tests load Jolt must unpack it the same way. -->
         <andysdice.joltNatives>-Dandysdice.natives.dir=${andysdice.nativesDir}</andysdice.joltNatives>
+
+        <!-- JOML's part of the shared option set (ADR-0004): without it JOML's matrix copies go through
+             sun.misc.Unsafe, which JDK 27 warns about. -->
+        <andysdice.jomlOptions>-Djoml.nounsafe=true</andysdice.jomlOptions>
+
+        <!-- The app's entry point as module/class, for the dev run (app) and the jpackage launcher (assembly). -->
+        <andysdice.launcherMain>io.github.evildarkarchon.andysdice.app/io.github.evildarkarchon.andysdice.app.Main</andysdice.launcherMain>
 
         <!-- Extra JVM options for a module's tests. Modules set this; they never override argLine itself,
              so the native-access set can't be dropped by accident. -->
@@ -244,7 +255,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <!-- Lets the gl tag guard test see which groups this build meant to leave out. -->
@@ -257,7 +268,7 @@
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven-failsafe-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.joltNatives} ${andysdice.jomlOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <andysdice.test.excludedGroups>${andysdice.test.excludedGroups}</andysdice.test.excludedGroups>
@@ -288,6 +299,27 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
                     <version>${maven-enforcer-plugin.version}</version>
+                </plugin>
+                <!-- Packaging (ADR-0004); only the assembly module uses these. -->
+                <plugin>
+                    <groupId>org.panteleyev</groupId>
+                    <artifactId>jpackage-maven-plugin</artifactId>
+                    <version>${jpackage-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>com.googlecode.maven-download-plugin</groupId>
+                    <artifactId>download-maven-plugin</artifactId>
+                    <version>${download-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>${build-helper-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>${maven-assembly-plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

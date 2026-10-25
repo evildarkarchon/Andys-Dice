@@ -2,8 +2,8 @@ package io.github.evildarkarchon.andysdice.core.tray;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.within;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,8 +35,8 @@ class TrayFileTest {
         assertThat(tray.name()).isEqualTo("Test tray");
         assertThat(tray.outline()).isEqualTo(TrayOutline.OVAL);
         assertThat(tray.walls()).isEqualTo(new Tray.Walls(WallProfile.PADDED, WallMaterial.LEATHER,
-                new TrayColour(0x10, 0x20, 0x30), 42.5));
-        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.WOOD, new TrayColour(0xa0, 0xb0, 0xc0)));
+                new SrgbColour(0x10, 0x20, 0x30), 42.5));
+        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.WOOD, new SrgbColour(0xa0, 0xb0, 0xc0)));
     }
 
     @Test
@@ -49,8 +49,8 @@ class TrayFileTest {
         assertThat(tray.name()).as("no name: the identity stands in").isEqualTo("plain");
         assertThat(tray.outline()).isEqualTo(TrayOutline.RECTANGLE);
         assertThat(tray.walls()).isEqualTo(new Tray.Walls(WallProfile.SQUARE, WallMaterial.WOOD,
-                new TrayColour(0x95, 0x73, 0x55), 30));
-        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.FELT, new TrayColour(0x30, 0x5b, 0x40)));
+                new SrgbColour(0x95, 0x73, 0x55), 30));
+        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.FELT, new SrgbColour(0x30, 0x5b, 0x40)));
     }
 
     @Test
@@ -102,7 +102,7 @@ class TrayFileTest {
                 "format = 1  \noutline = HexaGon \t\nwalls.color = #AbCdEf   \nfloor.surface = Leather\nname =  Spaced  \n");
 
         assertThat(tray.outline()).isEqualTo(TrayOutline.HEXAGON);
-        assertThat(tray.walls().colour()).isEqualTo(new TrayColour(0xab, 0xcd, 0xef));
+        assertThat(tray.walls().colour()).isEqualTo(new SrgbColour(0xab, 0xcd, 0xef));
         assertThat(tray.floor().surface()).isEqualTo(FloorSurface.LEATHER);
         assertThat(tray.name()).isEqualTo("Spaced");
     }
@@ -133,18 +133,5 @@ class TrayFileTest {
 
         assertThat(tray.identity()).isEqualTo("07-my-tray");
         assertThat(tray.name()).isEqualTo("Ünïcode Ø");
-    }
-
-    @Test
-    void coloursConvertFromSrgbToLinear() {
-        // The sRGB transfer function's known points: 0 -> 0, 255 -> 1, 188 -> ~0.5029, 10 -> 10/255/12.92.
-        TrayColour c = new TrayColour(0, 188, 255);
-        assertThat(c.linearRed()).isZero();
-        assertThat(c.linearGreen()).isCloseTo(0.5029, within(1e-3));
-        assertThat(c.linearBlue()).isEqualTo(1.0);
-        assertThat(new TrayColour(10, 0, 0).linearRed()).isCloseTo(10 / 255.0 / 12.92, within(1e-9));
-        assertThat(TrayColour.parse("#0a0B0c")).contains(new TrayColour(10, 11, 12));
-        assertThat(TrayColour.parse("0a0b0c")).isEmpty();
-        assertThatThrownBy(() -> new TrayColour(256, 0, 0)).isInstanceOf(IllegalArgumentException.class);
     }
 }

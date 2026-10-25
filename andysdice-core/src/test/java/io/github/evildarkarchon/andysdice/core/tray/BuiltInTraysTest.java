@@ -3,6 +3,7 @@ package io.github.evildarkarchon.andysdice.core.tray;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import io.github.evildarkarchon.andysdice.core.simulation.ContactMaterial;
 import io.github.evildarkarchon.andysdice.core.simulation.OutlinePoint;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
@@ -34,9 +35,9 @@ class BuiltInTraysTest {
 
         assertThat(tray.outline()).isEqualTo(TrayOutline.RECTANGLE);
         assertThat(tray.walls()).isEqualTo(new Tray.Walls(WallProfile.SQUARE, WallMaterial.WOOD,
-                new TrayColour(0x95, 0x73, 0x55), 30));
+                new SrgbColour(0x95, 0x73, 0x55), 30));
         assertThat(tray.walls().material().restitution()).as("Appendix C's wall bounce").isEqualTo(0.5f);
-        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.FELT, new TrayColour(0x30, 0x5b, 0x40)));
+        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.FELT, new SrgbColour(0x30, 0x5b, 0x40)));
     }
 
     @Test
@@ -46,9 +47,9 @@ class BuiltInTraysTest {
         // The tray prototype's leather, linear (0.060, 0.030, 0.016), on the floor and the padded roll alike.
         assertThat(tray.outline()).isEqualTo(TrayOutline.HEXAGON);
         assertThat(tray.walls()).isEqualTo(new Tray.Walls(WallProfile.PADDED, WallMaterial.LEATHER,
-                new TrayColour(0x45, 0x30, 0x22), 30));
+                new SrgbColour(0x45, 0x30, 0x22), 30));
         assertThat(tray.walls().material().restitution()).as("Appendix C's wall bounce").isEqualTo(0.2f);
-        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.LEATHER, new TrayColour(0x45, 0x30, 0x22)));
+        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.LEATHER, new SrgbColour(0x45, 0x30, 0x22)));
     }
 
     @Test
@@ -57,8 +58,8 @@ class BuiltInTraysTest {
 
         assertThat(tray.outline()).isEqualTo(TrayOutline.RECTANGLE);
         assertThat(tray.walls()).isEqualTo(new Tray.Walls(WallProfile.SQUARE, WallMaterial.WOOD,
-                new TrayColour(0x95, 0x73, 0x55), 30));
-        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.WOOD, new TrayColour(0x95, 0x73, 0x55)));
+                new SrgbColour(0x95, 0x73, 0x55), 30));
+        assertThat(tray.floor()).isEqualTo(new Tray.Floor(FloorSurface.WOOD, new SrgbColour(0x95, 0x73, 0x55)));
     }
 
     @Test

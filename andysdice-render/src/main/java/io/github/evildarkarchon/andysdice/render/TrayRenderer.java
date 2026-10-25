@@ -47,8 +47,8 @@ import static org.lwjgl.opengl.GL30C.glDeleteVertexArrays;
 import static org.lwjgl.opengl.GL30C.glGenVertexArrays;
 import static org.lwjgl.opengl.GL30C.glGenerateMipmap;
 
+import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
-import io.github.evildarkarchon.andysdice.core.tray.TrayColour;
 import io.github.evildarkarchon.andysdice.render.tray.SurfaceLook;
 import io.github.evildarkarchon.andysdice.render.tray.SurfaceTexture;
 import io.github.evildarkarchon.andysdice.render.tray.TrayMesh;
@@ -86,7 +86,9 @@ final class TrayRenderer {
     private int viewProjectionUniform;
     private int eyeUniform;
     private int keyUniform;
+    private int keyColourUniform;
     private int fillUniform;
+    private int fillColourUniform;
     private int tintUniform;
     private int roughnessUniform;
     private int sheenUniform;
@@ -104,7 +106,9 @@ final class TrayRenderer {
         viewProjectionUniform = glGetUniformLocation(program, "uViewProjection");
         eyeUniform = glGetUniformLocation(program, "uEye");
         keyUniform = glGetUniformLocation(program, "uKeyDirection");
+        keyColourUniform = glGetUniformLocation(program, "uKeyColour");
         fillUniform = glGetUniformLocation(program, "uFillDirection");
+        fillColourUniform = glGetUniformLocation(program, "uFillColour");
         tintUniform = glGetUniformLocation(program, "uTint");
         roughnessUniform = glGetUniformLocation(program, "uRoughness");
         sheenUniform = glGetUniformLocation(program, "uSheen");
@@ -122,18 +126,23 @@ final class TrayRenderer {
      * @param viewProjection the view-projection matrix, column-major
      * @param eye the camera's position, in mm
      * @param key the direction toward the key light
+     * @param keyColour the key light's radiance, linear RGB
      * @param fill the direction toward the fill light
+     * @param fillColour the fill light's radiance, linear RGB
      */
-    void draw(Tray next, float[] viewProjection, Vector3dc eye, Vector3dc key, Vector3dc fill) {
+    void draw(Tray next, float[] viewProjection, Vector3dc eye, Vector3dc key, Vector3dc keyColour, Vector3dc fill,
+            Vector3dc fillColour) {
         RenderThread.checkRenderThread();
         if (!next.equals(tray)) {
             rebuild(next);
         }
         glUseProgram(program);
         glUniformMatrix4fv(viewProjectionUniform, false, viewProjection);
-        glUniform3f(eyeUniform, (float) eye.x(), (float) eye.y(), (float) eye.z());
-        glUniform3f(keyUniform, (float) key.x(), (float) key.y(), (float) key.z());
-        glUniform3f(fillUniform, (float) fill.x(), (float) fill.y(), (float) fill.z());
+        vector(eyeUniform, eye);
+        vector(keyUniform, key);
+        vector(keyColourUniform, keyColour);
+        vector(fillUniform, fill);
+        vector(fillColourUniform, fillColour);
 
         SurfaceTexture.Kind floorKind = SurfaceTexture.Kind.of(tray.floor().surface());
         SurfaceTexture.Kind wallKind = SurfaceTexture.Kind.of(tray.walls().material());
@@ -202,8 +211,13 @@ final class TrayRenderer {
         return texture;
     }
 
+    /** Sets a {@code vec3} uniform from a vector. */
+    private static void vector(int location, Vector3dc v) {
+        glUniform3f(location, (float) v.x(), (float) v.y(), (float) v.z());
+    }
+
     /** A Tray file's sRGB colour as the shader's linear RGB. */
-    private static float[] linear(TrayColour colour) {
+    private static float[] linear(SrgbColour colour) {
         return new float[] {(float) colour.linearRed(), (float) colour.linearGreen(), (float) colour.linearBlue()};
     }
 

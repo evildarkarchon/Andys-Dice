@@ -1,7 +1,10 @@
 # CI on every push and pull request (ADR-0005's "CI shape").
 #
 # - windows: the full `mvn verify` (unit, Jolt, gl and smoke tests) on a pinned Mesa, which gives the runner
-#   a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1.
+#   a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
+#   of the built app-image: `AndysDice.exe --smoke-test` must exit 0 (ADR-0005).
+# - windows-no-mesa: the packaged zip on the bare runner, whose only OpenGL is GDI Generic 1.1. The launch must
+#   fail fast (ADR-0002): a non-zero exit, logging the GL 3.3 requirement and the renderer and driver it found.
 # - ubuntu: compile plus every test except the gl-tagged ones, which keeps the build Linux-capable (ADR-0004).
 #   The no-gl profile excludes them by tag; a gl test never skips itself (ADR-0005).
 #
@@ -66,7 +69,59 @@ jobs:
           path: |
             **/target/surefire-reports/
             **/target/failsafe-reports/
+            andysdice-assembly/target/image-tests/**/data/logs/
+            andysdice-assembly/target/image-tests/**/std*.txt
           if-no-files-found: ignore
+
+  windows-no-mesa:
+    name: Windows without Mesa (GL fail-fast)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # No Mesa step here, on purpose. The tests ran in the windows job; this one only needs the zip.
+      - name: Build the zip
+        run: ./mvnw.cmd -DskipTests package
+
+      # Unzipped away from the build, as a user would, so the run also shows the launcher works from anywhere.
+      - name: Launch it and expect the GL fail-fast
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem andysdice-assembly/target/AndysDice-*-windows-x64.zip | Select-Object -First 1
+          if (-not $zip) { throw 'no AndysDice-<version>-windows-x64.zip was built' }
+          $unzipped = Join-Path $env:RUNNER_TEMP 'no-mesa'
+          Expand-Archive -Path $zip.FullName -DestinationPath $unzipped
+          $image = Join-Path $unzipped 'AndysDice'
+
+          # A plain launch, as the user's. Should GL somehow work, the window stays up and the timeout fails the job.
+          $app = Start-Process -FilePath (Join-Path $image 'AndysDice.exe') -WorkingDirectory $unzipped -PassThru
+          # Reading Handle now keeps the process's handle open, without which ExitCode can read as empty.
+          $null = $app.Handle
+          if (-not $app.WaitForExit(120000)) {
+            $app.Kill($true)
+            throw 'AndysDice.exe was still running after 2 minutes; it should have failed fast without GL 3.3'
+          }
+
+          $logFile = Join-Path $image 'data/logs/andysdice.log'
+          if (-not (Test-Path $logFile)) { throw "no log at $logFile" }
+          $log = Get-Content -Raw -Encoding utf8 $logFile
+          Write-Output $log
+          Write-Output "AndysDice.exe exited with status $($app.ExitCode)"
+
+          if ($app.ExitCode -eq 0) { throw 'expected a non-zero exit without GL 3.3, got 0' }
+          if ($log -notmatch "Start-up failed: Andy's Dice needs OpenGL 3\.3 core, but ") {
+            throw 'the log has no start-up failure naming the OpenGL 3.3 core requirement'
+          }
+          if ($log -notmatch '\(renderer: (?!unknown)[^,]+, vendor: [^,]+, version: \d+\.\d+[^)]*\)') {
+            throw 'the start-up failure does not name the detected renderer and driver'
+          }
 
   ubuntu:
     name: Ubuntu (compile and non-GL tests)

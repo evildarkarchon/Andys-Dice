@@ -1,0 +1,9 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Metallic ink: a gold paint, so the ink takes the key light like metal does.
+format = 1
+name = Crimson / gold
+base = #9a1422
+roughness = 0.16
+ink = #e2b45a
+ink.metallic = 1
+ink.roughness = 0.35

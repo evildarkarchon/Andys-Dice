@@ -1,0 +1,7 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+format = 1
+name = Onyx / white
+base = #121214
+roughness = 0.22
+metallic = 0
+ink = #ecebe4
