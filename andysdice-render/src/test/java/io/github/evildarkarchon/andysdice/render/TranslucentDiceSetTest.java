@@ -176,7 +176,7 @@ class TranslucentDiceSetTest {
     }
 
     /** The largest channel difference between two colours, 0..255. */
-    private static int distance(int p, int q) {
+    static int distance(int p, int q) {
         int d = 0;
         for (int shift = 0; shift <= 16; shift += 8) {
             d = Math.max(d, Math.abs(((p >> shift) & 0xff) - ((q >> shift) & 0xff)));
@@ -185,7 +185,7 @@ class TranslucentDiceSetTest {
     }
 
     /** The Dice Set with a body that absorbs nothing, so whatever shows through it is at full strength. */
-    private static DiceSet clear(DiceSet set) {
+    static DiceSet clear(DiceSet set) {
         DiceSet.Transmission t = set.transmission();
         return new DiceSet(set.identity(), set.name(), set.base(), set.roughness(), set.metallic(), set.swirl(),
                 set.flakes(), set.pearl(),
@@ -193,7 +193,8 @@ class TranslucentDiceSetTest {
                 set.ink());
     }
 
-    private static DiceSet withTransmission(DiceSet set, double amount) {
+    /** The Dice Set with another transmission amount; 0 makes it opaque. */
+    static DiceSet withTransmission(DiceSet set, double amount) {
         DiceSet.Transmission t = set.transmission();
         return new DiceSet(set.identity(), set.name(), set.base(), set.roughness(), set.metallic(), set.swirl(),
                 set.flakes(), set.pearl(), new DiceSet.Transmission(amount, t.colour(), t.ior(), t.cloudiness()),
