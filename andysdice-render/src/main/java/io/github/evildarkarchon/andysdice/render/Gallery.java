@@ -1,5 +1,7 @@
 package io.github.evildarkarchon.andysdice.render;
 
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.Solid;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
@@ -25,7 +27,8 @@ import org.joml.Vector3dc;
  * The dev-only gallery (ADR-0005): renders a still of every Die Kind in each of a few fixed poses into a
  * directory of PNGs, so the look can be judged by eye. Nothing asserts on its pixels; later tickets add their
  * axes (Numerals #41, Dice Sets #42, Trays #44) to the same stills. The stills show the engraved Numerals (#41),
- * and a sheet per Die Kind shows every one of its Numerals in its face's frame.
+ * and a sheet per Die Kind shows every one of its Numerals in its face's frame. Every still is taken in every
+ * built-in Dice Set (#42), a directory per Dice Set.
  *
  * <p>It is behind a flag, never part of a normal run: {@value #FLAG} on the app's command line (once the app
  * routes it here), or in dev {@code mvn -pl andysdice-render -am process-classes -Pgallery}, which writes to
@@ -87,13 +90,14 @@ public final class Gallery {
     }
 
     /**
-     * Renders every still into {@code directory}, named {@code <die kind>-<pose>.png} (for example
-     * {@code d20-edge-on.png}), and after each Die Kind's stills a sheet of all its Numerals as its atlas lays
-     * them out, {@code <die kind>-numerals.png}; replaces any of the same name. Starts and closes the JVM's one
-     * render thread.
+     * Renders every still into {@code directory}: one sub-directory per built-in Dice Set, named by its identity,
+     * holding {@code <die kind>-<pose>.png} (for example {@code 08-steel/d20-edge-on.png}); then, for each Die Kind,
+     * a sheet of all its Numerals as its atlas lays them out, {@code <die kind>-numerals.png}. Replaces any of the
+     * same name. Starts and closes the JVM's one render thread.
      *
      * @param directory where to write; created if missing
-     * @return the files written, Die Kind by Die Kind in enum order: poses in enum order, then the sheet
+     * @return the files written: the stills Dice Set by Dice Set in catalogue order, each Die Kind in enum order
+     *     and its poses in enum order; then the sheets, Die Kind by Die Kind
      * @throws IOException if the directory or a still can't be written
      * @throws GlUnavailableException if there is no OpenGL 3.3 core context
      * @throws IllegalStateException if a render thread was already started in this JVM, or a still timed out
@@ -105,22 +109,29 @@ public final class Gallery {
         List<Path> written = new ArrayList<>();
         try (RenderThread renderer = RenderThread.start(capture, scene)) {
             renderer.resize(SIZE_PX, SIZE_PX);
-            for (DieKind kind : DieKind.values()) {
-                for (Pose pose : Pose.values()) {
-                    Still still = await(capture.take(renderer, () -> {
-                        scene.setCamera(camera(kind));
-                        scene.setDice(List.of(new DiceScene.Die(kind, new Vector3d(), orientation(kind, pose))));
-                    }));
-                    Path file = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-"
-                            + pose.name().toLowerCase(Locale.ROOT).replace('_', '-') + ".png");
-                    png(still.toImage(), file);
-                    written.add(file);
+            for (DiceSet set : DiceSetCatalogue.builtIn().diceSets()) {
+                Path setDirectory = Files.createDirectories(directory.resolve(set.identity()));
+                for (DieKind kind : DieKind.values()) {
+                    for (Pose pose : Pose.values()) {
+                        Still still = await(capture.take(renderer, () -> {
+                            scene.setDiceSet(set);
+                            scene.setCamera(camera(kind));
+                            scene.setDice(List.of(new DiceScene.Die(kind, new Vector3d(),
+                                    orientation(kind, pose))));
+                        }));
+                        Path file = setDirectory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-"
+                                + pose.name().toLowerCase(Locale.ROOT).replace('_', '-') + ".png");
+                        png(still.toImage(), file);
+                        written.add(file);
+                    }
                 }
-                // The sheet is pure Java2D; no GL is needed, but it sits beside the Die Kind's stills.
-                Path sheet = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-numerals.png");
-                png(NumeralAtlas.rasterise(NumeralLayout.of(kind)).sheet(SHEET_MAX_PX), sheet);
-                written.add(sheet);
             }
+        }
+        // The sheets are pure Java2D, no GL, and the same in every Dice Set.
+        for (DieKind kind : DieKind.values()) {
+            Path sheet = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-numerals.png");
+            png(NumeralAtlas.rasterise(NumeralLayout.of(kind)).sheet(SHEET_MAX_PX), sheet);
+            written.add(sheet);
         }
         return List.copyOf(written);
     }
@@ -150,10 +161,13 @@ public final class Gallery {
         }
     }
 
-    /** The unit direction from the target toward the camera. */
+    /**
+     * The unit direction from the target toward the camera: from the near side (-z), as the tray prototype's camera
+     * at zero yaw, which is where the Studio key light shines from.
+     */
     private static Vector3dc towardCamera() {
         double pitch = Math.toRadians(PITCH_DEGREES);
-        return new Vector3d(0, Math.sin(pitch), Math.cos(pitch));
+        return new Vector3d(0, Math.sin(pitch), -Math.cos(pitch));
     }
 
     /** A camera on {@link #towardCamera()} that fits the Die's bounding sphere in the frame. */

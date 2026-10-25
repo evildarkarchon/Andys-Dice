@@ -1,0 +1,15 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Cloudy marble: no bands, so the warped noise reads as soft clouds rather than ribbons.
+format = 1
+name = Jade marble / gold
+base = #0e4a2c
+roughness = 0.2
+swirl.color = #7cc49a
+swirl.scale = 9
+swirl.warp = 2.6
+swirl.bands = 0
+swirl.amount = 0.55
+swirl.softness = 0.3
+ink = #e0b55e
+ink.metallic = 1
+ink.roughness = 0.35

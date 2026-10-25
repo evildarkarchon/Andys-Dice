@@ -7,8 +7,8 @@
       mvn -pl andysdice-render -am process-classes -Ptest-window
   Add -DtestWindow.seconds=5 to have it exit by itself and print how many frames it presented.
 
-  Dev-only gallery (ADR-0005, ticket #40): a still of every Die Kind in fixed poses, written as PNGs to
-  andysdice-render/target/gallery:
+  Dev-only gallery (ADR-0005, ticket #40): a still of every Die Kind in fixed poses, in every built-in Dice Set
+  (#42), written as PNGs to andysdice-render/target/gallery:
       mvn -pl andysdice-render -am process-classes -Pgallery
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

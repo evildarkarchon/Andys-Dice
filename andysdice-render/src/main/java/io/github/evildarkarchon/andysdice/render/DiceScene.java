@@ -18,6 +18,8 @@ import static org.lwjgl.opengl.GL20C.glUniform3f;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
 
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Pose;
@@ -37,17 +39,21 @@ import org.joml.Vector3dc;
 
 /**
  * Draws Dice with their rounded meshes ({@link DieMesh}, ticket #40) in place of the sharp solids: each Die of
- * whatever Die Kind at its pose, seen from a camera, under a fixed key and fill light, in one plain ivory look
- * until the Dice Set shader (#42) takes over. The app's playback and the gallery both draw through it.
+ * whatever Die Kind at its pose, seen from a camera, under the Studio Light Rig's key and fill lights and its
+ * analytic reflection environment, in the chosen Dice Set. The app's playback and the gallery both draw through it.
  *
  * <p>Every face carries its engraved, inked Numerals (ticket #41, ADR-0008): each Die Kind's atlas is
  * rasterised and uploaded at {@link #init()}, and {@code engraving.glsl} traces it by parallax occlusion.
  *
+ * <p>One uber-shader ({@code die.frag}, ticket #42, ADR-0009) draws every Dice Set from its parameters: solid,
+ * swirl, speckle, pearl and metal. A swirled Dice Set's field is baked into a 3D texture the first time it is
+ * drawn. Until ticket #43, a translucent Dice Set is drawn opaque.
+ *
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
  *
- * <p>{@link #setDice} and {@link #setCamera} may be called from any thread and take effect at the next frame;
- * everything else runs on the render thread, as a {@link FrameRenderer}.
+ * <p>{@link #setDice}, {@link #setCamera} and {@link #setDiceSet} may be called from any thread and take effect at
+ * the next frame; everything else runs on the render thread, as a {@link FrameRenderer}.
  */
 public final class DiceScene implements FrameRenderer {
 
@@ -116,33 +122,42 @@ public final class DiceScene implements FrameRenderer {
         }
     }
 
-    // The prototype tray's 32 degree lens at its default 50 degree pitch, looking at the Tray's middle.
+    // The prototype tray's 32 degree lens at its default 50 degree pitch, looking at the Tray's middle from the
+    // near side (-z), where the prototype's camera sits at zero yaw and the Studio key light shines from.
     private static final Camera DEFAULT_CAMERA = new Camera(
-            new Vector3d(0, 5 + 400 * Math.sin(Math.toRadians(50)), 400 * Math.cos(Math.toRadians(50))),
+            new Vector3d(0, 5 + 400 * Math.sin(Math.toRadians(50)), -400 * Math.cos(Math.toRadians(50))),
             new Vector3d(0, 5, 0), 32);
-    // The bridge test's key light and a cool fill from the other side, as directions toward the lights.
-    private static final Vector3dc KEY = new Vector3d(-0.45, 0.85, 0.35).normalize();
-    private static final Vector3dc FILL = new Vector3d(0.7, 0.45, -0.5).normalize();
+    // The Studio Light Rig (the tray prototype's SceneSpec.light(STUDIO)): a warm key from above the camera's left
+    // and a cool fill from the far right, as directions toward the lights and linear radiance. env.glsl's two
+    // softboxes sit in the same directions. Ticket #45 makes the rigs choosable and adds their shadows.
+    private static final Vector3dc KEY = new Vector3d(-0.45, 0.85, -0.35).normalize();
+    private static final Vector3dc KEY_COLOUR = new Vector3d(1.0, 0.96, 0.90).mul(3.0);
+    private static final Vector3dc FILL = new Vector3d(0.7, 0.45, 0.5).normalize();
+    private static final Vector3dc FILL_COLOUR = new Vector3d(0.55, 0.62, 0.75).mul(0.5);
 
     private volatile List<Die> dice = List.of();
     private volatile Camera camera = DEFAULT_CAMERA;
+    private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
 
     // Render thread only.
     private final Map<DieKind, GlMesh> meshes = new EnumMap<>(DieKind.class);
     private final Map<DieKind, GlAtlas> atlases = new EnumMap<>(DieKind.class);
+    private SwirlVolumes swirls;
+    private DiceSetUniforms diceSetUniforms;
     private int program;
     private int modelUniform;
     private int viewProjectionUniform;
     private int eyeUniform;
     private int keyUniform;
+    private int keyColourUniform;
     private int fillUniform;
-    private int colourUniform;
-    private int inkUniform;
+    private int fillColourUniform;
     private int mmPerUvUniform;
 
-    // The texture units the engraving's atlas is bound to.
+    // The texture units the engraving's atlas and the swirl volume are bound to.
     private static final int MASK_UNIT = 0;
     private static final int SLOPE_UNIT = 1;
+    private static final int SWIRL_UNIT = 2;
 
     /** Creates an empty scene; its GL objects are made in {@link #init()}. */
     public DiceScene() {}
@@ -166,6 +181,26 @@ public final class DiceScene implements FrameRenderer {
     }
 
     /**
+     * Chooses the Dice Set every Die is drawn in (one per Roll, as in the prototypes). Takes effect at the next
+     * frame; any thread. Until this is called, it is the built-in fallback, Onyx.
+     *
+     * @param diceSet the Dice Set
+     */
+    public void setDiceSet(DiceSet diceSet) {
+        this.diceSet = Objects.requireNonNull(diceSet, "diceSet");
+    }
+
+    /**
+     * How many swirl volumes have been baked so far. Render thread only, after {@link #init()}; for tests.
+     *
+     * @return the count of distinct swirl fields drawn since {@link #init()}
+     */
+    int bakedSwirls() {
+        RenderThread.checkRenderThread();
+        return swirls.baked();
+    }
+
+    /**
      * How many triangles a Die of a kind is drawn with. Render thread only, after {@link #init()}; for tests.
      *
      * @param kind the Die Kind
@@ -183,15 +218,17 @@ public final class DiceScene implements FrameRenderer {
         viewProjectionUniform = glGetUniformLocation(program, "uViewProjection");
         eyeUniform = glGetUniformLocation(program, "uEye");
         keyUniform = glGetUniformLocation(program, "uKeyDirection");
+        keyColourUniform = glGetUniformLocation(program, "uKeyColour");
         fillUniform = glGetUniformLocation(program, "uFillDirection");
-        colourUniform = glGetUniformLocation(program, "uColour");
-        inkUniform = glGetUniformLocation(program, "uInk");
+        fillColourUniform = glGetUniformLocation(program, "uFillColour");
         mmPerUvUniform = glGetUniformLocation(program, "uMmPerUv");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
         glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
         glUniform1f(glGetUniformLocation(program, "uDepth"), (float) NumeralAtlas.VISIBLE_DEPTH_MM);
+        diceSetUniforms = new DiceSetUniforms(program, SWIRL_UNIT);
         glUseProgram(0);
+        swirls = new SwirlVolumes();
         // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
         // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
         for (DieKind kind : DieKind.values()) {
@@ -210,11 +247,14 @@ public final class DiceScene implements FrameRenderer {
             return;
         }
         Camera view = camera;
+        glUseProgram(program);
+        // Before the depth test and culling go on: a first use of a swirled Dice Set bakes its volume here, with
+        // a full-screen triangle into a framebuffer of its own.
+        diceSetUniforms.apply(diceSet, swirls);
         glEnable(GL_DEPTH_TEST);
         // Back faces culled: the meshes wind counter-clockwise from outside, so a wrongly wound one shows.
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
-        glUseProgram(program);
 
         double distance = view.eye().distance(view.target());
         // Near and far bracket everything within a metre of the target, which holds any Tray and its Dice.
@@ -225,13 +265,13 @@ public final class DiceScene implements FrameRenderer {
                 .lookAt(view.eye(), view.target(), new Vector3d(0, 1, 0));
         glUniformMatrix4fv(viewProjectionUniform, false, columns(viewProjection));
         glUniform3f(eyeUniform, (float) view.eye().x(), (float) view.eye().y(), (float) view.eye().z());
-        glUniform3f(keyUniform, (float) KEY.x(), (float) KEY.y(), (float) KEY.z());
-        glUniform3f(fillUniform, (float) FILL.x(), (float) FILL.y(), (float) FILL.z());
-        // An ivory die colour, linear RGB (the bridge test cube's).
-        glUniform3f(colourUniform, 0.80f, 0.76f, 0.66f);
-        // A near-black ink, linear RGB (Ivory / black is spec Appendix B's second Dice Set).
-        glUniform3f(inkUniform, 0.012f, 0.012f, 0.013f);
-        for (Die die : drawn) {
+        vector(keyUniform, KEY);
+        vector(keyColourUniform, KEY_COLOUR);
+        vector(fillUniform, FILL);
+        vector(fillColourUniform, FILL_COLOUR);
+        for (int slot = 0; slot < drawn.size(); slot++) {
+            Die die = drawn.get(slot);
+            diceSetUniforms.seed(slot);
             Matrix4d model = new Matrix4d().translation(die.position()).rotate(die.orientation());
             glUniformMatrix4fv(modelUniform, false, columns(model));
             GlAtlas atlas = atlases.get(die.kind());
@@ -252,7 +292,13 @@ public final class DiceScene implements FrameRenderer {
         meshes.clear();
         atlases.values().forEach(GlAtlas::delete);
         atlases.clear();
+        swirls.delete();
         glDeleteProgram(program);
+    }
+
+    /** Sets a {@code vec3} uniform from a vector. */
+    private static void vector(int location, Vector3dc v) {
+        glUniform3f(location, (float) v.x(), (float) v.y(), (float) v.z());
     }
 
     /**
