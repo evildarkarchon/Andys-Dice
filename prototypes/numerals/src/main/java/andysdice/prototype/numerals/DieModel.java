@@ -28,6 +28,8 @@ final class DieModel {
     static final float MARGIN_MM = 0.45f;
     /** On the d4, each corner numeral stays within this fraction of the way from its corner to the edges. */
     static final float D4_CORNER_FRACTION = 0.5f;
+    /** Numeral cap height never exceeds this fraction of the flat face's inscribed-circle diameter. */
+    static final float CAP_OF_INSCRIBED = 0.80f;
     /** Target vertex spacing of the dense (displaced) mesh, in mm. */
     static final float DENSE_SPACING_MM = Float.parseFloat(System.getProperty("numerals.denseSpacing", "0.09"));
     /** Subdivisions across an edge fillet; caps use the same count along each side. */
@@ -217,6 +219,21 @@ final class DieModel {
     // ---------------------------------------------------------------------------------------------
     // Numeral fitting
 
+    /**
+     * Inscribed-circle diameter of a flat face. Every face here (regular polygons and the d10's kites)
+     * is tangential, so the inradius is exactly area / semi-perimeter.
+     */
+    private static float inscribedDiameter(List<Vector2f> poly) {
+        float area2 = 0, perimeter = 0;
+        for (int i = 0; i < poly.size(); i++) {
+            Vector2f p = poly.get(i), q = poly.get((i + 1) % poly.size());
+            area2 += p.x * q.y - q.x * p.y;
+            perimeter += p.distance(q);
+        }
+        // r = A / s = (area2 / 2) / (perimeter / 2), so the diameter is 2 * area2 / perimeter.
+        return 2 * Math.abs(area2) / perimeter;
+    }
+
     /** Half-planes {a.x, a.y, b} with a·q <= b for a CCW polygon, inset by {@code margin}. */
     private static List<float[]> halfPlanes(List<Vector2f> poly, float margin) {
         List<float[]> out = new ArrayList<>();
@@ -309,6 +326,12 @@ final class DieModel {
             sigma = Math.min(sigma, maxSigma(s.region(), (float) b.getWidth(), (float) b.getHeight()));
         }
         sigma *= st.size();
+        // Verdict on issue #15: "as large as possible" is capped. On a square face the width never
+        // binds, so the d6 numeral grew to 12.5 mm; the human picked 11.6 mm, which is 0.80 of the d6's
+        // flat-face inscribed diameter. The same fraction caps every kind.
+        float inscribed = Float.POSITIVE_INFINITY;
+        for (FaceLayout l : layouts) inscribed = Math.min(inscribed, inscribedDiameter(l.poly));
+        sigma = Math.min(sigma, CAP_OF_INSCRIBED * inscribed);
         capHeightMm = sigma;
         for (Slot s : slots) {
             Area glyph = font.text(s.text(), s.marked(), st.mark());

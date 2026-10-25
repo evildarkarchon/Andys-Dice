@@ -24,7 +24,7 @@
         <lwjgl.version>3.4.3</lwjgl.version>
         <openglfx.version>4.2.3</openglfx.version>
         <!-- Run options, overridable with -D on the mvn command line (see README.md). -->
-        <numerals.variant>A</numerals.variant>
+        <numerals.variant>B</numerals.variant>
         <numerals.capture></numerals.capture>
         <numerals.shots></numerals.shots>
     </properties>

@@ -4,6 +4,14 @@
 > [How are engraved, inked numerals made and laid out on every Die Kind?](https://github.com/evildarkarchon/Andys-Dice/issues/15)
 > and is kept as a primary source.
 
+**Verdict (2026-10-24).** Technique **B** (parallax occlusion mapping plus self-shadow). Engraving
+0.4 mm deep, with a thin film of ink. Chessex-style font, bold, 6/9 underlined. Numeral size capped:
+the human picked 11.6 mm for the d6, which is 0.80 of its flat-face inscribed diameter, and the same
+cap applies to every kind (`DieModel.CAP_OF_INSCRIBED`). d12/d20 orientation **tops toward the top**.
+The percentile d10 runs perpendicular, apex to equator, and the edge radius is 0.75 mm (both
+delegated to the agent). The prototype now starts with these settings. Recorded in
+[ADR-0008](https://github.com/evildarkarchon/Andys-Dice/blob/main/docs/adr/0008-numerals-are-parallax-occlusion-engravings-from-a-procedural-atlas.md).
+
 **Question.** How should engraved, inked numerals be made and laid out on all seven Die Kinds? That
 covers the engraving technique, the procedural font, numeral size and 6/9 marks, per-face orientation
 (the d12, d20, percentile d10 and top-read d4), and the edge radius and engraving depth.

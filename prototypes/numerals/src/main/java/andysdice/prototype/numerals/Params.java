@@ -66,15 +66,15 @@ final class Params {
     static final float[] WEIGHTS = {0.13f, 0.16f, 0.19f};
     static final String[] WEIGHT_NAMES = {"regular", "bold", "heavy"};
 
-    volatile Technique technique = Technique.A;
+    volatile Technique technique = Technique.B;
     volatile int edgeIndex = 1;
     volatile int depthIndex = 1;
-    volatile int fillIndex = 1;
+    volatile int fillIndex = 0;
     volatile int sizeIndex = 3;
     volatile int weightIndex = 1;
     volatile StrokeFont.Style style = StrokeFont.Style.CHESSEX;
     volatile StrokeFont.Mark mark = StrokeFont.Mark.UNDERLINE;
-    volatile OrientRule orient = OrientRule.AWAY_FROM_TOP;
+    volatile OrientRule orient = OrientRule.TOWARD_TOP;
     volatile PercentDir percentDir = PercentDir.PERP_OUT;
     volatile int structureVersion = 0;
 

@@ -41,7 +41,7 @@ public final class NumeralsApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        String v = System.getProperty("numerals.variant", "A").toUpperCase();
+        String v = System.getProperty("numerals.variant", "B").toUpperCase();
         for (Params.Technique t : Params.Technique.values()) if (t.name().equals(v)) params.technique = t;
         renderer = new GlRenderer(scene, params, builds, new TrayTextures());
         builds.request(params.structure());
@@ -240,18 +240,18 @@ public final class NumeralsApp extends Application {
     }
 
     private void resetState() {
-        params.technique = Params.Technique.A;
+        params.technique = Params.Technique.B;
         params.depthIndex = 1;
-        params.fillIndex = 1;
+        params.fillIndex = 0;
         boolean structural = params.edgeIndex != 1 || params.weightIndex != 1 || params.sizeIndex != 3
                 || params.style != StrokeFont.Style.CHESSEX || params.mark != StrokeFont.Mark.UNDERLINE
-                || params.orient != Params.OrientRule.AWAY_FROM_TOP || params.percentDir != Params.PercentDir.PERP_OUT;
+                || params.orient != Params.OrientRule.TOWARD_TOP || params.percentDir != Params.PercentDir.PERP_OUT;
         params.edgeIndex = 1;
         params.weightIndex = 1;
         params.sizeIndex = 3;
         params.style = StrokeFont.Style.CHESSEX;
         params.mark = StrokeFont.Mark.UNDERLINE;
-        params.orient = Params.OrientRule.AWAY_FROM_TOP;
+        params.orient = Params.OrientRule.TOWARD_TOP;
         params.percentDir = Params.PercentDir.PERP_OUT;
         if (structural) params.changed();
         scene.lookIndex = 0;
@@ -282,7 +282,7 @@ public final class NumeralsApp extends Application {
         }
         for (int k = 0; k < 7; k++) {
             int kk = k;
-            out.add(new Shot("02-close-" + kinds[k], kinds[k] + " close-up, A", () -> scene.focus = kk));
+            out.add(new Shot("02-close-" + kinds[k], kinds[k] + " close-up, B", () -> scene.focus = kk));
         }
         for (int k : new int[]{6, 1, 5, 3}) {
             for (Params.Technique t : Params.Technique.values()) {
@@ -295,7 +295,7 @@ public final class NumeralsApp extends Application {
             }
         }
         for (int k : new int[]{0, 4}) {
-            out.add(new Shot("03-macro-" + kinds[k] + "-A", kinds[k] + " macro, A", () -> {
+            out.add(new Shot("03-macro-" + kinds[k] + "-B", kinds[k] + " macro, B", () -> {
                 scene.focus = k;
                 scene.preset = 2;
             }));
