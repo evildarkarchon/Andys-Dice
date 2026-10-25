@@ -14,7 +14,6 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -273,7 +272,7 @@ final class RollController {
             // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
             // carries its name (#56), which the result strip shows and the Roll History records.
             setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
-                    now.chain().plan().throwChain().size(), now.savedRollName()));
+                    now.chain().throwCount(), now.savedRollName()));
         }
     }
 
@@ -283,8 +282,7 @@ final class RollController {
     }
 
     private static String describe(Throwable error) {
-        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause()
-                : error;
+        Throwable cause = Failure.unwrap(error);
         return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 }

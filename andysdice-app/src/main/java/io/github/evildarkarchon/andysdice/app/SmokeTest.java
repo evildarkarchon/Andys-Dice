@@ -64,7 +64,7 @@ final class SmokeTest {
                 exit.accept(status);
             }
         };
-        skeleton.setOnStatusChanged(status -> {
+        skeleton.session().addStatusListener(status -> {
             switch (status) {
                 case RollStatus.Rested rested -> {
                     LOG.log(Level.INFO, "Smoke test rolled " + rested.text());

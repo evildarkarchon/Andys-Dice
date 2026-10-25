@@ -142,11 +142,8 @@ public final class Gallery {
                 DiceScene.Camera camera = Framing.of(tray.geometry()).wholeTray(1).camera();
                 for (LightRig rig : LightRig.values()) {
                     Still still = await(capture.take(renderer, () -> {
-                        scene.setDiceSet(DiceSetCatalogue.builtIn().fallback());
-                        scene.setTray(tray);
-                        scene.setLightRig(rig);
-                        scene.setCamera(camera);
-                        scene.setDice(restingSet());
+                        scene.setLook(DiceSetCatalogue.builtIn().fallback(), tray, rig);
+                        scene.setDiceAndCamera(restingSet(), camera);
                     }));
                     Path file = rigDirectory.resolve(tray.identity() + "-" + rig.name().toLowerCase(Locale.ROOT)
                             + ".png");

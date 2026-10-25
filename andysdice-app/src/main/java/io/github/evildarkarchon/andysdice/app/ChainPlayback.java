@@ -123,6 +123,16 @@ final class ChainPlayback {
     }
 
     /**
+     * Returns how many Throws the chain plays: the first Throw, every Reroll Throw and every Cocked Rethrow, as the
+     * Roll Result counts them (spec §3.2).
+     *
+     * @return the length of the plan's chain of Throws, at least 1
+     */
+    int throwCount() {
+        return plan.throwChain().size();
+    }
+
+    /**
      * Returns when the whole Roll is at rest: the last Throw's rest time on the chain's timeline.
      *
      * @return seconds since the first Throw's Release

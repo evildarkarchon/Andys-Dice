@@ -14,8 +14,8 @@ import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 import javafx.application.Platform;
 import javafx.scene.Node;
 
@@ -112,9 +112,7 @@ final class Skeleton implements AutoCloseable {
                     public void showLook(Look look) {
                         // The scene takes each part on the render thread at its next frame; the camera reframes
                         // for the new Tray's walls at once.
-                        scene.setDiceSet(look.diceSet());
-                        scene.setTray(look.tray());
-                        scene.setLightRig(look.lightRig());
+                        scene.setLook(look.diceSet(), look.tray(), look.lightRig());
                         camera.setFraming(Framing.of(look.tray().geometry()));
                         showCamera();
                     }
@@ -326,16 +324,6 @@ final class Skeleton implements AutoCloseable {
     }
 
     /**
-     * Sets who else is told each time the Roll's status changes, after the result strip has shown it. The
-     * smoke test watches for the end of its Roll this way.
-     *
-     * @param listener the listener; it replaces any earlier one
-     */
-    void setOnStatusChanged(Consumer<RollStatus> listener) {
-        session.setOnStatusChanged(listener);
-    }
-
-    /**
      * Returns the Roll on the Tray.
      *
      * @return the chain of Throws last shown, or {@code null} before the first
@@ -361,9 +349,9 @@ final class Skeleton implements AutoCloseable {
         // The frames measured from here on count toward the Throw in motion now, if any (the slow-GPU Notice).
         int moving = chain.throwInMotion(seconds);
         slowGpu.showing(moving < 0 ? null : new ThrowInMotion(chain, moving));
-        scene.setDice(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()));
-        // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
-        scene.setCamera(camera.camera());
+        // The same frame's camera, in one hand-over with the Dice, so the two never reach the render thread a frame
+        // apart.
+        scene.setDiceAndCamera(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()), camera.camera());
         panSound();
         renderer.requestFrame();
     }
@@ -391,18 +379,24 @@ final class Skeleton implements AutoCloseable {
     /** Tells the sound output how the camera the Tray is drawn from now maps points across the screen. */
     private void panSound() {
         if (sound != null) {
-            double aspect = view.getWidth() > 0 && view.getHeight() > 0 ? view.getWidth() / view.getHeight()
-                    : MainWindow.DEFAULT_WIDTH / MainWindow.DEFAULT_HEIGHT;
+            // Before the first layout, the first-run window's shape.
+            double aspect = viewAspect().orElse(MainWindow.DEFAULT_WIDTH / MainWindow.DEFAULT_HEIGHT);
             sound.setProjection(CameraPanning.of(camera.camera(), aspect));
         }
     }
 
     /** Fits the camera's framings to the view's shape; a view not laid out yet keeps the last shape. */
     private void fitAspect() {
-        if (view.getWidth() > 0 && view.getHeight() > 0) {
-            camera.setAspect(view.getWidth() / view.getHeight());
+        viewAspect().ifPresent(aspect -> {
+            camera.setAspect(aspect);
             showCamera();
-        }
+        });
+    }
+
+    /** Returns the view's width over its height, or nothing while it has no size yet (not laid out). */
+    private OptionalDouble viewAspect() {
+        return view.getWidth() > 0 && view.getHeight() > 0 ? OptionalDouble.of(view.getWidth() / view.getHeight())
+                : OptionalDouble.empty();
     }
 
     /** Stops the render thread and the physics worker. */

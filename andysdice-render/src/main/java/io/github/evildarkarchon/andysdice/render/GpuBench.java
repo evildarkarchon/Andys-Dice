@@ -357,9 +357,7 @@ public final class GpuBench {
     /** Draws one scene at one preset and times it: {@code warmUp} frames uncounted, then {@code frames} counted. */
     private static GpuTime measure(RenderThread renderer, DiceScene scene, Scene candidate, QualityPreset preset,
             int warmUp, int frames) {
-        scene.setDiceSet(candidate.diceSet());
-        scene.setTray(candidate.tray());
-        scene.setLightRig(candidate.lightRig());
+        scene.setLook(candidate.diceSet(), candidate.tray(), candidate.lightRig());
         scene.setCamera(candidate.camera());
         scene.setQualityPreset(preset);
         // Set before the first frame of the scene is drawn; the warm-up's times are dropped below, which also drops

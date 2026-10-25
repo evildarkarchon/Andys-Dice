@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
@@ -208,8 +207,7 @@ final class Bench {
                 })
                 .whenCompleteAsync((result, error) -> {
                     if (error != null) {
-                        Throwable cause = error instanceof CompletionException && error.getCause() != null
-                                ? error.getCause() : error;
+                        Throwable cause = Failure.unwrap(error);
                         LOG.log(Level.ERROR, "Bench couldn't finish: " + cause, cause);
                         System.out.println("Bench couldn't finish: " + cause);
                         exit.accept(FAILED);
