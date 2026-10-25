@@ -28,6 +28,11 @@ class AttemptTest {
         public boolean isCocked(Orientation orientation) {
             return false;
         }
+
+        @Override
+        public Vector3 readingNormal(Orientation orientation) {
+            return Vector3.UP;
+        }
     };
 
     private static final TrayMaterials FELT = new TrayMaterials(

@@ -36,4 +36,17 @@ public interface DieBody {
      * @return {@code true} if the Die is cocked
      */
     boolean isCocked(Orientation orientation);
+
+    /**
+     * Returns the Die's reading normal in this orientation: the world direction that points straight up when
+     * the Die lies flat. For most Die Kinds it is the outward normal of the face most nearly up; for the d4,
+     * the outward normal of the face most nearly down, negated (ADR-0013).
+     *
+     * <p>A Settle Nudge spins a Die about {@code readingNormal × up}, which turns this normal straight towards
+     * vertical, so the Die tips onto the face it is nearest.
+     *
+     * @param orientation the rotation from the Die's model frame to the world
+     * @return the reading normal, a unit vector in the world frame
+     */
+    Vector3 readingNormal(Orientation orientation);
 }

@@ -50,6 +50,18 @@ final class TestCube implements DieBody {
         return tiltDegrees(orientation) > COCKED_DEGREES;
     }
 
+    @Override
+    public Vector3 readingNormal(Orientation orientation) {
+        Vector3 best = null;
+        for (Vector3 n : FACE_NORMALS) {
+            Vector3 world = orientation.rotate(n);
+            if (best == null || world.y() > best.y()) {
+                best = world;
+            }
+        }
+        return best;
+    }
+
     /**
      * Returns how far the face most nearly up is from level.
      *
