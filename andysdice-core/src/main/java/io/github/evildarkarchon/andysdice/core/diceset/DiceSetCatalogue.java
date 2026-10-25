@@ -21,11 +21,11 @@ public final class DiceSetCatalogue {
 
     /**
      * The built-in files, in spec Appendix B order, as resources of this package. A module's resources can't be
-     * listed, so they are named here. Ticket #43 adds 11-smoke through 14-nebula.
+     * listed, so they are named here. The ten opaque looks come first, then the four translucent ones.
      */
     private static final List<String> BUILT_IN_FILES = List.of("01-onyx", "02-ivory", "03-crimson",
             "04-vortex-blue", "05-jade-marble", "06-speckled-stone", "07-pearl-violet", "08-steel", "09-gold",
-            "10-gunmetal");
+            "10-gunmetal", "11-smoke", "12-ruby", "13-emerald", "14-nebula");
 
     /** Parsed once, on first use: a dozen tiny files. */
     private static final class BuiltIn {

@@ -35,6 +35,10 @@ final class DiceSetUniforms {
     private final int ink;
     private final int inkMetallic;
     private final int inkRoughness;
+    private final int transmission;
+    private final int transmissionColour;
+    private final int ior;
+    private final int cloudiness;
     private final int seed;
     private final int swirlUnit;
 
@@ -62,6 +66,10 @@ final class DiceSetUniforms {
         ink = glGetUniformLocation(program, "uInk");
         inkMetallic = glGetUniformLocation(program, "uInkMetal");
         inkRoughness = glGetUniformLocation(program, "uInkRough");
+        transmission = glGetUniformLocation(program, "uTransmission");
+        transmissionColour = glGetUniformLocation(program, "uTransmissionColour");
+        ior = glGetUniformLocation(program, "uIor");
+        cloudiness = glGetUniformLocation(program, "uCloud");
         seed = glGetUniformLocation(program, "uSeed");
         glUniform1i(glGetUniformLocation(program, "uSwirlTex"), swirlUnit);
     }
@@ -93,6 +101,12 @@ final class DiceSetUniforms {
         colour(ink, set.ink().colour());
         glUniform1f(inkMetallic, (float) set.ink().metallic());
         glUniform1f(inkRoughness, (float) set.ink().roughness());
+        DiceSet.Transmission t = set.transmission();
+        // Zero for an opaque Dice Set, which the shader takes as "skip the translucent path".
+        glUniform1f(transmission, (float) t.amount());
+        colour(transmissionColour, t.colour());
+        glUniform1f(ior, (float) t.ior());
+        glUniform1f(cloudiness, (float) t.cloudiness());
     }
 
     /**
