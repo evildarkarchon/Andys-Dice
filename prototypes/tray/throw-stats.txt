@@ -1,0 +1,33 @@
+20 Throws per row. Attempts = attempts per Throw (mean / max). Endings are over all attempts.
+dice                   size   wall  surface     escape   attempts        endings (all attempts)                       rest s (mean/max) pre-sim ms (mean/max)
+20 mixed               S      15    GREEN_FELT  VISIBLE  9.40 / 12 !13 {REST=7, COCKED=114, ESCAPED=67}             0.53 / 1.07         47 / 93
+20 mixed               S      15    GREEN_FELT  GLASS    9.25 / 12 !14 {REST=6, COCKED=179}                         0.76 / 1.18         62 / 128
+20 mixed               S      15    WOOD        VISIBLE  10.35 / 12 !12 {REST=8, COCKED=29, ESCAPED=170}             0.42 / 0.95         23 / 32
+20 mixed               S      15    WOOD        GLASS    7.65 / 12 !5  {REST=15, COCKED=138}                        0.78 / 1.02         45 / 83
+20 mixed               S      30    GREEN_FELT  VISIBLE  8.75 / 12 !12 {REST=8, COCKED=167}                         0.90 / 2.73         59 / 110
+20 mixed               S      30    GREEN_FELT  GLASS    8.75 / 12 !12 {REST=8, COCKED=167}                         0.94 / 2.97         62 / 105
+20 mixed               S      30    WOOD        VISIBLE  8.50 / 12 !9  {REST=11, COCKED=129, ESCAPED=30}            0.77 / 2.02         49 / 92
+20 mixed               S      30    WOOD        GLASS    8.40 / 12 !10 {REST=10, COCKED=158}                        1.31 / 6.58         55 / 105
+20 mixed               M      15    GREEN_FELT  VISIBLE  3.85 / 11     {REST=20, COCKED=54, ESCAPED=3}              0.73 / 0.82         19 / 57
+20 mixed               M      15    GREEN_FELT  GLASS    3.35 / 11     {REST=20, COCKED=47}                         0.73 / 0.82         17 / 59
+20 mixed               M      15    WOOD        VISIBLE  4.00 / 12 !1  {REST=19, COCKED=39, ESCAPED=22}             0.76 / 0.88         17 / 47
+20 mixed               M      15    WOOD        GLASS    3.55 / 12     {REST=20, COCKED=51}                         0.82 / 1.60         18 / 64
+20 mixed               M      30    GREEN_FELT  VISIBLE  4.85 / 12 !1  {REST=19, COCKED=78}                         0.75 / 0.85         26 / 65
+20 mixed               M      30    GREEN_FELT  GLASS    4.85 / 12 !1  {REST=19, COCKED=78}                         0.75 / 0.93         26 / 61
+20 mixed               M      30    WOOD        VISIBLE  3.10 / 9      {REST=20, COCKED=39, ESCAPED=3}              0.81 / 1.07         16 / 49
+20 mixed               M      30    WOOD        GLASS    3.40 / 9      {REST=20, COCKED=48}                         0.79 / 1.07         18 / 50
+20 mixed               L      15    GREEN_FELT  VISIBLE  2.10 / 6      {REST=20, COCKED=22}                         0.82 / 0.95         10 / 31
+20 mixed               L      15    GREEN_FELT  GLASS    1.90 / 5      {REST=20, COCKED=18}                         0.83 / 0.95          9 / 27
+20 mixed               L      15    WOOD        VISIBLE  2.15 / 6      {REST=20, COCKED=20, ESCAPED=3}              0.81 / 0.98         10 / 28
+20 mixed               L      15    WOOD        GLASS    1.70 / 4      {REST=20, COCKED=14}                         0.81 / 0.98          8 / 20
+20 mixed               L      30    GREEN_FELT  VISIBLE  3.00 / 7      {REST=20, COCKED=40}                         0.81 / 1.02         15 / 38
+20 mixed               L      30    GREEN_FELT  GLASS    3.00 / 7      {REST=20, COCKED=40}                         0.81 / 1.02         15 / 37
+20 mixed               L      30    WOOD        VISIBLE  2.45 / 6      {REST=20, COCKED=29}                         0.81 / 1.10         12 / 32
+20 mixed               L      30    WOOD        GLASS    2.45 / 6      {REST=20, COCKED=29}                         0.81 / 1.10         12 / 33
+one of each            S      30    GREEN_FELT  VISIBLE  1.25 / 2      {REST=20, COCKED=5}                          0.67 / 0.78          1 / 3
+one of each            S      30    WOOD        VISIBLE  1.45 / 3      {REST=20, COCKED=9}                          0.74 / 0.83          2 / 5
+one of each            M      30    GREEN_FELT  VISIBLE  1.15 / 3      {REST=20, COCKED=3}                          0.75 / 0.87          1 / 4
+one of each            M      30    WOOD        VISIBLE  1.05 / 2      {REST=20, COCKED=1}                          0.78 / 0.92          1 / 3
+one of each            L      30    GREEN_FELT  VISIBLE  1.10 / 2      {REST=20, COCKED=2}                          0.80 / 0.98          1 / 3
+one of each            L      30    WOOD        VISIBLE  1.10 / 2      {REST=20, COCKED=2}                          0.83 / 1.03          1 / 4
+'!n' = n Throws ran out of attempts (12) without a flat rest.
