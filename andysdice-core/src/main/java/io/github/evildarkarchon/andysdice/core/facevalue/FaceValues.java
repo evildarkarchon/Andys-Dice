@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.core.facevalue;
 
+import io.github.evildarkarchon.andysdice.core.expression.PercentileRoll;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import java.util.Objects;
 
@@ -17,7 +18,7 @@ import java.util.Objects;
 public final class FaceValues {
 
     /** The highest value of a Percentile Roll; the lowest is 1. */
-    public static final int PERCENTILE_HIGHEST = 100;
+    public static final int PERCENTILE_HIGHEST = PercentileRoll.MAX_VALUE;
 
     private FaceValues() {
     }
@@ -75,9 +76,8 @@ public final class FaceValues {
      * @throws IllegalArgumentException if {@code value} is outside 1 to 100
      */
     public static int percentileTensFace(int value) {
-        requirePercentile(value);
-        // 100 wraps to 0: the percentile d10 shows "00" and the d10 "0".
-        return value % PERCENTILE_HIGHEST / 10;
+        // PercentileRoll owns the 00 + 0 = 100 rule; it reads the tens as 0..90, and face i shows i tens.
+        return PercentileRoll.tensFace(value) / 10;
     }
 
     /**
@@ -88,8 +88,8 @@ public final class FaceValues {
      * @throws IllegalArgumentException if {@code value} is outside 1 to 100
      */
     public static int percentileUnitsFace(int value) {
-        requirePercentile(value);
-        return value % 10;
+        // The d10's face i shows the digit i, so the units read and the face index coincide.
+        return PercentileRoll.unitsFace(value);
     }
 
     /**
@@ -103,21 +103,13 @@ public final class FaceValues {
     public static int percentileValue(int tensFace, int unitsFace) {
         Objects.checkIndex(tensFace, DieKind.PERCENTILE_D10.faceCount());
         Objects.checkIndex(unitsFace, DieKind.D10.faceCount());
-        int sum = tensFace * 10 + unitsFace;
-        return sum == 0 ? PERCENTILE_HIGHEST : sum;
+        return PercentileRoll.value(tensFace * 10, unitsFace);
     }
 
     /** Rejects the percentile d10, which is only ever read together with a d10. */
     private static void requireOnItsOwn(DieKind kind) {
         if (Objects.requireNonNull(kind, "kind") == DieKind.PERCENTILE_D10) {
             throw new IllegalArgumentException("the percentile d10 is only rolled as half of a Percentile Roll");
-        }
-    }
-
-    /** Rejects a Percentile Roll value outside 1 to 100. */
-    private static void requirePercentile(int value) {
-        if (value < 1 || value > PERCENTILE_HIGHEST) {
-            throw new IllegalArgumentException("a Percentile Roll is 1 to 100: " + value);
         }
     }
 }
