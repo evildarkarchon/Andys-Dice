@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Parses Roll Expressions as docs/roll-expression-grammar.md defines them: all or nothing, with only the first
@@ -12,13 +13,15 @@ import java.util.Objects;
  *
  * <p>Errors come in the grammar's order: the {@linkplain RollExpressionCaps#MAX_LENGTH length cap} first, then
  * the first character, syntax or per-term problem reading left to right, then the whole-expression checks (at
- * least one Dice Group, then {@code adv}/{@code dis} once #28 adds them, then
+ * least one Dice Group, then {@code adv}/{@code dis}, then
  * {@linkplain RollExpressionCaps#MAX_DICE_PER_THROW Dice per Throw}).
  *
  * <p>It is a recursive descent over characters rather than tokens, because tokens may touch ({@code 2d6+3},
- * and later {@code 4d6rr1kh3} and {@code 1d20adv}) and because {@code d} starts both a Die Kind and
- * {@code dis}. Keep rules (#28) slot in at {@code Scan.groupSuffix}, rerolls (#29) there too, and the trailing
- * {@code adv}/{@code dis} at {@code Scan.word} and {@code Scan.checkWholeExpression}.
+ * {@code 4d6kh3}, {@code 1d20adv}, and with #29 {@code 4d6rr1kh3}) and because {@code d} starts a Die Kind, a
+ * drop form and {@code dis}. Keep rules are read at {@code Scan.groupSuffix}, where rerolls (#29) go before
+ * them. The trailing {@code adv}/{@code dis} is read in the term loop by {@code Scan.trailingKeyword} and
+ * applied in {@code Scan.checkWholeExpression}, which rewrites its {@code 1d20} into {@code 2d20kh1} or
+ * {@code 2d20kl1} before the Dice are counted.
  */
 public final class RollExpressionParser {
 
@@ -75,17 +78,44 @@ public final class RollExpressionParser {
         Term toTerm();
     }
 
-    private record GroupDraft(Sign sign, BigInteger count, GroupKind kind, Span span, String text) implements Draft {
+    /**
+     * A Dice Group read during the scan.
+     *
+     * @param keep      the keep rule, or null if none was written
+     * @param advantage the {@code adv}/{@code dis} that rewrote it, or null; set only by the whole-expression check
+     */
+    private record GroupDraft(Sign sign, BigInteger count, GroupKind kind, KeepDraft keep, Advantage advantage,
+                              Span span, String text) implements Draft {
 
         BigInteger physicalDice() {
             return count.multiply(BigInteger.valueOf(kind.physicalDice()));
         }
 
-        /** Only called once the Dice-per-Throw check has passed, so {@code count} fits an int. */
+        /** Returns the group as {@code adv}/{@code dis} rewrites it: {@code 2d20} keeping the higher or lower. */
+        GroupDraft rewrittenBy(Advantage rewrite) {
+            KeepRule rule = rewrite.keepRule();
+            return new GroupDraft(sign, BigInteger.TWO, kind,
+                    new KeepDraft(rule.direction(), BigInteger.valueOf(rule.count())), rewrite, span, text);
+        }
+
+        /**
+         * Only called once the Dice-per-Throw check has passed, so {@code count}, and the keep count that the keep
+         * range check held to at most it, fit an int.
+         */
         @Override
         public Term toTerm() {
-            return new DiceGroup(sign, count.intValueExact(), kind, span, text);
+            return new DiceGroup(sign, count.intValueExact(), kind,
+                    Optional.ofNullable(keep).map(k -> new KeepRule(k.direction(), k.count().intValueExact())),
+                    Optional.ofNullable(advantage), span, text);
         }
+    }
+
+    /** A keep rule read during the scan; its count is exact for the same reason as a group's. */
+    private record KeepDraft(KeepRule.Direction direction, BigInteger count) {
+    }
+
+    /** The trailing {@code adv}/{@code dis} and where it was typed, which every Advantage error is marked on. */
+    private record KeywordDraft(Advantage advantage, Span span) {
     }
 
     private record ModifierDraft(Modifier modifier) implements Draft {
@@ -120,6 +150,7 @@ public final class RollExpressionParser {
                 throw new Failure("nothing typed; type a Roll Expression such as `1d20`", Span.at(0));
             }
             List<Draft> drafts = new ArrayList<>();
+            KeywordDraft keyword = null;
             spaces();
             Sign sign = Sign.PLUS;
             if (isSign(at(pos))) {
@@ -136,10 +167,55 @@ public final class RollExpressionParser {
                     sign = signAfterWhichATermMustFollow();
                     continue;
                 }
+                if (advantageKeywordAt(pos) != null) {
+                    // It needs no space before it (1d20adv), and it must be the last thing written.
+                    keyword = trailingKeyword();
+                    break;
+                }
                 throw afterTerm(drafts.getLast(), termEnd);
             }
-            checkWholeExpression(drafts);
+            checkWholeExpression(drafts, keyword);
             return new RollExpression(in, drafts.stream().map(Draft::toTerm).toList());
+        }
+
+        /**
+         * Reads the {@code adv}/{@code dis} at {@code pos} and checks that nothing but spaces follows it.
+         *
+         * @throws Failure if a second keyword follows it, or anything else does
+         */
+        private KeywordDraft trailingKeyword() throws Failure {
+            int start = pos;
+            Advantage advantage = advantageKeywordAt(pos);
+            letters();
+            KeywordDraft keyword = new KeywordDraft(advantage, new Span(start, pos));
+            spaces();
+            if (pos < n) {
+                if (advantageKeywordAt(pos) != null) {
+                    int second = pos;
+                    letters();
+                    throw new Failure("use only one of adv or dis", new Span(second, pos));
+                }
+                throw new Failure("`" + advantage.keyword() + "` goes at the end", keyword.span());
+            }
+            return keyword;
+        }
+
+        /**
+         * Returns the keyword whose whole run of letters starts at {@code index}, or null if that run isn't exactly
+         * {@code adv} or {@code dis} in some case ({@code advantage} is not).
+         */
+        private Advantage advantageKeywordAt(int index) {
+            int end = index;
+            while (isLetter(at(end))) {
+                end++;
+            }
+            String run = lower(in.substring(index, end));
+            for (Advantage advantage : Advantage.values()) {
+                if (advantage.keyword().equals(run)) {
+                    return advantage;
+                }
+            }
+            return null;
         }
 
         /**
@@ -228,17 +304,102 @@ public final class RollExpressionParser {
             } else {
                 throw unexpected(pos);
             }
-            groupSuffix();
+            KeepDraft keep = groupSuffix(start, count, kind);
             Span span = new Span(start, pos);
-            return new GroupDraft(sign, count, kind, span, text(span));
+            return new GroupDraft(sign, count, kind, keep, null, span, text(span));
         }
 
         /**
-         * Reads what may follow a Dice Group's Die Kind. Nothing yet: the reroll clause (#29) and then the keep
-         * rule (#28) go here, before the scan moves on, so that {@code 4d6rr1kh3} stays one Dice Group.
+         * Reads what may follow a Dice Group's Die Kind: the reroll clause (#29) and then the keep rule, before the
+         * scan moves on, so that {@code 4d6rr1kh3} stays one Dice Group. Anything else after the Die Kind is left
+         * for {@code afterTerm}.
+         *
+         * @param start where the group began, for the suggestion when a space splits the keep rule off
+         * @param count the group's count as written, which the keep rule's N may not exceed
+         * @param kind  the group's Die Kind, to name the group in messages
+         * @return the keep rule, or null if none was written
+         * @throws Failure for a drop form, a bare {@code k}, a keep count out of range, a space inside the keep
+         *                 rule or a second keep rule
          */
-        private void groupSuffix() {
-            // Intentionally empty until #28 and #29: anything after the Die Kind is read by afterTerm.
+        private KeepDraft groupSuffix(int start, BigInteger count, GroupKind kind) throws Failure {
+            // #29: the reroll clause is read here, before the keep rule.
+            rejectDropForm(count, kind);
+            KeepDraft keep = keepRule(count, kind);
+            if (keep == null && at(pos) == ' ' && keepRuleAfterSpaces(pos)) {
+                // "4d6 kh3": the keep rule is part of the Dice Group, so no space may split it off.
+                int spaceStart = pos;
+                spaces();
+                int keepStart = pos;
+                pos += 2;
+                digitsIfAny();
+                throw new Failure("no space inside `" + in.substring(start, spaceStart) + in.substring(keepStart, pos)
+                        + "`", spaceRun(spaceStart));
+            }
+            if (keep != null && lower(at(pos)) == 'k') {
+                int second = pos++;
+                if (lower(at(pos)) == 'h' || lower(at(pos)) == 'l') {
+                    pos++;
+                }
+                digitsIfAny();
+                throw new Failure("one keep rule per Dice Group", new Span(second, pos));
+            }
+            return keep;
+        }
+
+        /**
+         * Reads a keep rule at {@code pos}, if one starts there, and checks that it keeps from 1 to the group's
+         * count.
+         *
+         * @return the keep rule, or null if {@code pos} doesn't start one
+         * @throws Failure for a bare {@code k}, a keep of 0 or more than the group's count, or a space before N
+         */
+        private KeepDraft keepRule(BigInteger count, GroupKind kind) throws Failure {
+            if (lower(at(pos)) != 'k') {
+                return null;
+            }
+            int start = pos;
+            char which = lower(at(pos + 1));
+            if (which != 'h' && which != 'l') {
+                throw new Failure("write `kh` (keep highest) or `kl` (keep lowest)", new Span(start, start + 1));
+            }
+            pos += 2;
+            if (at(pos) == ' ' && digitAfterSpaces(pos)) {
+                int spaceStart = pos;
+                spaces();
+                int digitsStart = pos;
+                digits();
+                throw new Failure("no space inside `" + in.substring(start, spaceStart)
+                        + in.substring(digitsStart, pos) + "`", spaceRun(spaceStart));
+            }
+            BigInteger keepCount = isDigit(at(pos)) ? digits() : BigInteger.ONE;
+            Span span = new Span(start, pos);
+            if (keepCount.signum() == 0) {
+                throw new Failure("`" + text(span) + "` keeps no Dice; keep at least 1", span);
+            }
+            if (keepCount.compareTo(count) > 0) {
+                throw new Failure("`" + count + kind.label() + "` can keep at most " + count, span);
+            }
+            return new KeepDraft(which == 'h' ? KeepRule.Direction.HIGHEST : KeepRule.Direction.LOWEST, keepCount);
+        }
+
+        /**
+         * Rejects a drop form ({@code dlN}, {@code dhN}) at {@code pos}, suggesting the keep form that means the
+         * same: dropping the lowest N keeps the highest count − N, and dropping the highest keeps the lowest.
+         */
+        private void rejectDropForm(BigInteger count, GroupKind kind) throws Failure {
+            char which = lower(at(pos + 1));
+            if (lower(at(pos)) != 'd' || (which != 'l' && which != 'h')) {
+                return;
+            }
+            int start = pos;
+            pos += 2;
+            BigInteger dropped = isDigit(at(pos)) ? digits() : BigInteger.ONE;
+            BigInteger keptCount = count.subtract(dropped);
+            String suggestion = keptCount.signum() > 0
+                    ? "`" + count + kind.label() + (which == 'l' ? "kh" : "kl") + keptCount + "`"
+                    // Dropping every Die (or more) has no keep form that means the same, so name both forms.
+                    : "`kh` or `kl`";
+            throw new Failure("drop forms aren't used; use the keep form, " + suggestion, new Span(start, pos));
         }
 
         /**
@@ -264,28 +425,46 @@ public final class RollExpressionParser {
         }
 
         /**
-         * Reports the run of letters at {@code pos} that isn't part of any term. {@code adv}/{@code dis} (#28)
-         * will be recognised here.
+         * Reports the run of letters at {@code pos} that isn't part of any term. A trailing {@code adv}/{@code dis}
+         * never reaches here, so one that does stands where a term belongs; the long forms {@code advantage} and
+         * {@code disadvantage} get their short form suggested.
          */
         private Failure word() {
             int start = pos;
+            Advantage misplaced = advantageKeywordAt(pos);
             letters();
-            return new Failure("`" + in.substring(start, pos) + "` isn't part of a Roll Expression; " + SHAPE_HINT,
-                    new Span(start, pos));
+            Span span = new Span(start, pos);
+            if (misplaced != null) {
+                return new Failure("`" + misplaced.keyword()
+                        + "` goes at the end, after the last term with no sign before it", span);
+            }
+            String run = lower(text(span));
+            for (Advantage advantage : Advantage.values()) {
+                if (run.equals(advantage.longForm())) {
+                    return new Failure("write `" + advantage.keyword() + "`; only the short form is accepted", span);
+                }
+            }
+            return new Failure("`" + text(span) + "` isn't part of a Roll Expression; " + SHAPE_HINT, span);
         }
 
         /**
-         * The whole-expression checks, in the grammar's order: at least one Dice Group, then ({@code adv}/
-         * {@code dis}, #28), then Dice per Throw.
+         * The whole-expression checks, in the grammar's order: at least one Dice Group, then {@code adv}/
+         * {@code dis}, then Dice per Throw. An {@code adv}/{@code dis} that passes rewrites its {@code 1d20} draft
+         * in {@code drafts} into {@code 2d20kh1}/{@code 2d20kl1} before the Dice are counted.
+         *
+         * @param keyword the trailing {@code adv}/{@code dis}, or null if none was written
          */
-        private void checkWholeExpression(List<Draft> drafts) throws Failure {
-            List<GroupDraft> groups = drafts.stream()
-                    .filter(GroupDraft.class::isInstance).map(GroupDraft.class::cast).toList();
-            if (groups.isEmpty()) {
+        private void checkWholeExpression(List<Draft> drafts, KeywordDraft keyword) throws Failure {
+            if (drafts.stream().noneMatch(GroupDraft.class::isInstance)) {
                 int first = drafts.getFirst().span().start();
                 int last = drafts.getLast().span().end();
                 throw new Failure("nothing to Throw; add a Dice Group such as `1d20`", new Span(first, last));
             }
+            if (keyword != null) {
+                applyAdvantage(drafts, keyword);
+            }
+            List<GroupDraft> groups = drafts.stream()
+                    .filter(GroupDraft.class::isInstance).map(GroupDraft.class::cast).toList();
             BigInteger cap = BigInteger.valueOf(RollExpressionCaps.MAX_DICE_PER_THROW);
             BigInteger total = groups.stream().map(GroupDraft::physicalDice).reduce(BigInteger.ZERO, BigInteger::add);
             BigInteger running = BigInteger.ZERO;
@@ -296,6 +475,40 @@ public final class RollExpressionParser {
                     throw new Failure("at most " + cap + " Dice per Throw; this throws " + total, group.span());
                 }
             }
+        }
+
+        /**
+         * Checks that {@code keyword} has the one term it can rewrite, an added {@code 1d20} with no keep rule and
+         * the only d20 term, and rewrites it in place. The checks run in the grammar's order of its rules, and every
+         * error is marked on the keyword.
+         *
+         * @throws Failure if there is no d20 term, more than one, or the one has a count above 1, its own keep rule
+         *                 or a minus sign
+         */
+        private void applyAdvantage(List<Draft> drafts, KeywordDraft keyword) throws Failure {
+            String word = "`" + keyword.advantage().keyword() + "`";
+            String rewritten = "`2d20" + keyword.advantage().keepRule().canonical() + "`";
+            List<GroupDraft> d20s = drafts.stream().filter(GroupDraft.class::isInstance).map(GroupDraft.class::cast)
+                    .filter(g -> g.kind() == GroupKind.D20).toList();
+            if (d20s.isEmpty()) {
+                throw new Failure(word + " needs one added `1d20`", keyword.span());
+            }
+            if (d20s.size() > 1) {
+                throw new Failure(word + " needs exactly one d20 term", keyword.span());
+            }
+            GroupDraft d20 = d20s.getFirst();
+            String fix = "; write " + rewritten + " or `1d20 " + keyword.advantage().keyword() + "`";
+            if (!d20.count().equals(BigInteger.ONE)) {
+                throw new Failure(word + " needs one added `1d20`" + fix, keyword.span());
+            }
+            if (d20.keep() != null) {
+                throw new Failure(word + " needs one added `1d20` without a keep rule" + fix, keyword.span());
+            }
+            if (d20.sign() == Sign.MINUS) {
+                throw new Failure(word + " needs one added `1d20`, not a subtracted one", keyword.span());
+            }
+            // Rewritten before the Dice-per-Throw check, so Advantage's second d20 counts towards the cap.
+            drafts.set(drafts.indexOf(d20), d20.rewrittenBy(keyword.advantage()));
         }
 
         private Failure notADieKind(int d) {
@@ -381,6 +594,38 @@ public final class RollExpressionParser {
             return dieKindFollows(index);
         }
 
+        /** Whether spaces starting at {@code index} are followed by {@code kh} or {@code kl}, in either case. */
+        private boolean keepRuleAfterSpaces(int index) {
+            while (at(index) == ' ') {
+                index++;
+            }
+            return lower(at(index)) == 'k' && (lower(at(index + 1)) == 'h' || lower(at(index + 1)) == 'l');
+        }
+
+        /** Whether spaces starting at {@code index} are followed by a digit. */
+        private boolean digitAfterSpaces(int index) {
+            while (at(index) == ' ') {
+                index++;
+            }
+            return isDigit(at(index));
+        }
+
+        /** Returns the span of the run of spaces starting at {@code start}. */
+        private Span spaceRun(int start) {
+            int end = start;
+            while (at(end) == ' ') {
+                end++;
+            }
+            return new Span(start, end);
+        }
+
+        /** Consumes a run of digits, if one starts at {@code pos}, so that an error's span covers it. */
+        private void digitsIfAny() {
+            while (isDigit(at(pos))) {
+                pos++;
+            }
+        }
+
         /** Consumes a run of digits and returns its value exactly: a count may be any length. */
         private BigInteger digits() {
             int start = pos;
@@ -436,6 +681,15 @@ public final class RollExpressionParser {
      */
     private static char lower(char c) {
         return c >= 'A' && c <= 'Z' ? (char) (c + ('a' - 'A')) : c;
+    }
+
+    /** Lower-cases the ASCII letters of {@code s}, keeping its length: see {@link #lower(char)}. */
+    private static String lower(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            out.append(lower(s.charAt(i)));
+        }
+        return out.toString();
     }
 
     private static String unicodeName(int codePoint) {

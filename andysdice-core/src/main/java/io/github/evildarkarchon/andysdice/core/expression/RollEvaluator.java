@@ -2,8 +2,10 @@ package io.github.evildarkarchon.andysdice.core.expression;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.IntStream;
 
 /**
  * Works out the Roll Result of a parsed Roll Expression from the Face Values its Dice showed
@@ -75,12 +77,26 @@ public final class RollEvaluator {
     }
 
     /**
-     * Returns which of the group's rolls count, by original position. Every roll counts until keep rules (#28)
-     * exist; they replace this with the group's keep rule over the chains' last values.
+     * Returns which of the group's rolls count, by original position: every roll if it has no keep rule, else the
+     * keep rule's N highest or lowest by each chain's last value. A tie goes to the earlier original position in
+     * the group, whichever Throw the Die last landed in (ADR-0006), so the result never depends on Throw order.
      */
     private static boolean[] kept(DiceGroup group, List<FaceValueChain> chains) {
         boolean[] kept = new boolean[chains.size()];
-        Arrays.fill(kept, true);
+        if (group.keep().isEmpty()) {
+            Arrays.fill(kept, true);
+            return kept;
+        }
+        KeepRule rule = group.keep().get();
+        Comparator<Integer> byValue = Comparator.comparingInt(i -> chains.get(i).last());
+        if (rule.direction() == KeepRule.Direction.HIGHEST) {
+            byValue = byValue.reversed();
+        }
+        // The stable sort plus the explicit position tie-break make the earlier Die win every tie.
+        IntStream.range(0, chains.size()).boxed()
+                .sorted(byValue.thenComparing(Comparator.naturalOrder()))
+                .limit(rule.count())
+                .forEach(i -> kept[i] = true);
         return kept;
     }
 }

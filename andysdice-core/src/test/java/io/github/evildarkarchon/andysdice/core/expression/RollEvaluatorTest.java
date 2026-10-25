@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The evaluator at its seam, {@link RollEvaluator#evaluate(RollExpression, List)}: from a parsed expression and
@@ -84,6 +86,94 @@ class RollEvaluatorTest {
         assertThat(rerolled.value()).isEqualTo(5);
         assertThat(rerolled.rerolled()).isTrue();
         assertThat(result.breakdown().terms().getFirst().dice().get(1).rerolled()).isFalse();
+    }
+
+    @Test
+    void keepHighestSumsTheHighestNAndMarksEveryUnkeptDie() {
+        RollResult result = evaluate("4d6kh3+2", chain(6), chain(5), chain(6), chain(1));
+
+        assertThat(result.total()).isEqualTo(19);
+        TermResult group = result.breakdown().terms().getFirst();
+        assertThat(group.subtotal()).isEqualTo(17);
+        assertThat(group.dice()).extracting(DieResult::kept).containsExactly(true, true, true, false);
+        assertThat(group.dice()).extracting(DieResult::value).containsExactly(6, 5, 6, 1);
+    }
+
+    @Test
+    void keepLowestSumsTheLowestN() {
+        RollResult result = evaluate("3d8kl2", chain(8), chain(2), chain(5));
+
+        assertThat(result.total()).isEqualTo(7);
+        assertThat(result.breakdown().terms().getFirst().dice()).extracting(DieResult::kept)
+                .containsExactly(false, true, true);
+    }
+
+    /** Ties between kept and unkept values go to the Die's original position in its Dice Group: earlier wins. */
+    @Test
+    void tiesAreBrokenByOriginalPositionInTheDiceGroup() {
+        assertThat(evaluate("3d6kh1", chain(4), chain(4), chain(4)).breakdown().terms().getFirst().dice())
+                .extracting(DieResult::kept).containsExactly(true, false, false);
+        assertThat(evaluate("4d6kh2", chain(2), chain(5), chain(3), chain(5)).breakdown().terms().getFirst().dice())
+                .extracting(DieResult::kept).containsExactly(false, true, false, true);
+        assertThat(evaluate("4d6kl2", chain(3), chain(1), chain(3), chain(3)).breakdown().terms().getFirst().dice())
+                .extracting(DieResult::kept).containsExactly(true, true, false, false);
+    }
+
+    /**
+     * Only a chain's last value is compared, and a Rerolled Die keeps its original position, whichever Throw it
+     * last landed in.
+     */
+    @Test
+    void keepsCompareLastValuesAndARerolledDieKeepsItsPosition() {
+        TermResult rerolledLow = evaluate("2d6kh1", chain(6, 2), chain(3)).breakdown().terms().getFirst();
+        assertThat(rerolledLow.subtotal()).isEqualTo(3);
+        assertThat(rerolledLow.dice()).extracting(DieResult::kept).containsExactly(false, true);
+
+        TermResult tie = evaluate("2d6kh1", chain(1, 4), chain(4)).breakdown().terms().getFirst();
+        assertThat(tie.dice()).extracting(DieResult::kept).containsExactly(true, false);
+    }
+
+    /** Keep rules apply to every Die Kind, Percentile Rolls included, where the 1-100 value is compared. */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({"2d4kh1, 4", "2d6kh1, 6", "2d8kh1, 8", "2d10kh1, 10", "2d12kh1, 12", "2d20kh1, 20", "2d%kh1, 100"})
+    void keepRulesApplyToEveryDieKind(String input, int faces) {
+        TermResult highest = evaluate(input, chain(faces - 1), chain(faces)).breakdown().terms().getFirst();
+        assertThat(highest.subtotal()).isEqualTo(faces);
+        assertThat(highest.dice()).extracting(DieResult::kept).containsExactly(false, true);
+
+        TermResult lowest = evaluate(input.replace("kh", "kl"), chain(faces - 1), chain(faces))
+                .breakdown().terms().getFirst();
+        assertThat(lowest.subtotal()).isEqualTo(faces - 1);
+        assertThat(lowest.dice()).extracting(DieResult::kept).containsExactly(true, false);
+    }
+
+    /** Advantage's 1d20 is rolled as 2d20 keeping the higher; the Breakdown still shows it as typed. */
+    @Test
+    void advantageKeepsTheHigherOfTwoD20AndDisadvantageTheLower() {
+        RollResult advantage = evaluate("1d20+5 adv", chain(8), chain(15));
+        assertThat(advantage.total()).isEqualTo(20);
+        TermResult d20 = advantage.breakdown().terms().getFirst();
+        assertThat(d20.text()).isEqualTo("1d20");
+        assertThat(((DiceGroup) d20.term()).advantage()).contains(Advantage.ADVANTAGE);
+        assertThat(d20.dice()).extracting(DieResult::kept).containsExactly(false, true);
+
+        RollResult disadvantage = evaluate("1d20+5 dis", chain(8), chain(15));
+        assertThat(disadvantage.total()).isEqualTo(13);
+        assertThat(disadvantage.breakdown().terms().getFirst().dice()).extracting(DieResult::kept)
+                .containsExactly(true, false);
+
+        assertThat(evaluate("1d20 adv", chain(11), chain(11)).breakdown().terms().getFirst().dice())
+                .extracting(DieResult::kept).containsExactly(true, false);
+    }
+
+    @Test
+    void anAdvantageRollNeedsTwoChainsForItsD20() {
+        assertThatIllegalArgumentException().isThrownBy(() -> evaluate("1d20 adv", chain(11)));
+    }
+
+    @Test
+    void aKeepOfTheWholeGroupKeepsEveryDie() {
+        assertThat(evaluate("3d6kl3", chain(1), chain(6), chain(3)).total()).isEqualTo(10);
     }
 
     @Test
