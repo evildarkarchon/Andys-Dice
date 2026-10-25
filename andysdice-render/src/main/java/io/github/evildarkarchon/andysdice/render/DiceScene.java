@@ -12,6 +12,8 @@ import static org.lwjgl.opengl.GL11C.glDisable;
 import static org.lwjgl.opengl.GL11C.glEnable;
 import static org.lwjgl.opengl.GL20C.glDeleteProgram;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
+import static org.lwjgl.opengl.GL20C.glUniform1f;
+import static org.lwjgl.opengl.GL20C.glUniform1i;
 import static org.lwjgl.opengl.GL20C.glUniform3f;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
@@ -20,8 +22,9 @@ import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Pose;
 import io.github.evildarkarchon.andysdice.render.mesh.DieMesh;
+import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
+import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
 import java.util.EnumMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +39,9 @@ import org.joml.Vector3dc;
  * Draws Dice with their rounded meshes ({@link DieMesh}, ticket #40) in place of the sharp solids: each Die of
  * whatever Die Kind at its pose, seen from a camera, under a fixed key and fill light, in one plain ivory look
  * until the Dice Set shader (#42) takes over. The app's playback and the gallery both draw through it.
+ *
+ * <p>Every face carries its engraved, inked Numerals (ticket #41, ADR-0008): each Die Kind's atlas is
+ * rasterised and uploaded at {@link #init()}, and {@code engraving.glsl} traces it by parallax occlusion.
  *
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
@@ -123,6 +129,7 @@ public final class DiceScene implements FrameRenderer {
 
     // Render thread only.
     private final Map<DieKind, GlMesh> meshes = new EnumMap<>(DieKind.class);
+    private final Map<DieKind, GlAtlas> atlases = new EnumMap<>(DieKind.class);
     private int program;
     private int modelUniform;
     private int viewProjectionUniform;
@@ -130,6 +137,12 @@ public final class DiceScene implements FrameRenderer {
     private int keyUniform;
     private int fillUniform;
     private int colourUniform;
+    private int inkUniform;
+    private int mmPerUvUniform;
+
+    // The texture units the engraving's atlas is bound to.
+    private static final int MASK_UNIT = 0;
+    private static final int SLOPE_UNIT = 1;
 
     /** Creates an empty scene; its GL objects are made in {@link #init()}. */
     public DiceScene() {}
@@ -172,10 +185,18 @@ public final class DiceScene implements FrameRenderer {
         keyUniform = glGetUniformLocation(program, "uKeyDirection");
         fillUniform = glGetUniformLocation(program, "uFillDirection");
         colourUniform = glGetUniformLocation(program, "uColour");
-        // One upload per mesh: Die Kinds that share a solid (d10 and d%) share the buffers too.
-        Map<DieMesh, GlMesh> uploaded = new IdentityHashMap<>();
+        inkUniform = glGetUniformLocation(program, "uInk");
+        mmPerUvUniform = glGetUniformLocation(program, "uMmPerUv");
+        glUseProgram(program);
+        glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
+        glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
+        glUniform1f(glGetUniformLocation(program, "uDepth"), (float) NumeralAtlas.VISIBLE_DEPTH_MM);
+        glUseProgram(0);
+        // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
+        // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
         for (DieKind kind : DieKind.values()) {
-            meshes.put(kind, uploaded.computeIfAbsent(DieMesh.of(kind), GlMesh::new));
+            meshes.put(kind, new GlMesh(kind));
+            atlases.put(kind, new GlAtlas(NumeralAtlas.rasterise(NumeralLayout.of(kind))));
         }
     }
 
@@ -208,9 +229,14 @@ public final class DiceScene implements FrameRenderer {
         glUniform3f(fillUniform, (float) FILL.x(), (float) FILL.y(), (float) FILL.z());
         // An ivory die colour, linear RGB (the bridge test cube's).
         glUniform3f(colourUniform, 0.80f, 0.76f, 0.66f);
+        // A near-black ink, linear RGB (Ivory / black is spec Appendix B's second Dice Set).
+        glUniform3f(inkUniform, 0.012f, 0.012f, 0.013f);
         for (Die die : drawn) {
             Matrix4d model = new Matrix4d().translation(die.position()).rotate(die.orientation());
             glUniformMatrix4fv(modelUniform, false, columns(model));
+            GlAtlas atlas = atlases.get(die.kind());
+            atlas.bind(MASK_UNIT, SLOPE_UNIT);
+            glUniform1f(mmPerUvUniform, atlas.mmPerUv());
             meshes.get(die.kind()).draw();
         }
         glUseProgram(0);
@@ -220,9 +246,12 @@ public final class DiceScene implements FrameRenderer {
 
     @Override
     public void dispose() {
-        // Distinct by identity (GlMesh keeps Object's equals): the d10 and d% buffers are deleted once.
-        meshes.values().stream().distinct().forEach(GlMesh::delete);
+        // Every Die Kind has buffers and textures of its own (the d10 and d% differ in their UVs), so each is
+        // deleted once.
+        meshes.values().forEach(GlMesh::delete);
         meshes.clear();
+        atlases.values().forEach(GlAtlas::delete);
+        atlases.clear();
         glDeleteProgram(program);
     }
 
