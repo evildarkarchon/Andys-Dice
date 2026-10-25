@@ -198,7 +198,7 @@ class RollUiShellTest extends HeadlessUiTest {
     void everyIconIsACodeDrawnPathAndNoTextNeedsASymbolFont() throws Exception {
         assertThat(fromFx(() -> ui().bell().getGraphic())).isInstanceOf(SVGPath.class);
         assertThat(fromFx(() -> ui().bell().getText())).isEmpty();
-        assertThat(fromFx(() -> ui().bell().getAccessibleText())).isEqualTo("Notices");
+        assertThat(fromFx(() -> ui().bell().getAccessibleText())).isEqualTo("Notices, none");
 
         List<String> texts = fromFx(() -> {
             List<String> all = new ArrayList<>();

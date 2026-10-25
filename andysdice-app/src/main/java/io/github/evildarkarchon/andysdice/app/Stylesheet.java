@@ -138,8 +138,8 @@ final class Stylesheet {
                 "");
     }
 
-    /** A colour as CSS {@code #rrggbb}; the palette is opaque. */
-    private static String hex(Color colour) {
+    /** A colour as CSS {@code #rrggbb}; the palette is opaque. Also used by stylesheets kept beside a control. */
+    static String hex(Color colour) {
         return String.format(Locale.ROOT, "#%02x%02x%02x", Math.round(colour.getRed() * 255),
                 Math.round(colour.getGreen() * 255), Math.round(colour.getBlue() * 255));
     }
