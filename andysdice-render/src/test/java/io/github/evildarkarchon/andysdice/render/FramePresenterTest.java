@@ -57,6 +57,24 @@ class FramePresenterTest {
     }
 
     @Test
+    void whoeverListensIsToldOfEachFrameOnTheJavaFxThreadOnceItIsShown() throws Exception {
+        java.util.List<String> told = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HeadlessFx.call(() -> {
+            presenter.setOnPresented(() -> told.add(javafx.application.Platform.isFxApplicationThread() + " "
+                    + presenter.framesPresented() + " " + (view.getImage() != null)));
+            return null;
+        });
+
+        presenter.publish(awaitFrame(8, 8));
+        assertThat(HeadlessFx.await(() -> told.size() == 1, WAIT)).isTrue();
+        presenter.publish(awaitFrame(8, 8));
+        assertThat(HeadlessFx.await(() -> told.size() == 2, WAIT)).isTrue();
+
+        // On the JavaFX thread, after the count went up and the image was set.
+        assertThat(told).containsExactly("true 1 true", "true 2 true");
+    }
+
+    @Test
     void neverHandsOutMoreThanThreeBuffers() {
         assertThat(presenter.acquire(8, 8)).isNotNull();
         assertThat(presenter.acquire(8, 8)).isNotNull();

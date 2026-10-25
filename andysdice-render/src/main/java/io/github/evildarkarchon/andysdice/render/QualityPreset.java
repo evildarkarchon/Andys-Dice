@@ -12,7 +12,7 @@ import java.util.Optional;
  *
  * <p>High is full quality, the numbers the prototypes were judged at. Medium is defined as whatever meets ADR-0014's
  * 0.5 ms budget in {@code --bench} (ticket #61) and Low is for weaker integrated GPUs; the lever values below are
- * tunables (spec §6), set before the bench existed and meant to be tuned against it.
+ * tunables (spec §6). Low and High were set before the bench existed; Medium was tuned against it (#61).
  *
  * <p>{@link DiceScene#setQualityPreset} hands a preset to the renderer.
  */
@@ -21,8 +21,14 @@ public enum QualityPreset {
     /** For weak (DX11-class) integrated GPUs: usable, with no frame-rate promise (ADR-0014). */
     LOW("Low", 0.7, 0, 1024, 8, 8, 16, 4, 4, true),
 
-    /** The default: what an Iris Xe-class integrated GPU draws at 60 fps (ADR-0014). */
-    MEDIUM("Medium", 0.85, 2, 1024, 12, 10, 32, 8, 6, true),
+    /**
+     * The default: what an Iris Xe-class integrated GPU draws at 60 fps (ADR-0014). Tuned on the bench (#61): the
+     * pre-bench 0.85 render scale and 12 PCSS taps drew the most expensive scene in about 0.64-0.66 ms on the RTX 4070
+     * at 1080p; scale 0.75 and 8 taps (the two levers that moved it most) bring it to about 0.44 ms, leaving room
+     * for run-to-run noise of a few hundredths. MSAA, the parallax counts and the volume march each moved it by less
+     * than that noise, so they keep their values.
+     */
+    MEDIUM("Medium", 0.75, 2, 1024, 8, 10, 32, 8, 6, true),
 
     /** Full quality, for a discrete GPU; the only preset that lifts the render-target cap. */
     HIGH("High", 1.0, 4, 2048, 16, 12, 48, 12, 8, false);
