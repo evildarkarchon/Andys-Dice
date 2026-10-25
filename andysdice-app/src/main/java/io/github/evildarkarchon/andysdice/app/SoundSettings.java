@@ -35,6 +35,8 @@ final class SoundSettings {
         volume.setAccessibleText("Volume");
         volume.setBlockIncrement(VOLUME_STEP);
         volume.setMajorTickUnit(10);
+        // A click on the track glides the thumb; with reduced motion on it jumps (#62).
+        ReducedMotion.instantTrackClicks(volume);
         HBox.setHgrow(volume, Priority.ALWAYS);
         // Wide enough for "100%", so the slider doesn't shift as the number grows.
         volumeText.setMinWidth(38);

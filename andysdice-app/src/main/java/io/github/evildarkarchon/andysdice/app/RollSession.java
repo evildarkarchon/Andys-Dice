@@ -104,6 +104,10 @@ final class RollSession {
         // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
         queue = new RollQueue(controller, clock);
         entry = new RollEntry(ui, queue);
+        // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up.
+        ui.addFailureListener(queue::close);
+        // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
+        KeyboardMap.install(ui);
         ui.showStatus(controller.status());
         controller.setOnStatusChanged(status -> {
             ui.showStatus(status);

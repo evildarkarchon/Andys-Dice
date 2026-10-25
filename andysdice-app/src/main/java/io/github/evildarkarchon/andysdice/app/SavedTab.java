@@ -95,10 +95,20 @@ final class SavedTab {
         // A filter, ahead of the list's own key handling (which would take Space for selection and Alt+↑/↓ for
         // moving it).
         list.addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
+        // Esc's second step (spec §3.2 "Keyboard"): an edit left open while focus went elsewhere is cancelled before
+        // the Queued Roll is. Esc typed in the edit's own fields never gets that far: the editor takes it.
+        session.entry().setInlineEdit(() -> {
+            if (editing < 0) {
+                return false;
+            }
+            cancelEdit();
+            return true;
+        });
         // A filter on the whole window's content, so Ctrl+S works from the box (whose own handling comes first
         // otherwise) and from any tab.
+        // Not once the session has failed: this root still hears keys behind the failure panel (#62).
         ui.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
-            if (NEW_SHORTCUT.match(event)) {
+            if (NEW_SHORTCUT.match(event) && !ui.failed()) {
                 askNew(ui.expressionBox().getText());
                 event.consume();
             }

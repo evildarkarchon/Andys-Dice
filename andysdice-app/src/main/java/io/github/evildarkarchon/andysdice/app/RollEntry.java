@@ -4,7 +4,9 @@ import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -17,7 +19,8 @@ import javafx.scene.input.KeyEvent;
  *       {@link ErrorPopup}; nothing is rolled or queued, and a Roll already queued stays queued.</li>
  *   <li>A valid one is accepted: it rolls, or becomes the Queued Roll while Dice move ({@link RollQueue}), and the
  *       box keeps it with all of it selected, so typing replaces it and Enter rolls it again.</li>
- *   <li>Esc, when nothing nearer the focus took it (an open popup, an inline edit), cancels the Queued Roll.</li>
+ *   <li>Esc, when nothing nearer the focus took it (an open popup, an inline edit), cancels an inline edit still
+ *       open elsewhere in the window, else the Queued Roll.</li>
  * </ul>
  *
  * <p>Thread contract: the JavaFX Application Thread.
@@ -31,6 +34,8 @@ final class RollEntry {
     private final RollQueue queue;
     private final ErrorPopup errorPopup;
     private final Label nextChip = new Label();
+    /** Esc's inline-edit step; none until the Saved tab sets it. */
+    private BooleanSupplier inlineEdit = () -> false;
 
     /**
      * Wires entry into a Roll UI: Enter and the Roll button, the error popup, the chip at the end of the toolbar
@@ -60,6 +65,28 @@ final class RollEntry {
                 event.consume();
             }
         });
+        // A ListView maps Esc to cancelling its own cell edit and consumes it even with no edit under way, so the
+        // handler above would never hear Esc while the Saved or History list has focus (#62). Esc on a list that
+        // isn't editing is taken here, before the list's own handling. (Neither list uses ListView editing; the
+        // Saved tab's inline edit has its own fields, so Esc typed there never targets the list.)
+        ui.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE && event.getTarget() instanceof ListView<?> list
+                    && list.getEditingIndex() < 0 && escape()) {
+                event.consume();
+            }
+        });
+    }
+
+    /**
+     * Sets Esc's second step (spec §3.2 "Keyboard"): cancelling an inline ✎ edit, which comes before cancelling the
+     * Queued Roll. Esc typed in the edit's own fields is the edit's; this step is for Esc typed while an edit is open
+     * but focus has moved elsewhere in the window.
+     *
+     * @param cancelIfOpen cancels the inline edit if one is open, and tells whether it did; it replaces any earlier
+     *     one
+     */
+    void setInlineEdit(BooleanSupplier cancelIfOpen) {
+        inlineEdit = Objects.requireNonNull(cancelIfOpen, "cancelIfOpen");
     }
 
     /**
@@ -81,14 +108,17 @@ final class RollEntry {
     }
 
     /**
-     * Esc's last resort: the error popup if it is somehow still up (it normally takes Esc itself), else the Queued
-     * Roll.
+     * Esc's last resort: the error popup if it is somehow still up (it normally takes Esc itself), else an open inline
+     * edit ({@link #setInlineEdit}), else the Queued Roll.
      *
      * @return whether Esc did something, and so is used up
      */
     boolean escape() {
         if (errorPopup.isShowing()) {
             errorPopup.hide();
+            return true;
+        }
+        if (inlineEdit.getAsBoolean()) {
             return true;
         }
         return queue.cancel();
