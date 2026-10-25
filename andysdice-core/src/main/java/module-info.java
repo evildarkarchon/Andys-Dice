@@ -17,4 +17,5 @@ module io.github.evildarkarchon.andysdice.core {
     exports io.github.evildarkarchon.andysdice.core.planner;
     exports io.github.evildarkarchon.andysdice.core.playback;
     exports io.github.evildarkarchon.andysdice.core.simulation;
+    exports io.github.evildarkarchon.andysdice.core.tray;
 }

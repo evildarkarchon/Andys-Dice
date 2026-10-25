@@ -18,7 +18,10 @@ import io.github.evildarkarchon.andysdice.core.simulation.Ending;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
 import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
+import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
@@ -65,12 +68,65 @@ class RollControllerTest {
         statuses = new ArrayList<>();
     }
 
-    /** A controller whose Face Value generator draws exactly these values. */
+    /** A controller whose Face Value generator draws exactly these values, throwing into the default Tray. */
     private RollController controller(ScriptedRandom faces) {
+        return controller(faces, BuiltInTrays.defaultTray());
+    }
+
+    /** A controller whose Face Value generator draws exactly these values, throwing into a given Tray. */
+    private RollController controller(ScriptedRandom faces, Tray into) {
         RollController controller = new RollController(clock, physics, Runnable::run, new FaceValueGenerator(faces),
-                new SplittableRandom(1), tray);
+                new SplittableRandom(1), into, tray);
         controller.setOnStatusChanged(statuses::add);
         return controller;
+    }
+
+    @Test
+    void theDiceAreThrownIntoTheChosenTraysShapeAndMaterials() {
+        Tray walnut = BuiltInTrays.find("03-walnut-board").orElseThrow();
+        Tray hexagon = BuiltInTrays.find("02-leather-hexagon").orElseThrow();
+        RollController intoWalnut = controller(new ScriptedRandom(4), walnut);
+
+        intoWalnut.roll("1d6");
+        physics.finish();
+
+        assertThat(simulator.requests).isNotEmpty().allSatisfy(request -> {
+            assertThat(request.tray()).isEqualTo(walnut.geometry());
+            assertThat(request.materials()).isEqualTo(walnut.materials());
+        });
+
+        simulator.requests.clear();
+        playToRest(intoWalnut);
+        RollController intoHexagon = controller(new ScriptedRandom(2), hexagon);
+        intoHexagon.roll("1d6");
+        physics.finish();
+
+        assertThat(simulator.requests).isNotEmpty().allSatisfy(request -> {
+            assertThat(request.tray()).isEqualTo(hexagon.geometry());
+            assertThat(request.materials()).isEqualTo(hexagon.materials());
+        });
+    }
+
+    @Test
+    void anEscapedDieIsNeverShown() {
+        // The first two Attempts end with a Die over the wall (ADR-0010); only the third, at rest, is ever played.
+        simulator.then(2, Ending.ESCAPED);
+        RollController controller = controller(3, 5);
+
+        controller.roll("2d6");
+        physics.finish();
+
+        assertThat(simulator.requests).hasSize(3);
+        ChainPlayback chain = tray.chains.getFirst();
+        assertThat(chain.plan().throwChain().getFirst().attempts()).isEqualTo(3);
+        TrayGeometry geometry = BuiltInTrays.defaultTray().geometry();
+        for (double t = 0; t <= chain.restTime() + FRAME; t += FRAME) {
+            for (DiceScene.Die die : chain.diceAt(t)) {
+                // Drawn in mm; the Tray's outline is in cm.
+                assertThat(geometry.depthInside((float) die.position().x() / 10, (float) die.position().z() / 10))
+                        .as("a Die at %.3f s", t).isPositive();
+            }
+        }
     }
 
     private RollController controller(int... faces) {
@@ -398,7 +454,10 @@ class RollControllerTest {
             for (int die = 0; die < dice; die++) {
                 DieKind kind = ((DieKindBody) request.dice().get(die)).kind();
                 Vector3 from = new Vector3(3 * die - 6, 8, -5);
-                Vector3 to = new Vector3(call, (float) kind.inradius() / 10, die);
+                // An escaped Attempt ends with its Dice over the far wall, outside the Tray and below its floor.
+                Vector3 to = ending == Ending.ESCAPED
+                        ? new Vector3(3 * die, -2, 25)
+                        : new Vector3(call, (float) kind.inradius() / 10, die);
                 Quaterniond end = flat(kind, (call * 7 + die * 3) % kind.faceCount(), call + die);
                 for (int s = 0; s < SAMPLES; s++) {
                     double u = s / (double) (SAMPLES - 1);
