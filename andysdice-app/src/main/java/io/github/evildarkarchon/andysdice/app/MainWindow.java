@@ -12,7 +12,8 @@ import javafx.stage.Stage;
  * plus a Tray at least 620 px wide). Every size here is in logical pixels; Windows display scaling turns them into
  * physical ones, and only the Tray's render target works in physical pixels ({@link RenderTargetCap}).
  *
- * <p>Saved bounds and the maximised flag (spec §3.6) take over from the default once persistence keeps them.
+ * <p>The app opens it at the saved bounds and maximised flag (spec §3.6, {@link WindowGeometry}) when they still
+ * meet a screen, and writes them back when it closes.
  */
 final class MainWindow {
 
@@ -41,7 +42,33 @@ final class MainWindow {
     static void open(Stage stage, RollUi ui) {
         Objects.requireNonNull(stage, "stage");
         Objects.requireNonNull(ui, "ui");
-        Rectangle2D bounds = defaultBounds(Screen.getPrimary().getVisualBounds());
+        show(stage, ui, defaultBounds(Screen.getPrimary().getVisualBounds()), false);
+    }
+
+    /**
+     * Opens the window as {@link #open(Stage, RollUi)} does, but at the geometry saved in the settings (spec §3.6):
+     * the saved normal bounds if they still meet a screen, else the default size centred on the primary screen,
+     * and maximised if it was. The geometry is written back when the window closes.
+     *
+     * @param stage the window to open
+     * @param ui the window content
+     * @param settings the app's settings, holding the saved geometry and receiving it on close
+     * @return what follows the window's geometry; call its {@link WindowGeometry.Tracker#save save} from
+     *     {@code Application.stop} too, for a quit that doesn't close the window
+     */
+    static WindowGeometry.Tracker open(Stage stage, RollUi ui, SettingsStore settings) {
+        Objects.requireNonNull(stage, "stage");
+        Objects.requireNonNull(ui, "ui");
+        WindowGeometry saved = WindowGeometry.from(settings.current());
+        Rectangle2D bounds = WindowGeometry.placement(saved.normalBounds(),
+                Screen.getScreens().stream().map(Screen::getVisualBounds).toList(),
+                Screen.getPrimary().getVisualBounds());
+        show(stage, ui, bounds, saved.maximised());
+        return WindowGeometry.Tracker.follow(stage, bounds, settings);
+    }
+
+    /** Titles, sizes and shows the window, then puts focus in the box. */
+    private static void show(Stage stage, RollUi ui, Rectangle2D bounds, boolean maximised) {
         Scene scene = new Scene(ui);
         // The theme's background before the first layout, so the window never flashes white.
         scene.setFill(Palette.BACKGROUND);
@@ -53,6 +80,11 @@ final class MainWindow {
         stage.setY(bounds.getMinY());
         stage.setWidth(bounds.getWidth());
         stage.setHeight(bounds.getHeight());
+        // After the bounds, so they are the ones the window restores to from maximised. Only when it was: a first
+        // run leaves the window's state alone.
+        if (maximised) {
+            stage.setMaximized(true);
+        }
         stage.show();
         ui.focusBox();
     }

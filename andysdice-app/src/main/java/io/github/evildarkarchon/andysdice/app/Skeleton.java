@@ -54,7 +54,7 @@ final class Skeleton implements AutoCloseable {
     private ChainPlayback showing;
 
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
-            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators) {
+            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators, Notices notices) {
         this.worker = worker;
         this.renderer = renderer;
         this.scene = scene;
@@ -88,7 +88,7 @@ final class Skeleton implements AutoCloseable {
                         // the next Roll pre-simulates, the last one's settle-in may still be easing).
                         return camera.moving();
                     }
-                });
+                }, notices);
         // Added after the controller's own listener, so on each advance the Dice are drawn first. Once the last
         // Throw is at rest the controller draws nothing more, but the camera may still be easing.
         clock.addListener(c -> showCamera());
@@ -110,7 +110,24 @@ final class Skeleton implements AutoCloseable {
      * @throws io.github.evildarkarchon.andysdice.render.GlUnavailableException if there is no OpenGL 3.3 core
      */
     static Skeleton start(PlaybackClock clock, Pulses pulses, Generators generators) {
+        return start(clock, pulses, generators, new Notices());
+    }
+
+    /**
+     * As {@link #start(PlaybackClock, Pulses, Generators)}, around the app's one Notice service, made before the
+     * skeleton so that what start-up posts (a settings file set aside, #54) shows behind the same bell.
+     *
+     * @param clock the playback clock
+     * @param pulses what advances the clock while a Throw plays
+     * @param generators the Face Value, Release and sound variation generators
+     * @param notices the app's Notices
+     * @return the running skeleton
+     * @throws io.github.evildarkarchon.andysdice.physics.JoltStartupException if Jolt can't start
+     * @throws io.github.evildarkarchon.andysdice.render.GlUnavailableException if there is no OpenGL 3.3 core
+     */
+    static Skeleton start(PlaybackClock clock, Pulses pulses, Generators generators, Notices notices) {
         Objects.requireNonNull(clock, "clock");
+        Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
         PhysicsWorker worker = PhysicsWorker.start();
@@ -133,7 +150,7 @@ final class Skeleton implements AutoCloseable {
         view.setOnTargetSizeChanged(RenderTargetCap.capping(renderer::resize));
         // The first-run Tray is empty; draw it once so the view isn't blank until the first Roll.
         renderer.requestFrame();
-        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators);
+        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators, notices);
     }
 
     /**

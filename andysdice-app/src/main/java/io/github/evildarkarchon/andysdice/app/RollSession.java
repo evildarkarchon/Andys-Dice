@@ -23,7 +23,7 @@ final class RollSession {
 
     private final RollController controller;
     private final RollUi ui;
-    private final Notices notices = new Notices();
+    private final Notices notices;
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     /**
@@ -39,6 +39,25 @@ final class RollSession {
      */
     RollSession(PlaybackClock clock, Pulses pulses, RollController.PhysicsJobs physics, Executor fxThread,
             Generators generators, Tray throwInto, TraySurface tray) {
+        this(clock, pulses, physics, fxThread, generators, throwInto, tray, new Notices());
+    }
+
+    /**
+     * Wires a Roll UI and its controller around the app's one Notice service, made before the session so that what
+     * start-up posts (a settings file set aside, #54) shows behind the same bell.
+     *
+     * @param clock the playback clock
+     * @param pulses what advances the clock while a Roll plays
+     * @param physics where pre-simulation runs
+     * @param fxThread runs pre-simulation results on the JavaFX thread
+     * @param generators the Face Value and Release generators
+     * @param throwInto the chosen Tray
+     * @param tray where the Roll is drawn
+     * @param notices the app's Notices, which the bell shows
+     */
+    RollSession(PlaybackClock clock, Pulses pulses, RollController.PhysicsJobs physics, Executor fxThread,
+            Generators generators, Tray throwInto, TraySurface tray, Notices notices) {
+        this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
         Objects.requireNonNull(tray, "tray");
