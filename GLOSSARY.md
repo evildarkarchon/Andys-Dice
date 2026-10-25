@@ -24,6 +24,16 @@ _Avoid_: Number, label, pip
 A d100 result produced by rolling a percentile d10 and a d10 together, the percentile die giving the tens and the d10 the units, with 00 + 0 read as 100.
 _Avoid_: d100 die
 
+## Tray
+
+**Tray**:
+The walled surface the Dice are thrown into: its outline, its walls and its floor. Some ship with the app, and a player can add their own.
+_Avoid_: Board, box, arena, table (the table is what the Tray sits on)
+
+**Light Rig**:
+The lighting the Tray and Dice are shown under, chosen separately from the Tray.
+_Avoid_: Lighting preset, scene, theme
+
 ## Rolling
 
 **Roll Expression**:
@@ -55,8 +65,12 @@ The number a single die shows once it is at rest.
 _Avoid_: Pip, die result
 
 **Cocked Die**:
-A Die that comes to rest without a single face (or, for a d4, a single vertex) pointing up, such as one leaning on a tray wall or on another Die. It has no Face Value, so a Throw never ends with one.
+A Die that comes to rest without a single face (or, for a d4, a single vertex) pointing up, such as one leaning on a wall of the Tray or on another Die. It has no Face Value, so a Throw never ends with one.
 _Avoid_: Leaner, tilted die
+
+**Escaped Die**:
+A Die that leaves the Tray over its walls during a Throw. A Throw never ends with one.
+_Avoid_: Lost die, fallen die
 
 **Roll Result**:
 The total and breakdown obtained by applying a Roll Expression's Modifiers, Advantage/Disadvantage and keep rules to the final Face Values of its Throws.
