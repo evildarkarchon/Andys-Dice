@@ -80,6 +80,19 @@
         -->
         <andysdice.nativeAccess>--enable-native-access=com.github.stephengold.joltjni,org.lwjgl,io.github.evildarkarchon.andysdice.physics,javafx.graphics --illegal-native-access=deny</andysdice.nativeAccess>
 
+        <!-- The one natives directory (ADR-0004): $APPDIR\natives in the image, target\natives in dev and tests. -->
+        <andysdice.nativesDir>${project.build.directory}/natives</andysdice.nativesDir>
+
+        <!--
+          LWJGL's part of the shared option set (ADR-0004), used beside andysdice.nativeAccess everywhere it is.
+          - org.lwjgl.opengl binds its GL and WGL entry points as JNI natives of its own, so under deny it needs
+            native access as well as org.lwjgl. A second enable-native-access option adds to the first.
+          - jdk.internal.misc is exported to org.lwjgl only, never ALL-UNNAMED; without it LWJGL falls back to
+            sun.misc.Unsafe and warns.
+          - LWJGL loads lwjgl.dll and lwjgl_opengl.dll from the natives directory and never extracts them.
+        -->
+        <andysdice.lwjglOptions>--enable-native-access=org.lwjgl.opengl --add-exports=java.base/jdk.internal.misc=org.lwjgl -Dorg.lwjgl.librarypath=${andysdice.nativesDir}</andysdice.lwjglOptions>
+
         <!-- Extra JVM options for a module's tests. Modules set this; they never override argLine itself,
              so the native-access set can't be dropped by accident. -->
         <andysdice.test.jvmArgs></andysdice.test.jvmArgs>
@@ -219,7 +232,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <!-- Lets the gl tag guard test see which groups this build meant to leave out. -->
@@ -232,7 +245,7 @@
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven-failsafe-plugin.version}</version>
                     <configuration>
-                        <argLine>${andysdice.nativeAccess} ${andysdice.test.jvmArgs}</argLine>
+                        <argLine>${andysdice.nativeAccess} ${andysdice.lwjglOptions} ${andysdice.test.jvmArgs}</argLine>
                         <excludedGroups>${andysdice.test.excludedGroups}</excludedGroups>
                         <systemPropertyVariables>
                             <andysdice.test.excludedGroups>${andysdice.test.excludedGroups}</andysdice.test.excludedGroups>
