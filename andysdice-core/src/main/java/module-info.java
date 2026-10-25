@@ -7,4 +7,5 @@
  * build's native-access option set leaves it denied.
  */
 module io.github.evildarkarchon.andysdice.core {
+    exports io.github.evildarkarchon.andysdice.core.simulation;
 }
