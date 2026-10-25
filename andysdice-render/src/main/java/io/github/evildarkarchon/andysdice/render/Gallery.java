@@ -2,6 +2,9 @@ package io.github.evildarkarchon.andysdice.render;
 
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.Solid;
+import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
+import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
+import java.awt.image.RenderedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +24,8 @@ import org.joml.Vector3dc;
 /**
  * The dev-only gallery (ADR-0005): renders a still of every Die Kind in each of a few fixed poses into a
  * directory of PNGs, so the look can be judged by eye. Nothing asserts on its pixels; later tickets add their
- * axes (Numerals #41, Dice Sets #42, Trays #44) to the same stills.
+ * axes (Numerals #41, Dice Sets #42, Trays #44) to the same stills. The stills show the engraved Numerals (#41),
+ * and a sheet per Die Kind shows every one of its Numerals in its face's frame.
  *
  * <p>It is behind a flag, never part of a normal run: {@value #FLAG} on the app's command line (once the app
  * routes it here), or in dev {@code mvn -pl andysdice-render -am process-classes -Pgallery}, which writes to
@@ -37,6 +41,9 @@ public final class Gallery {
 
     /** Each still is a square of this many pixels. */
     public static final int SIZE_PX = 720;
+
+    /** Each Die Kind's sheet of Numerals is a square of at most this many pixels (its atlas, scaled down). */
+    public static final int SHEET_MAX_PX = 1280;
 
     /** Where the dev run writes, relative to the working directory, when given no directory. */
     private static final Path DEFAULT_DIRECTORY = Path.of("target", "gallery");
@@ -72,7 +79,7 @@ public final class Gallery {
         Path directory = args.length > 0 && !args[0].isBlank() ? Path.of(args[0]) : DEFAULT_DIRECTORY;
         try {
             List<Path> written = write(directory);
-            System.out.println("gallery: " + written.size() + " stills in " + directory.toAbsolutePath());
+            System.out.println("gallery: " + written.size() + " images in " + directory.toAbsolutePath());
         } catch (GlUnavailableException e) {
             System.err.println(e.getMessage());
             System.exit(1);
@@ -81,10 +88,12 @@ public final class Gallery {
 
     /**
      * Renders every still into {@code directory}, named {@code <die kind>-<pose>.png} (for example
-     * {@code d20-edge-on.png}), replacing any of the same name. Starts and closes the JVM's one render thread.
+     * {@code d20-edge-on.png}), and after each Die Kind's stills a sheet of all its Numerals as its atlas lays
+     * them out, {@code <die kind>-numerals.png}; replaces any of the same name. Starts and closes the JVM's one
+     * render thread.
      *
      * @param directory where to write; created if missing
-     * @return the files written, Die Kind by Die Kind in enum order, poses in enum order within each
+     * @return the files written, Die Kind by Die Kind in enum order: poses in enum order, then the sheet
      * @throws IOException if the directory or a still can't be written
      * @throws GlUnavailableException if there is no OpenGL 3.3 core context
      * @throws IllegalStateException if a render thread was already started in this JVM, or a still timed out
@@ -104,14 +113,23 @@ public final class Gallery {
                     }));
                     Path file = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-"
                             + pose.name().toLowerCase(Locale.ROOT).replace('_', '-') + ".png");
-                    if (!ImageIO.write(still.toImage(), "png", file.toFile())) {
-                        throw new IOException("no PNG writer for " + file);
-                    }
+                    png(still.toImage(), file);
                     written.add(file);
                 }
+                // The sheet is pure Java2D; no GL is needed, but it sits beside the Die Kind's stills.
+                Path sheet = directory.resolve(kind.name().toLowerCase(Locale.ROOT) + "-numerals.png");
+                png(NumeralAtlas.rasterise(NumeralLayout.of(kind)).sheet(SHEET_MAX_PX), sheet);
+                written.add(sheet);
             }
         }
         return List.copyOf(written);
+    }
+
+    /** Writes an image as a PNG. */
+    private static void png(RenderedImage image, Path file) throws IOException {
+        if (!ImageIO.write(image, "png", file.toFile())) {
+            throw new IOException("no PNG writer for " + file);
+        }
     }
 
     /** Waits for a still, unwrapping what the render thread failed with. */
