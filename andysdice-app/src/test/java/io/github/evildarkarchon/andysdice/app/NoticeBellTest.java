@@ -150,15 +150,44 @@ class NoticeBellTest extends HeadlessUiTest {
             ui().bell().requestFocus();
             ui().bell().fire();
         });
+        // Whether Dismiss all has focus straight after each arrival, in the same FX turn as the list's update: a
+        // key pressed then must still reach it, not wait for a later pulse to put focus back. This listener runs
+        // after the bell's own (an invalidation listener, which an ObservableList calls first).
+        List<Boolean> focusedOnArrival = new CopyOnWriteArrayList<>();
+        onFx(() -> notices().all().addListener((ListChangeListener<Notice>) change ->
+                focusedOnArrival.add(dismissAll().isFocused())));
 
+        // From the FX thread, the arrival is in this very turn.
+        onFx(() -> {
+            notices().post("Settings were set aside", "");
+            assertThat(dismissAll().isFocused()).isTrue();
+        });
         Thread.ofPlatform().start(() -> notices().post("A slow GPU", "Try a lower Quality Preset.")).join();
-        assertThat(await(() -> notices().all().size() == 2, Duration.ofSeconds(10))).isTrue();
+        assertThat(await(() -> notices().all().size() == 3, Duration.ofSeconds(10))).isTrue();
 
-        assertThat(fromFx(() -> texts(list()))).containsExactly("Notices", "No audio device", "A slow GPU",
-                "Try a lower Quality Preset.", "Dismiss all");
+        assertThat(focusedOnArrival).containsExactly(true, true);
+        assertThat(fromFx(() -> texts(list()))).containsExactly("Notices", "No audio device",
+                "Settings were set aside", "A slow GPU", "Try a lower Quality Preset.", "Dismiss all");
         assertThat(fromFx(() -> notices().unread())).isZero();
         assertThat(fromFx(() -> highlighted())).isFalse();
         assertThat(fromFx(() -> dismissAll().isFocused())).isTrue();
+        onFx(() -> list().hide());
+    }
+
+    @Test
+    void theFirstNoticeReachingAListOpenedEmptyBringsDismissAllWithFocus() throws Exception {
+        onFx(() -> {
+            ui().bell().requestFocus();
+            ui().bell().fire();
+        });
+        assertThat(fromFx(() -> texts(list()))).containsExactly("Notices", "No Notices.");
+
+        onFx(() -> {
+            notices().post("No audio device", "");
+            assertThat(dismissAll().isFocused()).isTrue();
+        });
+
+        assertThat(fromFx(() -> texts(list()))).containsExactly("Notices", "No audio device", "Dismiss all");
         onFx(() -> list().hide());
     }
 
