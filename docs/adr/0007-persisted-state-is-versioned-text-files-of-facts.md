@@ -14,7 +14,7 @@ v1 keeps a Roll History of the last 100 Rolls and a player-ordered list of Saved
 
 - **Formats.**
   - Each file starts with a version header line. Older versions are migrated forward in code.
-  - `settings.properties` is a `java.util.Properties` file of flat keys: the chosen Dice Set, the window's normal bounds plus a maximised flag, the ADR-0002 quality settings, and mute and volume. An unknown key is ignored. An invalid value falls back to that key's default without discarding the rest. The Roll Expression box is never persisted.
+  - `settings.properties` is a `java.util.Properties` file of flat keys: the chosen Dice Set, the window's normal bounds plus a maximised flag, the ADR-0002 quality settings, and mute and volume. An unknown key is ignored. An invalid value falls back to that key's default without discarding the rest. The Roll Expression box is never persisted. *Amended by ADR-0010 and ADR-0014:* the settings also hold the chosen Tray and Light Rig, and the quality settings are one preset key (Low, Medium or High) whose unknown value falls back to Medium.
   - `saved-rolls.txt` has one `name⇥expression` line per Saved Roll, in the player's order.
   - `history.txt` has one line per Roll, newest last: a UTC instant, the expression, the Saved Roll name (or empty), then each Die's Face Value chain in Dice Group order, for example `1>5,3,6,2`.
   - Neither the grammar nor Saved Roll names can contain control characters, so no escaping exists.

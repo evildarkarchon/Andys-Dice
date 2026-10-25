@@ -11,7 +11,7 @@ An embedded renderer written directly against LWJGL's OpenGL 3.3 core profile, w
 ## Consequences
 
 - **One render surface.** Exactly one GL context and one render surface exist per app run. They are resized, never disposed and recreated, and torn down only at exit.
-- **One render thread.** It owns the context and makes every GL call. The JavaFX Application Thread only presents finished frames (`PixelBuffer.updateBuffer`) and sends it messages: resize, camera, Dice Set. Physics pre-simulates on its own worker and hands over a finished recording (see ADR-0001).
+- **One render thread.** It owns the context and makes every GL call. The JavaFX Application Thread only presents finished frames (`PixelBuffer.updateBuffer`) and sends it messages: resize, camera, Dice Set. Physics pre-simulates on its own worker and hands over a finished recording (see ADR-0001). *Amended by ADR-0010 and ADR-0014:* the messages also carry the Tray, the Light Rig and the quality preset.
 - **Frame latency.** Async readback adds about one frame of latency. That is harmless, because a Throw is a recorded playback.
 - **Swappable transport.** The frame transport sits behind a small seam. A zero-copy implementation can be added later without touching the renderer, if profiling ever shows the copy is the bottleneck.
 - **On-demand rendering.** The renderer draws only during Throw playback or when the view changes, and is idle otherwise.

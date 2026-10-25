@@ -87,6 +87,9 @@ by timing and by throw statistics in the
   Dice were mostly leaning on each other. Re-simulating is cheap (under about 0.1 s for 12 attempts), but
   running out of attempts is not acceptable. That is now its own question:
   [How does a 20-Dice Throw reach a flat rest?](https://github.com/evildarkarchon/Andys-Dice/issues/21).
+  *Resolved by ADR-0013:* a one-layer, gentler release, die-on-die friction of 0.2 and settle nudges bring
+  this to 1.3–1.7 attempts per Throw. The cap is 24 silent attempts, with a visible Cocked Rethrow as the
+  fallback.
 - **Every Tray must keep 20 Dice workable:** a hexagon or oval inside the footprint has less floor than
   the rectangle. The loader can't check that a player's Tray is playable beyond the fixed footprint and
   minimum height.
