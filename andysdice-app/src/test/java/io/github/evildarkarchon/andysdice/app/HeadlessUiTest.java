@@ -105,6 +105,8 @@ abstract class HeadlessUiTest {
     protected Persistence persistence;
     /** The History tab (#55), over {@link #persistence} and {@link #wallClock}. */
     protected HistoryTab history;
+    /** The Saved tab (#56), over {@link #persistence}, its Save as a Saved Roll… on {@link #history}'s menu. */
+    protected SavedTab saved;
 
     /** Where every test's wall clock starts: a Sunday. */
     static final Instant WALL_CLOCK_START = Instant.parse("2026-10-25T12:00:00Z");
@@ -170,6 +172,7 @@ abstract class HeadlessUiTest {
             // As AndysDice.start does: one writer over the data folder, its Notices behind the bell.
             persistence = new Persistence(dataFolder, session.notices()::post);
             history = HistoryTab.install(session, persistence, wallClock);
+            saved = SavedTab.install(session, persistence, history);
             stage = new Stage();
             MainWindow.open(stage, session.ui());
         });

@@ -95,7 +95,16 @@ final class Palette {
             graphic("a skipped Player File's warning icon (#57)", ICON, SURFACE),
             graphic("the chosen swatch's ring (#57)", ACCENT, SURFACE),
             graphic("the chosen Tray or Light Rig row's bar on the row (#57)", ACCENT, RAISED),
-            graphic("a swatch's disc outline (#57)", OUTLINE, SURFACE));
+            graphic("a swatch's disc outline (#57)", OUTLINE, SURFACE),
+            text("a Saved Roll's name and warning message (#56)", TEXT, SURFACE),
+            text("a Saved Roll's expression and the empty state (#56)", TEXT_MUTED, SURFACE),
+            text("a selected or hovered Saved Roll's name and warning message (#56)", TEXT, RAISED),
+            text("a selected or hovered Saved Roll's expression (#56)", TEXT_MUTED, RAISED),
+            graphic("the warning mark on a Saved Roll (#56)", NOTICE, SURFACE),
+            graphic("the warning mark on a selected or hovered Saved Roll (#56)", NOTICE, RAISED),
+            graphic("the warning mark in the New Saved Roll dialog (#56)", NOTICE, BACKGROUND),
+            text("a refusal's message in the New Saved Roll dialog (#56)", TEXT, BACKGROUND),
+            graphic("a Saved Roll's icon buttons on a selected or hovered row (#56)", ICON, RAISED));
 
     private Palette() {}
 

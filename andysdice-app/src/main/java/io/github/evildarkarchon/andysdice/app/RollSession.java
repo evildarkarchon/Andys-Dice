@@ -6,6 +6,7 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
@@ -188,6 +189,17 @@ final class RollSession {
      */
     void roll(String expression) {
         queue.roll(expression);
+    }
+
+    /**
+     * Rolls a Saved Roll's expression as {@link #roll(String)} does, recording the Roll with the Saved Roll's name
+     * (spec §3.2 "Saved tab", #56): the result strip shows it and the Roll History keeps it.
+     *
+     * @param expression the Roll Expression as written; it already parses
+     * @param savedRollName the Saved Roll's name
+     */
+    void roll(String expression, String savedRollName) {
+        queue.roll(expression, Optional.of(savedRollName));
     }
 
     /**

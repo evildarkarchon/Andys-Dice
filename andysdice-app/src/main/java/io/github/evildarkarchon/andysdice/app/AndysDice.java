@@ -108,7 +108,9 @@ public final class AndysDice extends Application {
         QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
         // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
         // time zone as it was at start-up.
-        HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
+        HistoryTab history = HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
+        // The Saved Rolls (#56); History's menu gains Save as a Saved Roll….
+        SavedTab.install(skeleton.session(), persistence, history);
         // The Player Files are read once, here (spec §3.3, §3.4): each one skipped is a Notice behind the bell, and
         // the Tray is drawn in the stored look before the window opens.
         skeleton.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);

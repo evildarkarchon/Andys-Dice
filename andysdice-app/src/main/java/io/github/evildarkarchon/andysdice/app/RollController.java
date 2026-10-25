@@ -68,8 +68,12 @@ final class RollController {
         void showTime(double seconds);
     }
 
-    /** The chain now playing, with when it started on the clock and the expression it reveals at rest. */
-    private record Playing(RollExpression expression, ChainPlayback chain, double start) {}
+    /**
+     * The chain now playing, with when it started on the clock, the expression it reveals at rest and the name of
+     * the Saved Roll it was rolled from, if any (#56).
+     */
+    private record Playing(RollExpression expression, Optional<String> savedRollName, ChainPlayback chain,
+            double start) {}
 
     private final PlaybackClock clock;
     private final PhysicsJobs physics;
@@ -161,6 +165,18 @@ final class RollController {
      * @param input the Roll Expression as typed
      */
     void roll(String input) {
+        roll(input, Optional.empty());
+    }
+
+    /**
+     * Rolls a Roll Expression as {@link #roll(String)} does, recording the name of the Saved Roll it came from in
+     * the {@link RollStatus.Rested} it reveals (spec §3.2 "Saved tab": the Roll is recorded with that name).
+     *
+     * @param input the Roll Expression as written
+     * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
+     */
+    void roll(String input, Optional<String> savedRollName) {
+        Objects.requireNonNull(savedRollName, "savedRollName");
         if (underWay) {
             // A Roll asked for during another is queued in front of the controller (RollQueue, #50), so one that
             // still reaches it here is ignored.
@@ -189,11 +205,12 @@ final class RollController {
             // A worker that has been closed rejects the job outright rather than through the future.
             planned = CompletableFuture.failedFuture(e);
         }
-        planned.whenCompleteAsync((plan, error) -> arrived(expression, plan, error), fxThread);
+        planned.whenCompleteAsync((plan, error) -> arrived(expression, savedRollName, plan, error), fxThread);
     }
 
     /** The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was. */
-    private void arrived(RollExpression expression, RollPlan plan, Throwable error) {
+    private void arrived(RollExpression expression, Optional<String> savedRollName, RollPlan plan,
+            Throwable error) {
         if (error != null) {
             fail(RollStatus.Failed.broken(expression, describe(error)), error);
             return;
@@ -203,7 +220,7 @@ final class RollController {
                 ChainPlayback chain = new ChainPlayback(planned);
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
-                playing = new Playing(expression, chain, clock.time());
+                playing = new Playing(expression, savedRollName, chain, clock.time());
             }
             case RollPlan.Failed failed -> fail(RollStatus.Failed.of(expression, failed.reason()), null);
             // The expression parsed here already, so the planner never sees an invalid one.
@@ -231,10 +248,10 @@ final class RollController {
         if (elapsed >= now.chain().restTime()) {
             playing = null;
             underWay = false;
-            // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). Rolls from a Saved Roll get
-            // its name with #56.
+            // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
+            // carries its name (#56), which the result strip shows and the Roll History records.
             setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
-                    now.chain().plan().throwChain().size(), Optional.empty()));
+                    now.chain().plan().throwChain().size(), now.savedRollName()));
         }
     }
 
