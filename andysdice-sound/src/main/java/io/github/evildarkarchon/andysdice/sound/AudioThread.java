@@ -16,6 +16,9 @@ import java.util.function.LongSupplier;
  * <p>If the sink fails, the thread logs it, drops the sound in flight ({@link StreamingMixer#stop}) and ends;
  * it never throws (ADR-0012 "Failure means silence"). Whoever started it may start another, on a newly opened
  * sink, at the next Throw. The thread closes its sink when it ends.
+ *
+ * <p>The app plays through {@link SoundOutput}, which runs the same block step ({@link #writeNext}) on its own
+ * thread of this name, opening a sink for each Throw and closing it after the last impact's tail.
  */
 public final class AudioThread implements AutoCloseable {
 
@@ -77,10 +80,7 @@ public final class AudioThread implements AutoCloseable {
         short[] block = new short[MixFormat.BLOCK_SAMPLES];
         try {
             while (running) {
-                long queued = sink.queuedFrames() * 1_000_000_000L / MixFormat.SAMPLE_RATE;
-                ClockFollower.Timing heard = follower.at(nanoTime.getAsLong() + queued - delayNanos);
-                mixer.render(heard.time(), heard.speed(), block);
-                sink.write(block);
+                writeNext(mixer, follower, sink, nanoTime, delayNanos, block);
             }
         } catch (SinkException e) {
             failed = true;
@@ -90,6 +90,22 @@ public final class AudioThread implements AutoCloseable {
             running = false;
             sink.close();
         }
+    }
+
+    /**
+     * Renders the next block for the moment it will be heard (now, plus what the sink has queued, less the A/V
+     * offset) and writes it, waiting while the sink's queue is full. Audio thread only; {@link SoundOutput}'s
+     * loop shares it.
+     *
+     * @param block a scratch block, overwritten
+     * @throws SinkException if the sink stopped taking sound
+     */
+    static void writeNext(StreamingMixer mixer, ClockFollower follower, AudioSink sink, LongSupplier nanoTime,
+            long delayNanos, short[] block) throws SinkException {
+        long queued = sink.queuedFrames() * 1_000_000_000L / MixFormat.SAMPLE_RATE;
+        ClockFollower.Timing heard = follower.at(nanoTime.getAsLong() + queued - delayNanos);
+        mixer.render(heard.time(), heard.speed(), block);
+        sink.write(block);
     }
 
     /**

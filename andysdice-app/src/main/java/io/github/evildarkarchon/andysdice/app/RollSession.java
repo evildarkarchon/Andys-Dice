@@ -6,6 +6,7 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
@@ -34,6 +35,19 @@ final class RollSession {
     private Consumer<RollStatus> onStatusChanged = status -> {};
     /** The app's own pieces that follow the Roll's status (the Roll History, #55), told after the strip. */
     private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
+    private ChainShown onChainShown = (chain, start) -> {};
+
+    /** Told each time a Roll's chain of Throws starts to play on the Tray. */
+    @FunctionalInterface
+    interface ChainShown {
+        /**
+         * A chain has been put on the Tray and plays from now.
+         *
+         * @param chain the chain of Throws
+         * @param start the playback clock's time at its first Release
+         */
+        void shown(ChainPlayback chain, double start);
+    }
 
     /**
      * Wires a Roll UI and its controller.
@@ -76,6 +90,8 @@ final class RollSession {
                     public void show(ChainPlayback chain) {
                         tray.show(chain);
                         pulses.start();
+                        // The controller starts the chain at the clock's time now (#59: its sound is placed there).
+                        onChainShown.shown(chain, clock.time());
                     }
 
                     @Override
@@ -176,6 +192,17 @@ final class RollSession {
     }
 
     /**
+     * Rolls a Saved Roll's expression as {@link #roll(String)} does, recording the Roll with the Saved Roll's name
+     * (spec §3.2 "Saved tab", #56): the result strip shows it and the Roll History keeps it.
+     *
+     * @param expression the Roll Expression as written; it already parses
+     * @param savedRollName the Saved Roll's name
+     */
+    void roll(String expression, String savedRollName) {
+        queue.roll(expression, Optional.of(savedRollName));
+    }
+
+    /**
      * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
      * through the Tray seam and becomes the Tray the next Roll is thrown into.
      *
@@ -199,6 +226,16 @@ final class RollSession {
      */
     void setOnStatusChanged(Consumer<RollStatus> listener) {
         onStatusChanged = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
+     * (#59, {@link Clatter}).
+     *
+     * @param listener the listener; it replaces any earlier one
+     */
+    void setOnChainShown(ChainShown listener) {
+        onChainShown = Objects.requireNonNull(listener, "listener");
     }
 
     /**

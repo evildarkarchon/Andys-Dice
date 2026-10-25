@@ -235,8 +235,9 @@ class HistoryTabTest extends HeadlessUiTest {
         rightClick(older);
 
         assertThat(fromFx(() -> history.menu().isShowing())).isTrue();
+        // The Saved tab (#56) is installed with the app, so its Save as a Saved Roll… is on the menu too.
         assertThat(fromFx(() -> history.menu().getItems())).extracting(MenuItem::getText)
-                .containsExactly("Roll again", "Copy into the box");
+                .containsExactly("Roll again", "Copy into the box", "Save as a Saved Roll…");
         assertThat(fromFx(() -> history.list().getSelectionModel().getSelectedItem().expression()))
                 .isEqualTo("1d4");
 
@@ -255,6 +256,12 @@ class HistoryTabTest extends HeadlessUiTest {
     @Test
     void saveAsASavedRollJoinsTheMenuOnceSomethingTakesIt() throws Exception {
         load(line("2026-10-25T09:00:00Z", "1d4+1", "", "1"));
+        // The app's Saved tab has taken it already (#56); without a handler the menu offers only the first two.
+        onFx(() -> history.setOnSaveAsSavedRoll(null));
+        rightClick(cells().getFirst());
+        assertThat(fromFx(() -> history.menu().getItems())).extracting(MenuItem::getText)
+                .containsExactly("Roll again", "Copy into the box");
+        onFx(() -> history.menu().hide());
         List<PastRoll> saved = new ArrayList<>();
         onFx(() -> history.setOnSaveAsSavedRoll(saved::add));
 

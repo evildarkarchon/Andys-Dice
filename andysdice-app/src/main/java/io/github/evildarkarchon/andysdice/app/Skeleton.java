@@ -12,6 +12,7 @@ import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
+import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -64,6 +65,8 @@ final class Skeleton implements AutoCloseable {
     // Read by the slow-GPU watch when it judges a Throw; set on the JavaFX thread.
     private volatile QualityPreset quality = QualityPreset.DEFAULT;
     private ChainPlayback showing;
+    // Null until attachSound: then told each camera the Tray is drawn from, for panning (#59).
+    private SoundOutput sound;
 
     /** The Throw of a chain in motion at a frame, as the slow-GPU watch tells Throws apart (by chain identity). */
     private record ThrowInMotion(ChainPlayback chain, int throwIndex) {}
@@ -232,7 +235,7 @@ final class Skeleton implements AutoCloseable {
     /**
      * Returns the app's generators.
      *
-     * @return the generators the skeleton was started with; sound variation waits for #59's mixer
+     * @return the generators the skeleton was started with; sound variation is the sound output's (#59)
      */
     Generators generators() {
         return generators;
@@ -361,13 +364,37 @@ final class Skeleton implements AutoCloseable {
         scene.setDice(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()));
         // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
         scene.setCamera(camera.camera());
+        panSound();
         renderer.requestFrame();
     }
 
     /** Draws the Tray again from where the camera is now, at the next frame. */
     private void showCamera() {
         scene.setCamera(camera.camera());
+        panSound();
         renderer.requestFrame();
+    }
+
+    /**
+     * Makes the Rolls heard (#59): every Throw's contacts go to the sound output as the chain starts to play, in the
+     * Tray's sound, panned by where each appears from the camera the Tray is drawn from.
+     *
+     * @param output the app's sound output
+     */
+    void attachSound(SoundOutput output) {
+        sound = Objects.requireNonNull(output, "output");
+        // The Tray each Roll is thrown into, as the Look tab (#57) has chosen it by then.
+        Clatter.attach(session, output, () -> session.controller().tray());
+        panSound();
+    }
+
+    /** Tells the sound output how the camera the Tray is drawn from now maps points across the screen. */
+    private void panSound() {
+        if (sound != null) {
+            double aspect = view.getWidth() > 0 && view.getHeight() > 0 ? view.getWidth() / view.getHeight()
+                    : MainWindow.DEFAULT_WIDTH / MainWindow.DEFAULT_HEIGHT;
+            sound.setProjection(CameraPanning.of(camera.camera(), aspect));
+        }
     }
 
     /** Fits the camera's framings to the view's shape; a view not laid out yet keeps the last shape. */
