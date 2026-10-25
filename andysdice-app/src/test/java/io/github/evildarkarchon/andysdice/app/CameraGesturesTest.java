@@ -33,12 +33,12 @@ class CameraGesturesTest {
 
     @BeforeAll
     static void startFx() {
-        HeadlessFx.start();
+        HeadlessUiTest.startToolkit();
     }
 
     @BeforeEach
     void setUp() throws Exception {
-        HeadlessFx.run(() -> {
+        HeadlessUiTest.onFx(() -> {
             tray = new Pane();
             camera = new TrayCamera(new PlaybackClock(), FOOTPRINT, () -> false);
             resting = true;
@@ -58,11 +58,11 @@ class CameraGesturesTest {
     }
 
     private void fire(Event event) throws Exception {
-        HeadlessFx.run(() -> Event.fireEvent(tray, event));
+        HeadlessUiTest.onFx(() -> Event.fireEvent(tray, event));
     }
 
     private CameraPose pose() throws Exception {
-        return HeadlessFx.call(camera::pose);
+        return HeadlessUiTest.fromFx(camera::pose);
     }
 
     @Test
@@ -98,7 +98,7 @@ class CameraGesturesTest {
         fire(mouse(MouseEvent.MOUSE_DRAGGED, 10, 0, 1));
         fire(wheel(40));
 
-        assertThat(HeadlessFx.call(camera::adjusted)).isTrue();
+        assertThat(HeadlessUiTest.fromFx(camera::adjusted)).isTrue();
     }
 
     @Test
@@ -109,7 +109,7 @@ class CameraGesturesTest {
 
         fire(mouse(MouseEvent.MOUSE_CLICKED, 30, 0, 2));
 
-        assertThat(HeadlessFx.call(camera::adjusted)).isFalse();
+        assertThat(HeadlessUiTest.fromFx(camera::adjusted)).isFalse();
         assertThat(redraws).isEqualTo(3);
     }
 
@@ -121,6 +121,6 @@ class CameraGesturesTest {
 
         fire(mouse(MouseEvent.MOUSE_CLICKED, 30, 0, 2));
 
-        assertThat(HeadlessFx.call(camera::adjusted)).isTrue();
+        assertThat(HeadlessUiTest.fromFx(camera::adjusted)).isTrue();
     }
 }

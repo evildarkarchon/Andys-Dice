@@ -9,13 +9,13 @@ import java.time.Instant;
 import java.util.Objects;
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.scene.Scene;
 import javafx.stage.Stage;
 
 /**
- * Andy's Dice: the JavaFX application. In the walking skeleton (ticket #34) it shows the Roll Expression box,
- * the Tray and the result strip; typing a Roll Expression and pressing Enter Throws its Dice with real Jolt and
- * plays the whole chain of Throws back on the playback clock, which JavaFX's pulse advances at 60 Hz.
+ * Andy's Dice: the JavaFX application. Its window is Layout C ({@link RollUi}): the sidebar, the toolbar with the
+ * Roll Expression box, the Tray and the result strip; typing a Roll Expression and pressing Enter (or Roll)
+ * Throws its Dice with real Jolt and plays the whole chain of Throws back on the playback clock, which JavaFX's
+ * pulse advances at 60 Hz.
  *
  * <p>{@link Main} launches it. Without Jolt's native or an OpenGL 3.3 core context it logs why, naming the
  * requirement and the detected renderer and driver (ADR-0002's fail-fast), and the process exits with
@@ -71,14 +71,10 @@ public final class AndysDice extends Application {
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
 
-        stage.setTitle("Andy's Dice");
-        stage.setScene(new Scene(skeleton.pane(), 1280, 800));
-        stage.setMinWidth(960);
-        stage.setMinHeight(600);
-        stage.show();
+        // Layout C, titled and sized as spec §3.2's first run: shown, with focus in the box.
+        MainWindow.open(stage, skeleton.pane());
         LOG.log(Level.INFO, "Window shown " + Duration.between(launched, Instant.now()).toMillis()
                 + " ms after launch");
-        skeleton.pane().expressionBox().requestFocus();
 
         if (smoke) {
             SmokeTest.run(skeleton, this::quit);

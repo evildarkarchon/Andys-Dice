@@ -12,6 +12,8 @@ import java.util.random.RandomGenerator;
 final class ScriptedRandom implements RandomGenerator {
 
     private final Deque<Integer> values = new ArrayDeque<>();
+    /** Draws once the script runs out, or {@code null} to refuse them. */
+    private RandomGenerator fallback;
 
     /**
      * Scripts the values to return.
@@ -39,13 +41,41 @@ final class ScriptedRandom implements RandomGenerator {
     }
 
     /**
-     * Returns the next scripted value.
+     * Scripts more draws, after those already scripted.
      *
-     * @throws IllegalStateException if the script ran out or the value is outside {@code [origin, bound)}
+     * @param more the draws, in order
+     * @return this source
+     */
+    ScriptedRandom then(int... more) {
+        for (int value : more) {
+            values.add(value);
+        }
+        return this;
+    }
+
+    /**
+     * Sets where draws come from once the script runs out, so a test need only script the Rolls it checks.
+     *
+     * @param generator the fallback, or {@code null} to refuse draws past the script (the default)
+     * @return this source
+     */
+    ScriptedRandom orElse(RandomGenerator generator) {
+        fallback = generator;
+        return this;
+    }
+
+    /**
+     * Returns the next scripted value, or the fallback's draw once the script has run out.
+     *
+     * @throws IllegalStateException if the script ran out with no fallback, or the value is outside
+     *     {@code [origin, bound)}
      */
     @Override
     public int nextInt(int origin, int bound) {
         Integer value = values.poll();
+        if (value == null && fallback != null) {
+            return fallback.nextInt(origin, bound);
+        }
         if (value == null) {
             throw new IllegalStateException("the scripted Face Values ran out");
         }

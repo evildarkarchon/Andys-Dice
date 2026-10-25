@@ -15,17 +15,46 @@ import org.junit.jupiter.api.Test;
 class DiceSetCatalogueTest {
 
     @Test
-    void theOpaqueBuiltInsShipInAppendixBOrder() {
+    void allFourteenBuiltInsShipInAppendixBOrder() {
         List<DiceSet> builtIn = DiceSetCatalogue.builtIn().diceSets();
 
-        // Spec Appendix B, rows 1-10; the four translucent ones (11-14) come with ticket #43.
+        // Spec Appendix B, rows 1-14: ten opaque looks, then the four translucent ones (ticket #43).
         assertThat(builtIn).extracting(DiceSet::identity).containsExactly("01-onyx", "02-ivory", "03-crimson",
                 "04-vortex-blue", "05-jade-marble", "06-speckled-stone", "07-pearl-violet", "08-steel", "09-gold",
-                "10-gunmetal");
+                "10-gunmetal", "11-smoke", "12-ruby", "13-emerald", "14-nebula");
         assertThat(builtIn).extracting(DiceSet::name).containsExactly("Onyx / white", "Ivory / black",
                 "Crimson / gold", "Vortex blue / white", "Jade marble / gold", "Speckled stone / black",
-                "Pearl violet / silver", "Steel / black", "Polished gold / black", "Gunmetal / gold");
-        assertThat(builtIn).noneMatch(DiceSet::translucent);
+                "Pearl violet / silver", "Steel / black", "Polished gold / black", "Gunmetal / gold",
+                "Smoke / white", "Ruby / gold", "Emerald / white", "Nebula / white");
+        assertThat(builtIn.subList(0, 10)).noneMatch(DiceSet::translucent);
+        assertThat(builtIn.subList(10, 14)).allMatch(DiceSet::translucent);
+    }
+
+    @Test
+    void theTranslucentBuiltInsAreThePrototypesFilesVerbatim() throws Exception {
+        // Known values from 2f808fe:prototypes/materials/dicesets/11-14.
+        DiceSetCatalogue builtIn = DiceSetCatalogue.builtIn();
+        assertThat(builtIn.find("12-ruby").orElseThrow().transmission())
+                .isEqualTo(new DiceSet.Transmission(1, new SrgbColour(0xd0, 0x14, 0x2c), 1.58, 0));
+        assertThat(builtIn.find("13-emerald").orElseThrow().transmission().cloudiness()).isEqualTo(0.12);
+        DiceSet nebula = builtIn.find("14-nebula").orElseThrow();
+        assertThat(nebula.hasSwirl()).isTrue();
+        assertThat(nebula.flakes()).isEqualTo(new DiceSet.Flakes(new SrgbColour(0xe8, 0xec, 0xff), 0.18, 0.3, 1));
+
+        try (InputStream in = DiceSetCatalogue.class.getResourceAsStream("11-smoke.diceset")) {
+            assertThat(in).as("the built-in file is a resource of core").isNotNull();
+            assertThat(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList()).containsExactly(
+                    "# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.",
+                    "# Translucent: transmission.color is what white light looks like after 10 mm inside the body.",
+                    "format = 1",
+                    "name = Smoke / white",
+                    "base = #3a3a3c",
+                    "roughness = 0.06",
+                    "transmission = 1",
+                    "transmission.color = #9c9ca0",
+                    "ior = 1.54",
+                    "ink = #f4f4f0");
+        }
     }
 
     @Test

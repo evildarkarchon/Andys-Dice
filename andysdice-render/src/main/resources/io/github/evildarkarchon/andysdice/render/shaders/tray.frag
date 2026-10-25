@@ -1,7 +1,7 @@
 #version 330 core
 // The Tray's surfaces (ticket #44, ADR-0010): a procedural, tiling texture per surface kind (felt, leather, walnut),
 // tinted by the Tray file's colour, with a bump normal from its height channel and felt's sheen at grazing angles.
-// The tray prototype's lit.frag, lit like the Dice (the Studio key and fill, GGX, the analytic room) and tone-mapped
+// The tray prototype's lit.frag, lit like the Dice (the Light Rig's key and fill, GGX, the analytic room) and tone-mapped
 // with the same curve, which #43's translucency inverts for whatever lies under the Dice. The chosen Light Rig (#45)
 // lights it: its key and fill (light.glsl), its room (env.glsl) and the key's PCSS shadow (shadow.glsl), and each Die
 // darkens the floor beneath it with a cheap contact occlusion (ADR-0010).

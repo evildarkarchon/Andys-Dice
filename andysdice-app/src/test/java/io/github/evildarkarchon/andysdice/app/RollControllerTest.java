@@ -8,34 +8,25 @@ import io.github.evildarkarchon.andysdice.core.facevalue.FaceValues;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.UpFace;
 import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
-import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowKind;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
-import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
 import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
 import io.github.evildarkarchon.andysdice.core.simulation.Release;
-import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.Pickup;
 import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
-import java.util.Set;
 import java.util.SplittableRandom;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
-import org.joml.Quaterniond;
 import org.joml.Vector3d;
-import org.joml.Vector3dc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -276,9 +267,10 @@ class RollControllerTest {
         // Between the first Throw at rest and the Reroll Throw's Release: the settle-in, the ease back out, and
         // only then the reroll pickup (spec §3.2: "the camera eases out, the Cocked Dice glow and lift").
         assertThat(chain.throwStart(1) - firstRest).isCloseTo(
-                TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS + ChainPlayback.HOLD_SECONDS, within(1e-9));
-        // Within that gap the first Throw's Dice lie where it left them; after the chain, where the last one did.
-        List<DiceScene.Die> afterFirst = chain.diceAt(chain.throwStart(1) - 0.01);
+                TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS + Pickup.SECONDS, within(1e-9));
+        // Within that gap, until the pickup, the first Throw's Dice lie where it left them; after the chain, where
+        // the last one did.
+        List<DiceScene.Die> afterFirst = chain.diceAt(chain.throwStart(1) - Pickup.SECONDS - 0.01);
         List<DiceScene.Die> afterLast = chain.diceAt(chain.restTime() + 1);
         CameraScript script = chain.cameraScript();
         assertThat(script.throwStarts()).containsExactly(0.0, chain.throwStart(1));
@@ -289,6 +281,88 @@ class RollControllerTest {
                         TrayCamera.EASE_OUT_SECONDS),
                 new CameraScript.Cue(chain.restTime(), new CameraScript.Shot.Resting(afterLast),
                         TrayCamera.SETTLE_SECONDS));
+    }
+
+    @Test
+    void onceTheCameraHasEasedOutOnlyTheDiceGoingBackGlowAndLiftToTheirRelease() {
+        // 4d6rr1: the first roll shows a 1, so Die 0 alone goes back for the Reroll Throw.
+        RollController controller = controller(1, 4, 5, 6, 3);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+        double firstRest = chain.plan().throwChain().getFirst().recording().restTime();
+        // The pickup is the last part of the gap before the Reroll Throw, once the camera has eased out.
+        double pickupStart = chain.throwStart(1) - Pickup.SECONDS;
+        assertThat(pickupStart).isCloseTo(firstRest + TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS,
+                within(1e-9));
+        List<DiceScene.Die> lying = chain.diceAt(firstRest + FRAME);
+        DiceScene.Die release = chain.diceAt(chain.throwStart(1)).get(0);
+
+        // While the camera settles in and eases out, nothing moves or glows.
+        for (double t = firstRest + FRAME; t < pickupStart - 1e-9; t += FRAME) {
+            assertThat(chain.diceAt(t)).as("at %.3f s", t).isEqualTo(lying);
+        }
+        double brightest = 0;
+        double highest = Double.NEGATIVE_INFINITY;
+        for (double t = pickupStart; t < chain.throwStart(1); t += FRAME / 4) {
+            List<DiceScene.Die> now = chain.diceAt(t);
+            // The Frozen Dice lie where they are, unlit, all through the pickup.
+            assertThat(now.subList(1, 4)).as("at %.3f s", t).isEqualTo(lying.subList(1, 4));
+            DiceScene.Die going = now.get(0);
+            assertThat(going).isEqualTo(Pickup.at(lying.get(0), release, t - pickupStart, false));
+            brightest = Math.max(brightest, going.glow());
+            highest = Math.max(highest, going.position().y());
+        }
+        assertThat(brightest).as("it glows").isGreaterThan(0.9);
+        // Up out of the Tray on its way to the Release, above both where it lay and where it is let go.
+        assertThat(highest).isGreaterThan(Math.max(lying.get(0).position().y(), release.position().y()) + 10);
+        // And it is at its Release as the Reroll Throw starts, so nothing jumps.
+        assertThat(chain.diceAt(chain.throwStart(1) - 1e-6).get(0).position().distance(release.position()))
+                .isLessThan(1e-3);
+        assertThat(release.glow()).isZero();
+    }
+
+    @Test
+    void withReducedMotionThePickupGlowsSteadilyAndLiftsAtTwiceTheSpeedOnTheSameTimeline() {
+        RollController controller = controller(1, 4, 5, 6, 3);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+        double pickupStart = chain.throwStart(1) - Pickup.SECONDS;
+        DiceScene.Die lying = chain.diceAt(pickupStart - 0.01).get(0);
+        DiceScene.Die release = chain.diceAt(chain.throwStart(1)).get(0);
+
+        for (double t = pickupStart; t < chain.throwStart(1); t += FRAME / 4) {
+            List<DiceScene.Die> now = chain.diceAt(t, true);
+            assertThat(now.get(0)).isEqualTo(Pickup.at(lying, release, t - pickupStart, true));
+            assertThat(now.subList(1, 4)).isEqualTo(chain.diceAt(t, false).subList(1, 4));
+        }
+        // Reduced motion leaves every Throw where it was.
+        assertThat(chain.diceAt(chain.throwStart(1), true)).isEqualTo(chain.diceAt(chain.throwStart(1), false));
+    }
+
+    @Test
+    void aCockedRethrowPlaysTheSamePickupAsARerollThrow() {
+        // Every Attempt of the first Throw cocks Die 0, so a Cocked Rethrow throws it alone again.
+        simulator.then(24, Ending.COCKED);
+        RollController controller = controller(4, 2);
+        controller.roll("2d6");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+        assertThat(chain.plan().throwChain()).extracting(PlannedThrow::kind)
+                .containsExactly(ThrowKind.FIRST, ThrowKind.COCKED_RETHROW);
+        double firstRest = chain.plan().throwChain().getFirst().recording().restTime();
+        assertThat(chain.throwStart(1) - firstRest).isCloseTo(
+                TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS + Pickup.SECONDS, within(1e-9));
+
+        double pickupStart = chain.throwStart(1) - Pickup.SECONDS;
+        List<DiceScene.Die> lying = chain.diceAt(pickupStart - 0.01);
+        DiceScene.Die release = chain.diceAt(chain.throwStart(1)).get(0);
+        for (double t = pickupStart; t < chain.throwStart(1); t += FRAME / 4) {
+            List<DiceScene.Die> now = chain.diceAt(t);
+            assertThat(now.get(0)).isEqualTo(Pickup.at(lying.get(0), release, t - pickupStart, false));
+            assertThat(now.get(1)).isEqualTo(lying.get(1));
+        }
     }
 
     @Test
@@ -415,108 +489,6 @@ class RollControllerTest {
         controller.roll("1d6");
         assertThat(physics.held).isNull();
         assertThat(simulator.requests).hasSize(1);
-    }
-
-    /**
-     * A simulator that ends each Attempt as scripted (at rest once the script runs out) with a 50/120 s
-     * Recording of every thrown Die falling from its Release to lie flat on a face, at a position unique to the
-     * Attempt and the Die. Its Recordings never move Frozen Dice, as a real one's never do.
-     */
-    private static final class ScriptedSimulator implements Simulator {
-        private static final int SAMPLES = 51;
-        final Deque<Ending> script = new ArrayDeque<>();
-        final List<AttemptRequest> requests = new ArrayList<>();
-        private boolean failNext;
-
-        /** Scripts the next {@code times} Attempts to end in {@code ending}; a cocked one cocks request Die 0. */
-        void then(int times, Ending ending) {
-            for (int i = 0; i < times; i++) {
-                script.add(ending);
-            }
-        }
-
-        /** Makes the next Attempt throw, as a crashed engine would. */
-        void failNext() {
-            failNext = true;
-        }
-
-        @Override
-        public Attempt simulate(AttemptRequest request) {
-            if (failNext) {
-                failNext = false;
-                throw new IllegalStateException("the scripted simulator was told to fail");
-            }
-            int call = requests.size();
-            requests.add(request);
-            Ending ending = script.isEmpty() ? Ending.AT_REST : script.poll();
-            int dice = request.dice().size();
-            float[] poses = new float[SAMPLES * dice * 7];
-            for (int die = 0; die < dice; die++) {
-                DieKind kind = ((DieKindBody) request.dice().get(die)).kind();
-                Vector3 from = new Vector3(3 * die - 6, 8, -5);
-                // An escaped Attempt ends with its Dice over the far wall, outside the Tray and below its floor.
-                Vector3 to = ending == Ending.ESCAPED
-                        ? new Vector3(3 * die, -2, 25)
-                        : new Vector3(call, (float) kind.inradius() / 10, die);
-                Quaterniond end = flat(kind, (call * 7 + die * 3) % kind.faceCount(), call + die);
-                for (int s = 0; s < SAMPLES; s++) {
-                    double u = s / (double) (SAMPLES - 1);
-                    Quaterniond q = new Quaterniond().nlerp(end, u);
-                    int at = (s * dice + die) * 7;
-                    poses[at] = (float) (from.x() + (to.x() - from.x()) * u);
-                    poses[at + 1] = (float) (from.y() + (to.y() - from.y()) * u);
-                    poses[at + 2] = (float) (from.z() + (to.z() - from.z()) * u);
-                    poses[at + 3] = (float) q.x;
-                    poses[at + 4] = (float) q.y;
-                    poses[at + 5] = (float) q.z;
-                    poses[at + 6] = (float) q.w;
-                }
-            }
-            // At rest on the last sample. 50/120 s doesn't survive the float round trip exactly, as a real
-            // Recording's length often doesn't, so reading the pose "at the duration" lands just short of it.
-            Recording recording = new Recording(dice, poses, (SAMPLES - 1) / (float) Recording.SAMPLE_RATE_HZ,
-                    List.of());
-            return new Attempt(ending, recording, ending == Ending.COCKED ? Set.of(0) : Set.of());
-        }
-
-        /** Lying flat on {@code face}, turned about the vertical; a d4 lies on the face it reads. */
-        private static Quaterniond flat(DieKind kind, int face, double yaw) {
-            Vector3dc normal = kind.solid().faces().get(face).normal();
-            Vector3d target = new Vector3d(0, kind == DieKind.D4 ? -1 : 1, 0);
-            Quaterniond q = new Quaterniond().rotationY(yaw).mul(new Quaterniond().rotationTo(normal, target));
-            // The short way from the Release's identity, so the fall turns the least.
-            return q.w < 0 ? new Quaterniond(-q.x, -q.y, -q.z, -q.w) : q;
-        }
-    }
-
-    /** A physics worker that holds each job until the test lets it run, as if pre-simulating took a while. */
-    private static final class HeldPhysics implements RollController.PhysicsJobs {
-        private final Simulator simulator;
-        Function<Simulator, RollPlan> held;
-        private CompletableFuture<RollPlan> result;
-
-        HeldPhysics(Simulator simulator) {
-            this.simulator = simulator;
-        }
-
-        @Override
-        public CompletableFuture<RollPlan> submit(Function<Simulator, RollPlan> job) {
-            held = job;
-            result = new CompletableFuture<>();
-            return result;
-        }
-
-        /** Runs the held job, as the worker would, and completes its future. */
-        void finish() {
-            Function<Simulator, RollPlan> job = held;
-            CompletableFuture<RollPlan> future = result;
-            held = null;
-            try {
-                future.complete(job.apply(simulator));
-            } catch (RuntimeException e) {
-                future.completeExceptionally(e);
-            }
-        }
     }
 
     /** A Tray that remembers what it was asked to show. */

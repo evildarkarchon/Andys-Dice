@@ -11,9 +11,10 @@ import javafx.stage.Window;
  * Where the rendered Tray appears in the JavaFX scene: a region showing the render thread's frames through
  * the public-API {@code PixelBuffer} bridge (ADR-0002), stretched to fill it.
  *
- * <p>It reports its size in physical pixels (layout size times the window's output scale, so Windows display
- * scaling is honoured) to a {@link SizeListener}, normally {@link RenderThread#resize}. Until a frame of the
- * new size arrives the last frame is shown stretched, so a resize never waits on the render thread.
+ * <p>It reports its size in physical pixels (layout size times the window's render scale, which follows its
+ * output scale, so Windows display scaling is honoured) to a {@link SizeListener}, normally
+ * {@link RenderThread#resize}. Until a frame of the new size arrives the last frame is shown stretched, so a
+ * resize never waits on the render thread.
  *
  * <p>Wiring:
  * <pre>{@code
@@ -57,11 +58,13 @@ public final class FrameView extends Region {
         transport = new PixelBufferTransport(presenter);
         wired[0] = transport;
 
-        // Physical size depends on the window's output scale too, which changes when the window moves to a
-        // monitor with another scale; relayout then, so the new size gets reported.
-        ObservableValue<Number> scale = sceneProperty().flatMap(Scene::windowProperty)
-                .flatMap(Window::outputScaleXProperty);
-        scale.addListener((obs, was, now) -> requestLayout());
+        // Physical size depends on the window's scale too, which changes when the window moves to a monitor with
+        // another scale; relayout then, so the new size gets reported. The render scale is the one JavaFX draws the
+        // scene at: it follows the output scale on such a move (Window.updateOutputScales sets it first), and
+        // unlike the read-only output scale a headless UI test can set it.
+        ObservableValue<Window> window = sceneProperty().flatMap(Scene::windowProperty);
+        window.flatMap(Window::renderScaleXProperty).addListener((obs, was, now) -> requestLayout());
+        window.flatMap(Window::renderScaleYProperty).addListener((obs, was, now) -> requestLayout());
     }
 
     /**
@@ -113,8 +116,8 @@ public final class FrameView extends Region {
         imageView.setFitHeight(h);
 
         Window window = getScene() == null ? null : getScene().getWindow();
-        double scaleX = window == null ? 1 : window.getOutputScaleX();
-        double scaleY = window == null ? 1 : window.getOutputScaleY();
+        double scaleX = window == null ? 1 : window.getRenderScaleX();
+        double scaleY = window == null ? 1 : window.getRenderScaleY();
         int physicalWidth = Math.max(1, (int) Math.round(w * scaleX));
         int physicalHeight = Math.max(1, (int) Math.round(h * scaleY));
         if (w > 0 && h > 0 && (physicalWidth != targetWidth || physicalHeight != targetHeight)) {
