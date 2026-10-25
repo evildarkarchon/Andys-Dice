@@ -58,6 +58,8 @@ final class Palette {
             text("selected text in the box", ON_ACCENT, ACCENT),
             text("the bell's count while unread", ON_ACCENT, NOTICE),
             text("the parse-error popup", ON_ERROR, ERROR),
+            text("the \"next:\" chip's text (#50)", TEXT, RAISED),
+            graphic("the \"next:\" chip's outline on the toolbar (#50)", ACCENT, SURFACE),
             graphic("icons on the surface", ICON, SURFACE),
             graphic("icons on a button", ICON, RAISED),
             graphic("the focus ring on the surface", FOCUS, SURFACE),
