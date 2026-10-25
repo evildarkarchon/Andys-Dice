@@ -106,6 +106,22 @@ final class Stylesheet {
                 ".tray-area { -fx-background-color: " + background + "; }",
                 ".result-strip { -fx-background-color: " + surface + "; -fx-padding: 12 16 12 16; }",
                 ".result-message { -fx-font-size: 15px; }",
+                ".result-strip:focused { -fx-background-color: " + focus + ", " + surface
+                        + "; -fx-background-insets: 0, 2; }",
+                // #49's Breakdown: the large total, a block per term, the facts on the right. Faded chips (earlier
+                // Face Values, an unkept Die) are muted text on the surface, never a lowered opacity, so the
+                // contrast test's pairs are the colours drawn.
+                ".result-total { -fx-font-size: 40px; -fx-font-weight: bold; }",
+                "." + ROOT_CLASS + " .term-heading, ." + ROOT_CLASS + " .term-subtotal, ." + ROOT_CLASS
+                        + " .result-details { -fx-text-fill: " + muted + "; -fx-font-size: 13px; }",
+                "." + ROOT_CLASS + " .term-modifier { -fx-text-fill: " + text + "; -fx-font-size: 22px; }",
+                ".result-expression { -fx-font-size: 15px; }",
+                "." + ROOT_CLASS + " .die-chip { -fx-background-color: " + outline + ", " + raised
+                        + "; -fx-background-insets: 0, 1; -fx-background-radius: 5, 4; -fx-text-fill: " + text
+                        + "; -fx-font-size: 14px; -fx-font-weight: bold; -fx-padding: 0 6 0 6; }",
+                "." + ROOT_CLASS + " .die-chip.faded { -fx-background-color: " + outline + ", " + surface
+                        + "; -fx-text-fill: " + muted + "; -fx-font-weight: normal; }",
+                "." + ROOT_CLASS + " .reroll-count { -fx-text-fill: " + text + "; -fx-font-size: 11px; }",
 
                 // The Roll Expression box. Modena hides a focused field's prompt; the first-run box has focus
                 // and must still show "e.g. 1d20+5", so the prompt keeps its colour when focused.

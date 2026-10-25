@@ -4,6 +4,7 @@ import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollResult;
 import io.github.evildarkarchon.andysdice.core.planner.FailureReason;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Where the current Roll stands, as the result strip shows it (spec §3.2): nothing rolled yet, rolling, at rest
@@ -45,13 +46,25 @@ sealed interface RollStatus {
      *
      * @param expression what was rolled
      * @param result its Roll Result
+     * @param throwCount how many Throws the Roll's chain played, every one counted: the first Throw, each Reroll
+     *     Throw and each Cocked Rethrow (spec §3.2); at least 1
+     * @param savedRollName the Saved Roll's name if the Roll came from one (#56), else empty
      */
-    record Rested(RollExpression expression, RollResult result) implements RollStatus {
+    record Rested(RollExpression expression, RollResult result, int throwCount, Optional<String> savedRollName)
+            implements RollStatus {
 
-        /** Checks both parts are present. */
+        /**
+         * Checks the parts.
+         *
+         * @throws IllegalArgumentException if {@code throwCount} is less than 1
+         */
         public Rested {
             Objects.requireNonNull(expression, "expression");
             Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(savedRollName, "savedRollName");
+            if (throwCount < 1) {
+                throw new IllegalArgumentException("a Roll at rest played at least 1 Throw: " + throwCount);
+            }
         }
 
         @Override
