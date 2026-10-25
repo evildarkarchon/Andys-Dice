@@ -371,7 +371,15 @@ final class RollUi extends BorderPane {
         }
     }
 
-    private static boolean ownedBy(Window window, Window owner) {
+    /**
+     * Tells whether a window is owned by another, directly or through a chain of owners (a popup over a dialog over
+     * the main window, say).
+     *
+     * @param window a popup or a stage
+     * @param owner the possible owner
+     * @return {@code true} if {@code owner} is somewhere up {@code window}'s chain of owners
+     */
+    static boolean ownedBy(Window window, Window owner) {
         for (Window at = ownerOf(window); at != null; at = ownerOf(at)) {
             if (at == owner) {
                 return true;

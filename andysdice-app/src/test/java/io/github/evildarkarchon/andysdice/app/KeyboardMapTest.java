@@ -8,8 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javafx.scene.Node;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.input.KeyCode;
+import javafx.stage.Popup;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -263,6 +265,32 @@ class KeyboardMapTest extends HeadlessUiTest {
         esc();
         assertThat(fromFx(() -> history.menu().isShowing())).isFalse();
         assertThat(queued()).contains("1d8");
+    }
+
+    @Test
+    void escThatClosesAPopupLettingItThroughDoesNothingElse() throws Exception {
+        // A ContextMenu (the History menu) doesn't consume the Esc that hides it when nothing in it has focus yet, so
+        // the key goes on to the window. A popup like that, with nothing focusable in it, does so every time.
+        faces.then(3);
+        roll("1d6");
+        playToRest();
+        rollWithARollQueued();
+        for (Node focus : List.of(ui().expressionBox(), history.list())) {
+            Popup leaky = fromFx(() -> {
+                Popup popup = new Popup();
+                popup.getContent().add(new Label("A popup"));
+                popup.setHideOnEscape(true);
+                popup.setConsumeAutoHidingEvents(false);
+                focus.requestFocus();
+                popup.show(stage);
+                return popup;
+            });
+
+            esc();
+
+            assertThat(fromFx(leaky::isShowing)).isFalse();
+            assertThat(queued()).as("after Esc with focus on %s", focus).contains("1d8");
+        }
     }
 
     @Test

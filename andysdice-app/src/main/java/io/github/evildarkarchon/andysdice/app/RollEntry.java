@@ -5,11 +5,17 @@ import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
+import javafx.application.Platform;
+import javafx.collections.ListChangeListener;
+import javafx.collections.WeakListChangeListener;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.stage.PopupWindow;
+import javafx.stage.Window;
 
 /**
  * Entry in the Roll Expression box (spec §3.2 "Entry"): what Enter and the Roll button do with the box's text, the
@@ -36,6 +42,10 @@ final class RollEntry {
     private final Label nextChip = new Label();
     /** Esc's inline-edit step; none until the Saved tab sets it. */
     private BooleanSupplier inlineEdit = () -> false;
+    /** Set while the key event under way hid one of this window's popups; see the constructor. */
+    private boolean popupJustHidden;
+    /** Kept here, strongly: the toolkit's window list holds it only weakly. */
+    private final ListChangeListener<Window> windowsListener;
 
     /**
      * Wires entry into a Roll UI: Enter and the Roll button, the error popup, the chip at the end of the toolbar
@@ -58,10 +68,29 @@ final class RollEntry {
         queue.setOnQueuedChanged(this::showQueued);
 
         ui.setOnRoll(this::enter);
+        // A popup that doesn't consume the events that auto-hide it (a ContextMenu, the History menu, while nothing
+        // in it has focus yet) hides on Esc and lets that same key event go on into this window, where it would
+        // cancel the Queued Roll too (#62). Esc's first step is the popup's alone, so a popup of this window hiding
+        // marks the key event under way as used up. The mark is cleared on the next turn: one key event is
+        // dispatched within a turn, and the clearing is queued ahead of any later key. The list is the toolkit's,
+        // so it holds the listener weakly and a closed window's entry is let go.
+        windowsListener = change -> {
+            while (change.next()) {
+                for (Window gone : change.getRemoved()) {
+                    Window own = ui.getScene() == null ? null : ui.getScene().getWindow();
+                    if (gone instanceof PopupWindow && !(gone instanceof Tooltip) && own != null
+                            && RollUi.ownedBy(gone, own)) {
+                        popupJustHidden = true;
+                        Platform.runLater(() -> popupJustHidden = false);
+                    }
+                }
+            }
+        };
+        Window.getWindows().addListener(new WeakListChangeListener<>(windowsListener));
         // Bubbling, on the root: a popup (which sees Esc first) or an inline edit nearer the focus consumes Esc
         // before it gets here, which is the order spec §3.2 "Keyboard" gives Esc.
         ui.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
-            if (event.getCode() == KeyCode.ESCAPE && escape()) {
+            if (event.getCode() == KeyCode.ESCAPE && (popupJustHidden || escape())) {
                 event.consume();
             }
         });
@@ -71,7 +100,7 @@ final class RollEntry {
         // Saved tab's inline edit has its own fields, so Esc typed there never targets the list.)
         ui.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ESCAPE && event.getTarget() instanceof ListView<?> list
-                    && list.getEditingIndex() < 0 && escape()) {
+                    && list.getEditingIndex() < 0 && (popupJustHidden || escape())) {
                 event.consume();
             }
         });
