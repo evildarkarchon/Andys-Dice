@@ -9,6 +9,8 @@ import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowKind;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.camera.Framing;
+import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -109,7 +111,19 @@ class WalkingSkeletonTest {
                         .isEqualTo(times.get(i) < rest ? "Rolling…" : "4d6rr1kh3 = 15");
             }
             assertThat(times.getLast()).isGreaterThanOrEqualTo(rest).isLessThan(rest + FRAME);
-            assertThat(pulses.running).isFalse();
+            // The clock runs on while the camera settles in on the Dice at rest (#46), then JavaFX may idle.
+            assertThat(pulses.running).isTrue();
+            double settled = HeadlessFx.call(() -> {
+                while (pulses.running && clock.time() < 30) {
+                    clock.advance(FRAME);
+                }
+                return clock.time();
+            });
+            assertThat(settled).isGreaterThanOrEqualTo(rest + TrayCamera.SETTLE_SECONDS)
+                    .isLessThan(rest + TrayCamera.SETTLE_SECONDS + 2 * FRAME);
+            assertThat(HeadlessFx.call(() -> skeleton.camera().camera())).isEqualTo(
+                    HeadlessFx.call(() -> Framing.of(Skeleton.TRAY.geometry()).resting(chain.diceAt(rest + 1),
+                            skeleton.view().getWidth() / skeleton.view().getHeight()).camera()));
 
             // While a Throw plays, every Die it doesn't throw stays exactly where it lay.
             for (int i = 1; i < times.size(); i++) {

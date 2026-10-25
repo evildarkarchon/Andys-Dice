@@ -3,7 +3,6 @@ package io.github.evildarkarchon.andysdice.physics;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
-import io.github.evildarkarchon.andysdice.core.simulation.ContactMaterial;
 import io.github.evildarkarchon.andysdice.core.simulation.DieBody;
 import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.DieStart;
@@ -15,6 +14,7 @@ import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayMaterials;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import java.util.List;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
@@ -23,16 +23,18 @@ import org.joml.Vector3dc;
 /** Shared pieces of the Jolt scenario tests: the Tray, its materials, and ways to place and run Dice. */
 final class Scenarios {
 
-    /** The Footprint (ADR-0010): 300 × 200 mm inside 30 mm walls. */
-    static final TrayGeometry BOX = TrayGeometry.rectangle(15, 10, 3);
+    /**
+     * The default Tray's shape (ADR-0010: the invariant tests on real Jolt run in the default Tray): the whole
+     * 300 × 200 mm Footprint inside 30 mm walls.
+     */
+    static final TrayGeometry BOX = BuiltInTrays.defaultTray().geometry();
 
     /**
-     * Green felt in walnut, from the tray prototype's numbers (Appendix C): Jolt's geometric mean of a 0.4 die
-     * against felt's 0.5 and the walls' 0.5, felt's 0.15 bounce and the walls' 0.5, and felt's spin damping;
-     * die-on-die at ADR-0013's 0.2.
+     * The default Tray's materials, green felt in walnut (Appendix C): Jolt's geometric mean of a 0.4 die against
+     * felt's 0.5 and the walls' 0.5, felt's 0.15 bounce and the walls' 0.5, and felt's spin damping; die-on-die at
+     * ADR-0013's 0.2.
      */
-    static final TrayMaterials FELT = TrayMaterials.of(new ContactMaterial((float) Math.sqrt(0.4 * 0.5), 0.15f),
-            new ContactMaterial((float) Math.sqrt(0.4 * 0.5), 0.5f), 0.6f);
+    static final TrayMaterials FELT = BuiltInTrays.defaultTray().materials();
 
     /** The flat-rest prototype's 20-Dice cap mix (physics notes: {@code Params.DICE[5]}). */
     static final List<DieBody> CAP = List.of(DieKind.D20, DieKind.D20, DieKind.D12, DieKind.D12, DieKind.D10,

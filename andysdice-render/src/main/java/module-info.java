@@ -17,4 +17,6 @@ module io.github.evildarkarchon.andysdice.render {
     requires java.desktop;
 
     exports io.github.evildarkarchon.andysdice.render;
+    // The settle-in camera's pure logic (#46): framing, easing, the player's orbit and zoom. No GL.
+    exports io.github.evildarkarchon.andysdice.render.camera;
 }

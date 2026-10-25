@@ -6,6 +6,8 @@ import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.planner.Soak;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowPlanner;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowStatistics;
+import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,8 +16,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.SplittableRandom;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -35,13 +39,14 @@ class JoltSoakTest {
     /** Each Tray's run is seeded on its own, so one Tray's numbers don't depend on which ran before it. */
     private static final long SEED = 39;
 
-    static Stream<SoakTrays.SoakTray> trays() {
-        return SoakTrays.BUILT_IN.stream();
+    /** Every built-in Tray, as its shipped {@code .tray} file gives physics its geometry and materials (#44). */
+    static Stream<Arguments> trays() {
+        return BuiltInTrays.all().stream().map(tray -> Arguments.of(Named.of(tray.name(), tray)));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("trays")
-    void twentyDiceThrowsIntoTheTrayMeetEveryGate(SoakTrays.SoakTray tray) throws IOException {
+    void twentyDiceThrowsIntoTheTrayMeetEveryGate(Tray tray) throws IOException {
         long start = System.nanoTime();
         ThrowStatistics stats = TestWorker.get().submit(simulator -> {
             ThrowPlanner planner = new ThrowPlanner(simulator, tray.geometry(), tray.materials());

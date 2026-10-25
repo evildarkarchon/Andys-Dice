@@ -1,0 +1,11 @@
+# Andy's Dice Tray. Colours are sRGB hex; the wall height is in mm (30 to 100).
+# Green felt in a walnut rectangle, square tops: the default Tray (spec Appendix C).
+format = 1
+name = Green felt
+outline = rectangle
+walls.profile = square
+walls.material = wood
+walls.color = #957355
+walls.height = 30
+floor.surface = felt
+floor.color = #305b40
