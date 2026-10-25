@@ -375,5 +375,48 @@
                 <andysdice.test.excludedSlow></andysdice.test.excludedSlow>
             </properties>
         </profile>
+        <!--
+          The release tag check (ADR-0004): a release build is given the pushed tag as -Dandysdice.release.tag=<tag>
+          and fails, before anything is compiled, unless the tag is exactly "v" plus this POM's version. The release
+          workflow (.github/workflows/release.yml) runs it first; locally the same check is
+              mvn validate -N -Dandysdice.release.tag=v1.2.3
+          The rule runs once, on this parent, which leads every reactor (inherited=false): the modules share its
+          version.
+        -->
+        <profile>
+            <id>release-tag</id>
+            <activation>
+                <property>
+                    <name>andysdice.release.tag</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-release-tag</id>
+                                <inherited>false</inherited>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <requireProperty>
+                                            <property>andysdice.release.tag</property>
+                                            <!-- \Q..\E: the version's dots are literal, not "any character". -->
+                                            <regex>\Qv${project.version}\E</regex>
+                                            <regexMessage>The tag "${andysdice.release.tag}" doesn't match the POM version: a release of ${project.version} must be tagged v${project.version}.</regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
