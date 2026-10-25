@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.render;
 
+import static org.lwjgl.opengl.GL11C.GL_NO_ERROR;
 import static org.lwjgl.opengl.GL11C.GL_RENDERER;
 import static org.lwjgl.opengl.GL11C.GL_VENDOR;
 import static org.lwjgl.opengl.GL11C.GL_VERSION;
@@ -7,17 +8,25 @@ import static org.lwjgl.opengl.GL11C.glGetInteger;
 import static org.lwjgl.opengl.GL11C.glGetString;
 import static org.lwjgl.opengl.GL32C.GL_CONTEXT_CORE_PROFILE_BIT;
 import static org.lwjgl.opengl.GL32C.GL_CONTEXT_PROFILE_MASK;
+import static org.lwjgl.opengl.KHRRobustness.GL_GUILTY_CONTEXT_RESET;
+import static org.lwjgl.opengl.KHRRobustness.GL_INNOCENT_CONTEXT_RESET;
+import static org.lwjgl.opengl.KHRRobustness.GL_LOSE_CONTEXT_ON_RESET;
+import static org.lwjgl.opengl.KHRRobustness.GL_RESET_NOTIFICATION_STRATEGY;
 import static org.lwjgl.opengl.WGLARBCreateContext.WGL_CONTEXT_MAJOR_VERSION_ARB;
 import static org.lwjgl.opengl.WGLARBCreateContext.WGL_CONTEXT_MINOR_VERSION_ARB;
 import static org.lwjgl.opengl.WGLARBCreateContext.wglCreateContextAttribsARB;
 import static org.lwjgl.opengl.WGLARBCreateContextProfile.WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
 import static org.lwjgl.opengl.WGLARBCreateContextProfile.WGL_CONTEXT_PROFILE_MASK_ARB;
+import static org.lwjgl.opengl.WGLARBCreateContextRobustness.WGL_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB;
+import static org.lwjgl.opengl.WGLARBCreateContextRobustness.WGL_LOSE_CONTEXT_ON_RESET_ARB;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 import java.nio.IntBuffer;
 import java.util.Objects;
+import org.lwjgl.opengl.ARBRobustness;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
+import org.lwjgl.opengl.KHRRobustness;
 import org.lwjgl.opengl.WGL;
 import org.lwjgl.opengl.WGLCapabilities;
 import org.lwjgl.system.MemoryStack;
@@ -48,14 +57,37 @@ final class WglContext implements GlContext {
     private final long dc;
     private final long context;
     private final GlDriver driver;
+    private final ResetQuery resets;
     private final MSG message = MSG.calloc();
     private boolean closed;
 
-    private WglContext(long window, long dc, long context, GlDriver driver) {
+    /** How this context can ask the driver about a GPU reset, if it can at all. */
+    private enum ResetQuery {
+        /** The context doesn't report resets: the driver offers no robustness, or kept the default strategy. */
+        NONE,
+        /** {@code glGetGraphicsResetStatus}: OpenGL 4.5 core or {@code GL_KHR_robustness}. */
+        CORE,
+        /** {@code glGetGraphicsResetStatusARB}: {@code GL_ARB_robustness} alone. */
+        ARB;
+
+        /** Reads which query the current context has, and whether it was made to lose itself on a reset. */
+        static ResetQuery of(GLCapabilities caps) {
+            ResetQuery query = caps.glGetGraphicsResetStatus != NULL ? CORE
+                    : caps.glGetGraphicsResetStatusARB != NULL ? ARB : NONE;
+            // Without LOSE_CONTEXT_ON_RESET the driver never reports a reset, so asking would only cost a call.
+            if (query == NONE || glGetInteger(GL_RESET_NOTIFICATION_STRATEGY) != GL_LOSE_CONTEXT_ON_RESET) {
+                return NONE;
+            }
+            return query;
+        }
+    }
+
+    private WglContext(long window, long dc, long context, GlDriver driver, ResetQuery resets) {
         this.window = window;
         this.dc = dc;
         this.context = context;
         this.driver = driver;
+        this.resets = resets;
     }
 
     /**
@@ -115,12 +147,26 @@ final class WglContext implements GlContext {
                         driver);
             }
 
-            core = wglCreateContextAttribsARB(dc, NULL, new int[] {
-                WGL_CONTEXT_MAJOR_VERSION_ARB, required.major(),
-                WGL_CONTEXT_MINOR_VERSION_ARB, required.minor(),
-                WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-                0,
-            });
+            // Where the driver offers it, the context is made to report a GPU reset as a lost context, so the
+            // render thread can end and the app show its failure panel (spec §3.2) rather than draw nothing. A
+            // driver that refuses the extra attribute still gets asked for the plain context.
+            if (wgl.WGL_ARB_create_context_robustness) {
+                core = wglCreateContextAttribsARB(dc, NULL, new int[] {
+                    WGL_CONTEXT_MAJOR_VERSION_ARB, required.major(),
+                    WGL_CONTEXT_MINOR_VERSION_ARB, required.minor(),
+                    WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                    WGL_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB, WGL_LOSE_CONTEXT_ON_RESET_ARB,
+                    0,
+                });
+            }
+            if (core == NULL) {
+                core = wglCreateContextAttribsARB(dc, NULL, new int[] {
+                    WGL_CONTEXT_MAJOR_VERSION_ARB, required.major(),
+                    WGL_CONTEXT_MINOR_VERSION_ARB, required.minor(),
+                    WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                    0,
+                });
+            }
             if (core == NULL) {
                 throw fail(required, offered == null || !offered.isAtLeast(required)
                         ? "the driver offers only OpenGL " + driver.version()
@@ -141,7 +187,7 @@ final class WglContext implements GlContext {
                 throw fail(required, "the driver's context is OpenGL " + driver.version() + ", not "
                         + required + " core", driver);
             }
-            return new WglContext(window, dc, core, driver);
+            return new WglContext(window, dc, core, driver, ResetQuery.of(caps));
         } catch (GlUnavailableException e) {
             release(window, dc, legacy, core);
             throw e;
@@ -165,6 +211,21 @@ final class WglContext implements GlContext {
             User32.TranslateMessage(message);
             User32.DispatchMessage(message);
         }
+    }
+
+    @Override
+    public String lostReason() {
+        int status = switch (resets) {
+            case NONE -> GL_NO_ERROR;
+            case CORE -> KHRRobustness.glGetGraphicsResetStatus();
+            case ARB -> ARBRobustness.glGetGraphicsResetStatusARB();
+        };
+        return switch (status) {
+            case GL_NO_ERROR -> null;
+            case GL_GUILTY_CONTEXT_RESET -> "the GPU was reset, and this context's work caused it";
+            case GL_INNOCENT_CONTEXT_RESET -> "the GPU was reset by work outside this context";
+            default -> "the GPU was reset (status 0x" + Integer.toHexString(status) + ")";
+        };
     }
 
     @Override

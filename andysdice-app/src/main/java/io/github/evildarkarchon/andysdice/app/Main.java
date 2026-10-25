@@ -18,7 +18,7 @@ import java.util.Optional;
  * shows {@link AlreadyRunning}'s message and exits with {@link AlreadyRunning#EXIT_STATUS}.
  *
  * <p>The process exits with the status {@link AndysDice#launch} returns: 0 after a normal quit or a passed smoke
- * test, non-zero after a start-up failure or a failed smoke test.
+ * test, non-zero after a start-up failure, a runtime failure or a failed smoke test.
  */
 public final class Main {
 
@@ -73,14 +73,14 @@ public final class Main {
         } else {
             LOG.log(Level.WARNING, "Running without the instance lock: " + lockFailure);
         }
-        // v1 is crash-only (spec §3): whatever escapes a thread is at least on record before the session ends.
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) ->
-                LOG.log(Level.ERROR, "Uncaught exception on thread " + thread.getName(), error));
+        // v1 is crash-only (spec §3): whatever escapes a thread is on record, and ends the session in the failure
+        // panel once the window is up.
+        FailureGuard failures = FailureGuard.install(log == null ? null : log.file());
         if (smoke) {
             SmokeTest.prepare();
         }
 
-        int status = AndysDice.launch(launched, data.folder(), args);
+        int status = AndysDice.launch(launched, data.folder(), args, failures);
 
         LOG.log(status == 0 ? Level.INFO : Level.ERROR, "Andy's Dice exiting with status " + status);
         if (lock != null) {

@@ -23,7 +23,7 @@ public final class AlreadyRunning extends Application {
     static final String MESSAGE = "Andy's Dice is already running";
 
     /** The process's exit status after a second launch. */
-    static final int EXIT_STATUS = 3;
+    static final int EXIT_STATUS = 4;
 
     /** The style class of the OK button. */
     static final String OK_CLASS = "already-running-ok";

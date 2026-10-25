@@ -6,7 +6,6 @@ import java.util.Objects;
 import javafx.beans.Observable;
 import javafx.css.PseudoClass;
 import javafx.geometry.Bounds;
-import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -53,6 +52,9 @@ final class NoticeBell {
     private final Notices notices;
     private final Popup list = new Popup();
     private final VBox listRoot = new VBox();
+    /** The list's Notices, rebuilt by {@link #fillList}; the rest of the list is built once. */
+    private final VBox items = new VBox();
+    private final Button dismissAllButton = new Button("Dismiss all");
 
     private NoticeBell(Button bell, Notices notices) {
         this.bell = bell;
@@ -128,15 +130,8 @@ final class NoticeBell {
         notices.all().addListener((Observable change) -> {
             // What arrives while the list is open is seen at once, so it is read.
             if (list.isShowing()) {
-                // fillList replaces the Dismiss all button; if the old one had focus, the new one takes it at once.
-                // Left to itself, the scene moves focus off a removed node only on a later pulse, so whether the
-                // list still had a focused button depended on timing.
-                boolean dismissFocused = listRoot.lookupAll("." + DISMISS_CLASS).stream().anyMatch(Node::isFocused);
                 notices.markAllRead();
                 fillList();
-                if (dismissFocused) {
-                    listRoot.lookupAll("." + DISMISS_CLASS).forEach(Node::requestFocus);
-                }
             }
             refresh();
         });
@@ -147,6 +142,7 @@ final class NoticeBell {
         listRoot.getStylesheets().addAll(Stylesheet.uri(), URI);
         listRoot.setPrefWidth(LIST_WIDTH);
         listRoot.setMaxHeight(LIST_MAX_HEIGHT);
+        buildList();
         list.getContent().setAll(listRoot);
         list.setAutoHide(true);
         list.setHideOnEscape(true);
@@ -168,15 +164,37 @@ final class NoticeBell {
         notices.markAllRead();
         // Keys go to the open list (JavaFX redirects them from the owner window), so Space or Enter right after
         // opening dismisses; the main window's focus owner stays the bell, for when the list closes.
-        listRoot.lookupAll("." + DISMISS_CLASS).forEach(Node::requestFocus);
+        if (listRoot.getChildren().contains(dismissAllButton)) {
+            dismissAllButton.requestFocus();
+        }
     }
 
-    /** Rebuilds the list's content from the Notices. */
-    private void fillList() {
+    /**
+     * Builds the list's fixed parts once: the heading, the scrolling items and Dismiss all. They outlive every
+     * {@link #fillList} so that the focused Dismiss all is never swapped for a new button while the list is open: a
+     * removed focus owner leaves the popup with no focus until a later pulse picks a new one, and a key pressed in
+     * between would be lost (the flake fix/52-notice-bell-flake found).
+     */
+    private void buildList() {
         Label heading = new Label("Notices");
         heading.getStyleClass().add("notice-heading");
-        VBox items = new VBox();
         items.getStyleClass().add("notice-items");
+        ScrollPane scroll = new ScrollPane(items);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setFocusTraversable(false);
+        dismissAllButton.getStyleClass().add(DISMISS_CLASS);
+        dismissAllButton.setAccessibleText("Dismiss all Notices");
+        dismissAllButton.setOnAction(event -> dismissAll());
+        listRoot.getChildren().setAll(heading, scroll);
+    }
+
+    /**
+     * Rebuilds the list's items from the Notices, with Dismiss all under them only while there are any. Dismiss
+     * all itself is the same node throughout, so it keeps focus across arrivals.
+     */
+    private void fillList() {
+        items.getChildren().clear();
         if (notices.all().isEmpty()) {
             Label empty = new Label("No Notices.");
             empty.getStyleClass().add("notice-empty");
@@ -195,17 +213,16 @@ final class NoticeBell {
             }
             items.getChildren().add(item);
         }
-        ScrollPane scroll = new ScrollPane(items);
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setFocusTraversable(false);
-        listRoot.getChildren().setAll(heading, scroll);
-        if (!notices.all().isEmpty()) {
-            Button dismissAll = new Button("Dismiss all");
-            dismissAll.getStyleClass().add(DISMISS_CLASS);
-            dismissAll.setAccessibleText("Dismiss all Notices");
-            dismissAll.setOnAction(event -> dismissAll());
-            listRoot.getChildren().add(dismissAll);
+        boolean listed = listRoot.getChildren().contains(dismissAllButton);
+        if (notices.all().isEmpty()) {
+            // Only once the Notices are gone, as Dismiss all closes the list: nothing open loses focus here.
+            listRoot.getChildren().remove(dismissAllButton);
+        } else if (!listed) {
+            listRoot.getChildren().add(dismissAllButton);
+            // The first Notice reaching a list opened empty: nothing in it had focus, so Dismiss all takes it.
+            if (list.isShowing() && list.getScene().getFocusOwner() == null) {
+                dismissAllButton.requestFocus();
+            }
         }
     }
 
