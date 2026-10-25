@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.sound;
 
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
 
 /**
@@ -23,5 +24,24 @@ public record TraySounds(SoundCategory floor, SoundCategory wall) {
             throw new IllegalArgumentException("A Tray sounds like a floor kind and a wall material, not "
                     + floor + " and " + wall);
         }
+    }
+
+    /**
+     * Returns what a Tray sounds like: its {@code floor.surface} and {@code walls.material} keys.
+     *
+     * @param tray the Tray
+     * @return its floor's and walls' categories
+     */
+    public static TraySounds of(Tray tray) {
+        SoundCategory floor = switch (tray.floor().surface()) {
+            case FELT -> SoundCategory.FELT_FLOOR;
+            case LEATHER -> SoundCategory.LEATHER_FLOOR;
+            case WOOD -> SoundCategory.WOOD_FLOOR;
+        };
+        SoundCategory wall = switch (tray.walls().material()) {
+            case WOOD -> SoundCategory.WOOD_WALL;
+            case LEATHER -> SoundCategory.LEATHER_WALL;
+        };
+        return new TraySounds(floor, wall);
     }
 }
