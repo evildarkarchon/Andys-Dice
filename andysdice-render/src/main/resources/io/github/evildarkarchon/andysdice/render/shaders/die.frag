@@ -53,6 +53,7 @@ uniform float uIor;
 uniform float uCloud;         // how much light the body scatters
 
 uniform vec3 uSeed;           // this Die's offset into the swirl and flake fields, mm, so no two Dice match
+uniform float uGlow;          // 0..1: this Die is about to be picked up for a Reroll Throw (#47)
 
 // Translucency only. The Die Kind's flat faces in model space, three vec4 each (NumeralLayout.faceTable()):
 // the plane (n, n.centre), then the atlas map (U, u0) and (V, v0), so uv = (U.x + u0, V.x + v0). A d20 has 20.
@@ -285,6 +286,10 @@ void main() {
         float Fv = 0.04 * ab.x + ab.y;
         colour += throughTheBody(vModelPosition, toModel * N, toModel * V, R, KL) * tw * (1.0 - Fv);
     }
+
+    // The reroll glow (#47, the tray prototype's): warm and weighted to the rim, so the Player sees which Dice go
+    // back. Added last, over whatever the Dice Set drew, the view through a translucent body included.
+    if (uGlow > 0.0) colour += uGlow * vec3(1.0, 0.70, 0.25) * (0.06 + 1.2 * pow(1.0 - max(dot(Ng, V), 0.0), 3.0));
 
     // Opaque: the bridge hands JavaFX premultiplied pixels, and alpha 1 makes them plain ones.
     fragColour = vec4(toneMap(colour), 1.0);

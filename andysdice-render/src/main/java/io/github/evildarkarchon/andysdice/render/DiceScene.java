@@ -55,6 +55,9 @@ import org.joml.Vector3dc;
  * at that point: each Die refracts what is behind it through its body and shows its far faces' Numerals, with a
  * volume march of {@link #setVolumeSteps} samples through the body. Translucent Dice don't see one another.
  *
+ * <p>A Die about to be picked up for a Reroll Throw carries a {@linkplain Die#glow() glow}, drawn as a warm,
+ * rim-weighted highlight over its Dice Set (ticket #47, {@link Pickup}).
+ *
  * <p>Once {@link #setTray} has chosen one, the Dice lie in a Tray (ticket #44, ADR-0010), drawn first by
  * {@link TrayRenderer} from the same outline physics collides with.
  *
@@ -84,18 +87,35 @@ public final class DiceScene implements FrameRenderer {
      * @param kind its Die Kind, which picks the mesh
      * @param position its centre in the world, in mm
      * @param orientation the rotation from its z-up model frame into the y-up world
+     * @param glow how strongly it shows the reroll highlight, 0 (none) to 1: a Die about to be picked up for a
+     *             Reroll Throw or Cocked Rethrow glows (#47, ADR-0010)
      */
-    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation, double glow) {
 
         /**
          * Checks the parts and copies them, so that the Die cannot change after it is handed over.
          *
          * @throws NullPointerException if any part is {@code null}
+         * @throws IllegalArgumentException if the glow is not within [0, 1]
          */
         public Die {
             Objects.requireNonNull(kind, "kind");
             position = new Vector3d(Objects.requireNonNull(position, "position"));
             orientation = new Quaterniond(Objects.requireNonNull(orientation, "orientation"));
+            if (!(glow >= 0 && glow <= 1)) {
+                throw new IllegalArgumentException("glow out of range: " + glow);
+            }
+        }
+
+        /**
+         * A Die that doesn't glow, as every Die is but the ones being picked up.
+         *
+         * @param kind its Die Kind
+         * @param position its centre in the world, in mm
+         * @param orientation the rotation from its z-up model frame into the y-up world
+         */
+        public Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+            this(kind, position, orientation, 0);
         }
 
         /**
@@ -179,6 +199,7 @@ public final class DiceScene implements FrameRenderer {
     private int facesUniform;
     private int faceCountUniform;
     private int volumeStepsUniform;
+    private int glowUniform;
 
     // The texture units the engraving's atlas, the swirl volume and the opaque pass's copy are bound to. Each
     // sampler has a unit of its own: two samplers of different types on one unit make a draw fail.
@@ -296,6 +317,7 @@ public final class DiceScene implements FrameRenderer {
         facesUniform = glGetUniformLocation(program, "uFaces");
         faceCountUniform = glGetUniformLocation(program, "uFaceCount");
         volumeStepsUniform = glGetUniformLocation(program, "uVolumeSteps");
+        glowUniform = glGetUniformLocation(program, "uGlow");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
         glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
@@ -373,6 +395,7 @@ public final class DiceScene implements FrameRenderer {
             float[] faces = faceTables.get(die.kind());
             glUniform4fv(facesUniform, faces);
             glUniform1i(faceCountUniform, faces.length / FACE_TABLE_FLOATS);
+            glUniform1f(glowUniform, (float) die.glow());
             meshes.get(die.kind()).draw();
         }
         glUseProgram(0);

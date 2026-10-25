@@ -4,6 +4,7 @@ import io.github.evildarkarchon.andysdice.core.geometry.NumberingRotation;
 import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
 import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.Pickup;
 import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
 import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
@@ -22,20 +23,23 @@ import java.util.Objects;
  *
  * <p>Between one Throw at rest and the next Throw's Release, the camera settles in on the Dice at rest
  * ({@link TrayCamera#SETTLE_SECONDS}), eases back out to the whole Tray ({@link TrayCamera#EASE_OUT_SECONDS}),
- * and then the Dice going back are picked up (spec §3.2: "the camera eases out, the Cocked Dice glow and lift").
- * The pickup is a {@value #HOLD_SECONDS} s hold for now: #47's glow and lift replace it. The Roll is at rest at
- * {@link #restTime()}, when the last Throw's Dice are; {@link #cameraScript()} is the camera's part in all this.
+ * and then the Dice going back are picked up (spec §3.2: "the camera eases out, the Cocked Dice glow and lift"):
+ * for the last {@link Pickup#SECONDS} s before the Release, each Die the next Throw throws glows where it lies and
+ * then lifts along an arc to its Release pose (#47, {@link Pickup}), while every other Die stays where it lies. A
+ * Cocked Rethrow's pickup is the same as a Reroll Throw's. The Roll is at rest at {@link #restTime()}, when the
+ * last Throw's Dice are; {@link #cameraScript()} is the camera's part in all this.
+ *
+ * <p>Every part of this is read off the playback time it is asked for, so Fast-forward plays the pickup at ×4 with
+ * the Throws and the camera. Reduced motion changes how the pickup looks, not when anything happens, so it is
+ * asked for with each read and a change applies at once.
  *
  * <p>Immutable and safe on any thread.
  */
 final class ChainPlayback {
 
-    /** The pause for the reroll pickup before the next Throw's Release, until #47's glow and lift replace it. */
-    static final double HOLD_SECONDS = 0.3;
-
     /** From one Throw at rest to the next Throw's Release: the camera's settle-in and ease out, then the pickup. */
     private static final double GAP_SECONDS = TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS
-            + HOLD_SECONDS;
+            + Pickup.SECONDS;
 
     private final RollPlan.Planned plan;
     private final List<ThrowPlayback> throwPlaybacks;
@@ -43,6 +47,8 @@ final class ChainPlayback {
     private final double[] starts;
     /** Where every Die lies as each Throw starts; null for a Die no Throw has moved yet. */
     private final List<List<DiceScene.Die>> lyingAtStart;
+    /** Each Throw's Dice at its Release, in its thrown order: where the pickup before it lifts them to. */
+    private final List<List<DiceScene.Die>> releases;
     private final double restTime;
     private final CameraScript cameraScript;
 
@@ -56,6 +62,7 @@ final class ChainPlayback {
         List<PlannedThrow> chain = plan.throwChain();
         List<ThrowPlayback> playbacks = new ArrayList<>(chain.size());
         List<List<DiceScene.Die>> lying = new ArrayList<>(chain.size());
+        List<List<DiceScene.Die>> released = new ArrayList<>(chain.size());
         starts = new double[chain.size()];
         DiceScene.Die[] now = new DiceScene.Die[plan.dice().size()];
         double start = 0;
@@ -68,6 +75,7 @@ final class ChainPlayback {
                     planned.thrown().stream().map(die -> plan.dice().get(die).kind()).toList(),
                     planned.rotations().stream().map(NumberingRotation::rotation).toList());
             playbacks.add(playback);
+            released.add(List.copyOf(playback.diceAt(0)));
             starts[k] = start;
             // A snapshot (List.copyOf refuses the nulls of Dice not yet thrown, which only the first Throw has).
             lying.add(Collections.unmodifiableList(Arrays.asList(now.clone())));
@@ -90,6 +98,7 @@ final class ChainPlayback {
         }
         throwPlaybacks = List.copyOf(playbacks);
         lyingAtStart = List.copyOf(lying);
+        releases = List.copyOf(released);
         restTime = starts[chain.size() - 1] + chain.getLast().recording().restTime();
         cameraScript = new CameraScript(cues, Arrays.stream(starts).boxed().toList());
     }
@@ -133,8 +142,9 @@ final class ChainPlayback {
     }
 
     /**
-     * Returns which Throw is on the Tray at a moment: the last one released by then, including the hold after it
-     * comes to rest. Before the first Release it is the first Throw.
+     * Returns which Throw is on the Tray at a moment: the last one released by then, including the gap after it
+     * comes to rest (the camera's settle-in and ease out, and the pickup for the next Throw). Before the first
+     * Release it is the first Throw.
      *
      * @param time seconds since the first Throw's Release
      * @return an index into the plan's Throw chain
@@ -148,20 +158,45 @@ final class ChainPlayback {
     }
 
     /**
+     * Returns every Die of the Roll as it is drawn at a moment of the chain, with reduced motion off.
+     *
+     * @param time seconds since the first Throw's Release
+     * @return one Die per planned Die, in the plan's Die order, in the renderer's mm
+     * @see #diceAt(double, boolean)
+     */
+    List<DiceScene.Die> diceAt(double time) {
+        return diceAt(time, false);
+    }
+
+    /**
      * Returns every Die of the Roll as it is drawn at a moment of the chain: the playing Throw's Dice
-     * interpolated from its Recording, every other Die lying where it last came to rest.
+     * interpolated from its Recording, the Dice being picked up for the next Throw glowing or lifting, and every
+     * other Die lying where it last came to rest, unlit.
      *
      * @param time seconds since the first Throw's Release; clamped to the first Throw's Release before it, and
      *             to where everything rests after {@link #restTime()}
+     * @param reducedMotion whether reduced motion is on: the pickup's glow is steady and its lift plays at ×2
+     *                      (spec §3.2); nothing else changes
      * @return one Die per planned Die, in the plan's Die order, in the renderer's mm
      */
-    List<DiceScene.Die> diceAt(double time) {
+    List<DiceScene.Die> diceAt(double time, boolean reducedMotion) {
         int k = throwAt(time);
         PlannedThrow playing = plan.throwChain().get(k);
         List<DiceScene.Die> dice = new ArrayList<>(lyingAtStart.get(k));
         List<DiceScene.Die> moving = throwPlaybacks.get(k).diceAt(time - starts[k]);
         for (int slot = 0; slot < moving.size(); slot++) {
             dice.set(playing.thrown().get(slot), moving.get(slot));
+        }
+        // The pickup sits at the end of the gap before the next Throw, after the camera has eased out.
+        if (k + 1 < starts.length && time >= starts[k + 1] - Pickup.SECONDS) {
+            PlannedThrow next = plan.throwChain().get(k + 1);
+            List<DiceScene.Die> lying = lyingAtStart.get(k + 1);
+            List<DiceScene.Die> release = releases.get(k + 1);
+            double pickupTime = time - (starts[k + 1] - Pickup.SECONDS);
+            for (int slot = 0; slot < next.thrown().size(); slot++) {
+                int die = next.thrown().get(slot);
+                dice.set(die, Pickup.at(lying.get(die), release.get(slot), pickupTime, reducedMotion));
+            }
         }
         return List.copyOf(dice);
     }
