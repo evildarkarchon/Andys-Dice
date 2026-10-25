@@ -110,6 +110,85 @@ class RollExpressionErrorsTest {
         assertThat(error(input)).isEqualTo(new ParseError(message, span));
     }
 
+    /** Every row of the grammar reference's invalid example table that uses a reroll. */
+    static Stream<Arguments> grammarReferenceRerollExamples() {
+        return Stream.of(
+                row("1d6ro <3", 5, 6, "no space inside `ro<3`"),
+                row("1d6r1", 3, 4, "`r` is ambiguous; use `ro` (once) or `rr` (until)"),
+                row("1d6ro7", 3, 6, "`ro7` never matches a d6"),
+                row("1d6ro>=1", 3, 8, "`ro>=1` matches every face of a d6"),
+                row("1d4rr<5", 3, 7, "`rr<5` matches every face of a d4"),
+                row("1d20rr<=19", 4, 10, "`rr` may reroll at most half the faces; use `ro` to reroll once"),
+                row("1d6ro1ro2", 6, 9, "one reroll clause per Dice Group"),
+                row("4d6kh3rr1", 6, 9, "write the reroll before the keep rule: `4d6rr1kh3`"));
+    }
+
+    @ParameterizedTest(name = "\"{0}\" fails at {1}: {2}")
+    @MethodSource("grammarReferenceRerollExamples")
+    void grammarReferenceRerollExamples(String input, Span span, String message) {
+        assertThat(error(input)).isEqualTo(new ParseError(message, span));
+    }
+
+    /**
+     * Reroll errors the table doesn't list: the half-the-faces rule for every Die Kind (one face past half), a
+     * condition with no value or a comparison that isn't one, spaces, case, values of any length, and where a
+     * misplaced or second clause is marked.
+     */
+    static Stream<Arguments> otherRerollErrors() {
+        String half = "`rr` may reroll at most half the faces; use `ro` to reroll once";
+        return Stream.of(
+                row("1d4rr<=3", 3, 8, half),
+                row("1d6rr>=3", 3, 8, half),
+                row("1d8rr<6", 3, 7, half),
+                row("1d10rr>4", 4, 8, half),
+                row("1d12rr<=7", 4, 9, half),
+                row("d%rr<=51", 2, 8, half),
+                row("1D20RR>9", 4, 8, half),
+                row("1d6ro0", 3, 6, "`ro0` never matches a d6"),
+                row("1d6ro<1", 3, 7, "`ro<1` never matches a d6"),
+                row("1d6RO>6", 3, 7, "`RO>6` never matches a d6"),
+                row("d%ro101", 2, 7, "`ro101` never matches a d%"),
+                row("1d6ro99999999999999999999", 3, 25, "`ro99999999999999999999` never matches a d6"),
+                row("1d6rr<99999999999999999999", 3, 26, "`rr<99999999999999999999` matches every face of a d6"),
+                row("1d6ro<=6", 3, 8, "`ro<=6` matches every face of a d6"),
+                row("1d6ro>0", 3, 7, "`ro>0` matches every face of a d6"),
+                row("1d6R1", 3, 4, "`R` is ambiguous; use `ro` (once) or `rr` (until)"),
+                row("1d6r", 3, 4, "`r` is ambiguous; use `ro` (once) or `rr` (until)"),
+                row("1d6r<3", 3, 4, "`r` is ambiguous; use `ro` (once) or `rr` (until)"),
+                row("4d6kh3r1", 6, 7, "`r` is ambiguous; use `ro` (once) or `rr` (until)"),
+                row("1d6reroll1", 3, 9, "`reroll` isn't part of a Roll Expression; " + SHAPE_HINT),
+                row("1d6ro", 5, 5, "`ro` needs a condition; write a value or a comparison, such as `ro1` or `ro<3`"),
+                row("1d6RR+1", 5, 5, "`RR` needs a condition; write a value or a comparison, such as `rr1` or `rr<3`"),
+                row("1d6rokh1", 5, 5,
+                        "`ro` needs a condition; write a value or a comparison, such as `ro1` or `ro<3`"),
+                row("1d6ro<", 6, 6, "`ro<` needs a value, such as `ro<3`"),
+                row("1d6rr>=+1", 7, 7, "`rr>=` needs a value, such as `rr>=3`"),
+                row("1d6ro=1", 5, 6,
+                        "`=` isn't a comparison; use `<`, `<=`, `>` or `>=`, or the value alone, as in `ro1`"),
+                row("1d6ro=<2", 5, 7,
+                        "`=<` isn't a comparison; use `<`, `<=`, `>` or `>=`, or the value alone, as in `ro1`"),
+                row("1d6rr<>2", 5, 7,
+                        "`<>` isn't a comparison; use `<`, `<=`, `>` or `>=`, or the value alone, as in `rr1`"),
+                row("1d6ro< 3", 6, 7, "no space inside `ro<3`"),
+                row("1d6ro  1", 5, 7, "no space inside `ro1`"),
+                row("1d6ro < 3", 5, 6, "no space inside `ro<3`"),
+                row("4d6 rr1", 3, 4, "no space inside `4d6rr1`"),
+                row("1d20 RO<2", 4, 5, "no space inside `1d20RO<2`"),
+                row("4d6rr1 kh3", 6, 7, "no space inside `4d6rr1kh3`"),
+                row("1d6ro1rr2", 6, 9, "one reroll clause per Dice Group"),
+                row("1d6ro1r", 6, 7, "one reroll clause per Dice Group"),
+                row("4d6rr1kh3ro2", 9, 12, "one reroll clause per Dice Group"),
+                row("4d6KH3RO<2", 6, 10, "write the reroll before the keep rule: `4d6RO<2KH3`"),
+                row("4d6kl3ro7", 6, 9, "write the reroll before the keep rule: `4d6ro7kl3`"),
+                row("4d6rr1kh3x", 9, 10, "`x` isn't part of a Roll Expression; " + SHAPE_HINT));
+    }
+
+    @ParameterizedTest(name = "\"{0}\" fails at {1}: {2}")
+    @MethodSource("otherRerollErrors")
+    void otherRerollErrors(String input, Span span, String message) {
+        assertThat(error(input)).isEqualTo(new ParseError(message, span));
+    }
+
     /** Keep-rule errors the table doesn't list. */
     static Stream<Arguments> otherKeepErrors() {
         return Stream.of(
@@ -200,6 +279,12 @@ class RollExpressionErrorsTest {
                 row("21d6+1000", 5, 9, "a Modifier is at most 999"),
                 row("21d6 #", 5, 6, "`#` can't appear in a Roll Expression; " + SHAPE_HINT),
                 row("21d6kh30", 4, 8, "`21d6` can keep at most 21"),
+                row("1d6ro7+1d7", 3, 6, "`ro7` never matches a d6"),
+                row("1d6rr<=4kh5", 3, 8, "`rr` may reroll at most half the faces; use `ro` to reroll once"),
+                row("4d6rr1kh5", 6, 9, "`4d6` can keep at most 4"),
+                row("1d20ro0 adv", 4, 7, "`ro0` never matches a d20"),
+                row("21d6ro1", 0, 7, "at most 20 Dice per Throw; this throws 21"),
+                row("19d6+1d20rr1 adv", 5, 12, "at most 20 Dice per Throw; this throws 21"),
                 row("1d7kh1 adv", 1, 3, "`d7` is not a Die Kind; " + KINDS),
                 row("1d20 adv+1d7", 5, 8, "`adv` goes at the end"),
                 row("5 adv", 0, 1, "nothing to Throw; add a Dice Group such as `1d20`"),

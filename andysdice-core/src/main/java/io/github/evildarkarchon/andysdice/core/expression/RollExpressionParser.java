@@ -17,9 +17,8 @@ import java.util.Optional;
  * {@linkplain RollExpressionCaps#MAX_DICE_PER_THROW Dice per Throw}).
  *
  * <p>It is a recursive descent over characters rather than tokens, because tokens may touch ({@code 2d6+3},
- * {@code 4d6kh3}, {@code 1d20adv}, and with #29 {@code 4d6rr1kh3}) and because {@code d} starts a Die Kind, a
- * drop form and {@code dis}. Keep rules are read at {@code Scan.groupSuffix}, where rerolls (#29) go before
- * them. The trailing {@code adv}/{@code dis} is read in the term loop by {@code Scan.trailingKeyword} and
+ * {@code 4d6kh3}, {@code 1d20adv}, {@code 4d6rr1kh3}) and because {@code d} starts a Die Kind, a drop form and
+ * {@code dis}. The reroll clause and then the keep rule are read at {@code Scan.groupSuffix}. The trailing {@code adv}/{@code dis} is read in the term loop by {@code Scan.trailingKeyword} and
  * applied in {@code Scan.checkWholeExpression}, which rewrites its {@code 1d20} into {@code 2d20kh1} or
  * {@code 2d20kl1} before the Dice are counted.
  */
@@ -81,20 +80,25 @@ public final class RollExpressionParser {
     /**
      * A Dice Group read during the scan.
      *
+     * @param reroll    the reroll clause, or null if none was written; already checked against {@code kind}, so its
+     *                  value is exact
      * @param keep      the keep rule, or null if none was written
      * @param advantage the {@code adv}/{@code dis} that rewrote it, or null; set only by the whole-expression check
      */
-    private record GroupDraft(Sign sign, BigInteger count, GroupKind kind, KeepDraft keep, Advantage advantage,
-                              Span span, String text) implements Draft {
+    private record GroupDraft(Sign sign, BigInteger count, GroupKind kind, RerollRule reroll, KeepDraft keep,
+                              Advantage advantage, Span span, String text) implements Draft {
 
         BigInteger physicalDice() {
             return count.multiply(BigInteger.valueOf(kind.physicalDice()));
         }
 
-        /** Returns the group as {@code adv}/{@code dis} rewrites it: {@code 2d20} keeping the higher or lower. */
+        /**
+         * Returns the group as {@code adv}/{@code dis} rewrites it: {@code 2d20} keeping the higher or lower. Its
+         * reroll clause carries over to both d20s, so {@code 1d20ro1 adv} is {@code 2d20ro1kh1}.
+         */
         GroupDraft rewrittenBy(Advantage rewrite) {
             KeepRule rule = rewrite.keepRule();
-            return new GroupDraft(sign, BigInteger.TWO, kind,
+            return new GroupDraft(sign, BigInteger.TWO, kind, reroll,
                     new KeepDraft(rule.direction(), BigInteger.valueOf(rule.count())), rewrite, span, text);
         }
 
@@ -104,7 +108,7 @@ public final class RollExpressionParser {
          */
         @Override
         public Term toTerm() {
-            return new DiceGroup(sign, count.intValueExact(), kind,
+            return new DiceGroup(sign, count.intValueExact(), kind, Optional.ofNullable(reroll),
                     Optional.ofNullable(keep).map(k -> new KeepRule(k.direction(), k.count().intValueExact())),
                     Optional.ofNullable(advantage), span, text);
         }
@@ -112,6 +116,10 @@ public final class RollExpressionParser {
 
     /** A keep rule read during the scan; its count is exact for the same reason as a group's. */
     private record KeepDraft(KeepRule.Direction direction, BigInteger count) {
+    }
+
+    /** What {@code Scan.groupSuffix} read after a Die Kind: either part may be null if it wasn't written. */
+    private record Suffix(RerollRule reroll, KeepDraft keep) {
     }
 
     /** The trailing {@code adv}/{@code dis} and where it was typed, which every Advantage error is marked on. */
@@ -304,26 +312,42 @@ public final class RollExpressionParser {
             } else {
                 throw unexpected(pos);
             }
-            KeepDraft keep = groupSuffix(start, count, kind);
+            Suffix suffix = groupSuffix(start, count, kind);
             Span span = new Span(start, pos);
-            return new GroupDraft(sign, count, kind, keep, null, span, text(span));
+            return new GroupDraft(sign, count, kind, suffix.reroll(), suffix.keep(), null, span, text(span));
         }
 
         /**
-         * Reads what may follow a Dice Group's Die Kind: the reroll clause (#29) and then the keep rule, before the
-         * scan moves on, so that {@code 4d6rr1kh3} stays one Dice Group. Anything else after the Die Kind is left
-         * for {@code afterTerm}.
+         * Reads what may follow a Dice Group's Die Kind: the reroll clause and then the keep rule, before the scan
+         * moves on, so that {@code 4d6rr1kh3} stays one Dice Group. Anything else after the Die Kind is left for
+         * {@code afterTerm}.
          *
          * @param start where the group began, for the suggestion when a space splits the keep rule off
          * @param count the group's count as written, which the keep rule's N may not exceed
-         * @param kind  the group's Die Kind, to name the group in messages
-         * @return the keep rule, or null if none was written
-         * @throws Failure for a drop form, a bare {@code k}, a keep count out of range, a space inside the keep
-         *                 rule or a second keep rule
+         * @param kind  the group's Die Kind, to name the group in messages and to check the reroll condition against
+         * @return the reroll clause and the keep rule, each null if it wasn't written
+         * @throws Failure for a reroll clause that is malformed, out of range or not the only one; a drop form, a
+         *                 bare {@code k}, a keep count out of range, a space inside the keep rule or a second keep
+         *                 rule; or a reroll clause written after the keep rule
          */
-        private KeepDraft groupSuffix(int start, BigInteger count, GroupKind kind) throws Failure {
-            // #29: the reroll clause is read here, before the keep rule.
+        private Suffix groupSuffix(int start, BigInteger count, GroupKind kind) throws Failure {
+            RerollRule reroll = rerollClause(kind);
+            if (reroll != null && lower(at(pos)) == 'r') {
+                int second = pos;
+                rerollExtent();
+                throw new Failure("one reroll clause per Dice Group", new Span(second, pos));
+            }
+            if (reroll == null && at(pos) == ' ' && rerollAfterSpaces(pos)) {
+                // "4d6 rr1": like the keep rule, the reroll clause is part of the Dice Group.
+                int spaceStart = pos;
+                spaces();
+                int rerollStart = pos;
+                rerollExtent();
+                throw new Failure("no space inside `" + in.substring(start, spaceStart)
+                        + in.substring(rerollStart, pos) + "`", spaceRun(spaceStart));
+            }
             rejectDropForm(count, kind);
+            int keepRuleStart = pos;
             KeepDraft keep = keepRule(count, kind);
             if (keep == null && at(pos) == ' ' && keepRuleAfterSpaces(pos)) {
                 // "4d6 kh3": the keep rule is part of the Dice Group, so no space may split it off.
@@ -343,7 +367,160 @@ public final class RollExpressionParser {
                 digitsIfAny();
                 throw new Failure("one keep rule per Dice Group", new Span(second, pos));
             }
-            return keep;
+            if (keep != null) {
+                rejectBareR();
+                if (rerollStartsAt(pos)) {
+                    // "4d6kh3rr1": marked on the clause, unchecked, since its place is the first problem.
+                    int clauseStart = pos;
+                    rerollExtent();
+                    Span clause = new Span(clauseStart, pos);
+                    if (reroll != null) {
+                        throw new Failure("one reroll clause per Dice Group", clause);
+                    }
+                    throw new Failure("write the reroll before the keep rule: `" + in.substring(start, keepRuleStart)
+                            + text(clause) + in.substring(keepRuleStart, clauseStart) + "`", clause);
+                }
+            }
+            return new Suffix(reroll, keep);
+        }
+
+        /**
+         * Reads a reroll clause at {@code pos}, if one starts there: {@code ro} or {@code rr}, then an optional
+         * comparison and a value.
+         *
+         * @param kind the group's Die Kind, whose values 1 to its faces the condition is checked against
+         * @return the reroll clause, or null if {@code pos} doesn't start one
+         * @throws Failure for a bare {@code r}, a space inside the clause, a comparison that isn't one, a missing
+         *                 value, a condition matching no value of {@code kind} or every value, or an {@code rr}
+         *                 condition matching more than half of them
+         */
+        private RerollRule rerollClause(GroupKind kind) throws Failure {
+            rejectBareR();
+            if (!rerollStartsAt(pos)) {
+                return null;
+            }
+            int start = pos;
+            RerollRule.Mode mode = lower(at(pos + 1)) == 'o' ? RerollRule.Mode.ONCE : RerollRule.Mode.UNTIL;
+            pos += 2;
+            String modeText = in.substring(start, pos);
+            if (at(pos) == ' ' && conditionAfterSpaces(pos)) {
+                throw spaceInsideReroll(start, pos);
+            }
+            int compareStart = pos;
+            while (isComparisonSymbol(at(pos))) {
+                pos++;
+            }
+            String compare = in.substring(compareStart, pos);
+            RerollRule.Comparison comparison = switch (compare) {
+                case "" -> RerollRule.Comparison.EQUAL;
+                case "<" -> RerollRule.Comparison.LESS;
+                case "<=" -> RerollRule.Comparison.LESS_OR_EQUAL;
+                case ">" -> RerollRule.Comparison.GREATER;
+                case ">=" -> RerollRule.Comparison.GREATER_OR_EQUAL;
+                default -> throw new Failure("`" + compare + "` isn't a comparison; use `<`, `<=`, `>` or `>=`, or "
+                        + "the value alone, as in `" + mode.symbol() + "1`", new Span(compareStart, pos));
+            };
+            if (at(pos) == ' ' && digitAfterSpaces(pos)) {
+                throw spaceInsideReroll(start, pos);
+            }
+            if (!isDigit(at(pos))) {
+                throw new Failure(comparison == RerollRule.Comparison.EQUAL
+                        ? "`" + modeText + "` needs a condition; write a value or a comparison, such as `"
+                                + mode.symbol() + "1` or `" + mode.symbol() + "<3`"
+                        : "`" + modeText + compare + "` needs a value, such as `" + mode.symbol() + compare + "3`",
+                        Span.at(pos));
+            }
+            BigInteger value = digits();
+            Span span = new Span(start, pos);
+            // Past faces + 1 a value matches the same faces as faces + 1 does (none, or all for < and <=), so
+            // clamping keeps the range check exact for a value of any length without overflowing an int.
+            int clamped = value.min(BigInteger.valueOf(kind.faces() + 1L)).intValueExact();
+            RerollRule rule = new RerollRule(mode, comparison, clamped);
+            int matching = rule.matchingFaces(kind);
+            if (matching == 0) {
+                throw new Failure("`" + text(span) + "` never matches a " + kind.label(), span);
+            }
+            if (matching == kind.faces()) {
+                throw new Failure("`" + text(span) + "` matches every face of a " + kind.label(), span);
+            }
+            if (mode == RerollRule.Mode.UNTIL && matching > kind.faces() / 2) {
+                throw new Failure("`rr` may reroll at most half the faces; use `ro` to reroll once", span);
+            }
+            // A condition that matches some faces but not all has a value of at most faces, so it wasn't clamped.
+            return rule;
+        }
+
+        /**
+         * Rejects a bare {@code r} at {@code pos}: one followed by neither {@code o} nor {@code r}, which could
+         * mean either. One followed by another letter is left alone, as the start of a word such as
+         * {@code reroll}, which {@code afterTerm} names whole.
+         */
+        private void rejectBareR() throws Failure {
+            if (lower(at(pos)) == 'r' && !rerollStartsAt(pos) && !isLetter(at(pos + 1))) {
+                throw new Failure("`" + at(pos) + "` is ambiguous; use `ro` (once) or `rr` (until)",
+                        new Span(pos, pos + 1));
+            }
+        }
+
+        /**
+         * Reports spaces inside a reroll clause, as in {@code ro <3}, suggesting the clause without them.
+         *
+         * @param start      where the clause's {@code ro}/{@code rr} begins
+         * @param spaceStart where the first offending spaces begin, which the error is marked on
+         */
+        private Failure spaceInsideReroll(int start, int spaceStart) {
+            StringBuilder written = new StringBuilder(in.substring(start, spaceStart));
+            int i = spaceStart;
+            // Rebuild "ro<3" from what was typed: the comparison and the value, skipping spaces before either.
+            while (at(i) == ' ' || isComparisonSymbol(at(i)) || isDigit(at(i))) {
+                if (at(i) == ' ' && !conditionAfterSpaces(i)) {
+                    break;
+                }
+                if (at(i) != ' ') {
+                    written.append(at(i));
+                }
+                i++;
+                if (isDigit(at(i - 1)) && !isDigit(at(i))) {
+                    break;
+                }
+            }
+            return new Failure("no space inside `" + written + "`", spaceRun(spaceStart));
+        }
+
+        /**
+         * Consumes what looks like a reroll clause at {@code pos} without checking it ({@code r}, an optional
+         * {@code o}/{@code r}, comparison symbols and digits), so that an error can be marked on all of it.
+         */
+        private void rerollExtent() {
+            pos++;
+            if (lower(at(pos)) == 'o' || lower(at(pos)) == 'r') {
+                pos++;
+            }
+            while (isComparisonSymbol(at(pos))) {
+                pos++;
+            }
+            digitsIfAny();
+        }
+
+        /** Whether {@code ro} or {@code rr}, in either case, starts at {@code index}. */
+        private boolean rerollStartsAt(int index) {
+            return lower(at(index)) == 'r' && (lower(at(index + 1)) == 'o' || lower(at(index + 1)) == 'r');
+        }
+
+        /** Whether spaces starting at {@code index} are followed by {@code ro} or {@code rr}. */
+        private boolean rerollAfterSpaces(int index) {
+            while (at(index) == ' ') {
+                index++;
+            }
+            return rerollStartsAt(index);
+        }
+
+        /** Whether spaces starting at {@code index} are followed by a reroll condition's comparison or digit. */
+        private boolean conditionAfterSpaces(int index) {
+            while (at(index) == ' ') {
+                index++;
+            }
+            return isComparisonSymbol(at(index)) || isDigit(at(index));
         }
 
         /**
@@ -669,6 +846,11 @@ public final class RollExpressionParser {
     /** ASCII letters only; a word of them is read whole so it can be named in an error. */
     private static boolean isLetter(char c) {
         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    /** Whether {@code c} can be part of a reroll condition's comparison: {@code <}, {@code >} or {@code =}. */
+    private static boolean isComparisonSymbol(char c) {
+        return c == '<' || c == '>' || c == '=';
     }
 
     private static boolean isAllowedSymbol(char c) {
