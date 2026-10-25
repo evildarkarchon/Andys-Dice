@@ -31,6 +31,8 @@ final class RollQueue {
     private Consumer<Optional<String>> onQueuedChanged = queued -> {};
     /** The Queued Roll's text, or {@code null}. */
     private String queued;
+    /** The name of the Saved Roll the Queued Roll came from (#56); empty while none is queued. */
+    private Optional<String> queuedName = Optional.empty();
     /** When on the clock the Queued Roll starts; NaN until the current Roll has ended. */
     private double startsAt = Double.NaN;
 
@@ -54,13 +56,26 @@ final class RollQueue {
      * @param text the Roll Expression as typed
      */
     void roll(String text) {
+        roll(text, Optional.empty());
+    }
+
+    /**
+     * Rolls a Roll Expression as {@link #roll(String)} does, carrying the name of the Saved Roll it came from to the
+     * controller, so the Roll is recorded with it, even when it waits as the Queued Roll first.
+     *
+     * @param text the Roll Expression as written
+     * @param savedRollName the Saved Roll's name, or empty
+     */
+    void roll(String text, Optional<String> savedRollName) {
         Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(savedRollName, "savedRollName");
         if (controller.underWay() || queued != null) {
             queued = text;
+            queuedName = savedRollName;
             onQueuedChanged.accept(queued());
             return;
         }
-        controller.roll(text);
+        controller.roll(text, savedRollName);
     }
 
     /**
@@ -123,12 +138,14 @@ final class RollQueue {
             return;
         }
         String next = queued;
+        Optional<String> nextName = queuedName;
         clear();
-        controller.roll(next);
+        controller.roll(next, nextName);
     }
 
     private void clear() {
         queued = null;
+        queuedName = Optional.empty();
         startsAt = Double.NaN;
         onQueuedChanged.accept(Optional.empty());
     }
