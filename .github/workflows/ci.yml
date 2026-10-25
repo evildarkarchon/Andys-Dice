@@ -122,16 +122,24 @@ jobs:
               $app.Kill($true)
               throw 'AndysDice.exe showed no failure panel within 2 minutes; it should have failed fast without GL 3.3'
             }
-            # The window may take a moment to count as the process's main window; ask again for up to 10 s.
+            # The launcher runs the app in a child process of its own, which owns the window, so the window is
+            # looked for there too. It may take a moment to count as a main window; ask again for up to 10 s.
             $closed = $false
             for ($i = 0; $i -lt 20 -and -not $closed -and -not $app.HasExited; $i++) {
-              $app.Refresh()
-              $closed = $app.CloseMainWindow()
+              $ids = @($app.Id) + @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($app.Id)" |
+                  ForEach-Object { $_.ProcessId })
+              foreach ($id in $ids) {
+                $process = Get-Process -Id $id -ErrorAction SilentlyContinue
+                if ($process -and $process.MainWindowHandle -ne 0 -and $process.CloseMainWindow()) {
+                  $closed = $true
+                  break
+                }
+              }
               if (-not $closed) { Start-Sleep -Milliseconds 500 }
             }
             if (-not $closed -and -not $app.HasExited) {
               $app.Kill($true)
-              throw 'the failure panel is in the log, but AndysDice.exe has no main window to close'
+              throw 'the failure panel is in the log, but AndysDice.exe has no window to close'
             }
             if (-not $app.WaitForExit(30000)) {
               $app.Kill($true)
