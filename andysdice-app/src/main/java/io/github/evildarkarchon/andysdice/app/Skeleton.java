@@ -5,10 +5,12 @@ import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.physics.PhysicsWorker;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
+import io.github.evildarkarchon.andysdice.render.GlDriver;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.Objects;
+import java.util.function.Consumer;
 import javafx.application.Platform;
 
 /**
@@ -35,6 +37,7 @@ final class Skeleton implements AutoCloseable {
     private final RollPane pane;
     private final Generators generators;
     private ChainPlayback showing;
+    private Consumer<RollStatus> onStatusChanged = status -> {};
 
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
             TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators) {
@@ -70,6 +73,7 @@ final class Skeleton implements AutoCloseable {
             if (!(status instanceof RollStatus.Rolling) && !camera.moving()) {
                 pulses.stop();
             }
+            onStatusChanged.accept(status);
         });
         // Added after the controller's own listener, so on each advance the Dice are drawn first. Once the last
         // Throw is at rest the controller draws nothing more, but the camera is still settling in on the Dice
@@ -155,6 +159,25 @@ final class Skeleton implements AutoCloseable {
      */
     FrameView view() {
         return view;
+    }
+
+    /**
+     * Returns what the OpenGL driver reported about the render thread's context, for the log.
+     *
+     * @return the context's renderer, vendor and version
+     */
+    GlDriver driver() {
+        return renderer.driver();
+    }
+
+    /**
+     * Sets who else is told each time the Roll's status changes, after the result strip has shown it. The
+     * smoke test watches for the end of its Roll this way.
+     *
+     * @param listener the listener; it replaces any earlier one
+     */
+    void setOnStatusChanged(Consumer<RollStatus> listener) {
+        onStatusChanged = Objects.requireNonNull(listener, "listener");
     }
 
     /**
