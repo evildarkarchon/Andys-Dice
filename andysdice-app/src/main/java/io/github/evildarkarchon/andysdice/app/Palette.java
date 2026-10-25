@@ -66,6 +66,8 @@ final class Palette {
             text("the Roll button's label", ON_ACCENT, ACCENT),
             text("selected text in the box", ON_ACCENT, ACCENT),
             text("the bell's count while unread", ON_ACCENT, NOTICE),
+            graphic("the bell's icon while unread", ON_ACCENT, NOTICE),
+            graphic("the Notice list's outline over the window", OUTLINE, BACKGROUND),
             text("the parse-error popup", ON_ERROR, ERROR),
             graphic("icons on the surface", ICON, SURFACE),
             graphic("icons on a button", ICON, RAISED),

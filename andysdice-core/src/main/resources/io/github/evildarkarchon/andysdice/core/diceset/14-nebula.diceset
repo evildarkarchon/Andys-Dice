@@ -1,0 +1,21 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Translucent with inclusions: the swirl becomes milky clouds inside the body, and the
+# flakes become metallic glitter. Only variant C marches through the volume to show them.
+format = 1
+name = Nebula / white
+base = #101c48
+roughness = 0.05
+transmission = 1
+transmission.color = #3c64d8
+ior = 1.54
+swirl.color = #e2a8f4
+swirl.scale = 8
+swirl.warp = 2.0
+swirl.bands = 0
+swirl.amount = 0.4
+swirl.softness = 0.22
+flakes.color = #e8ecff
+flakes.density = 0.18
+flakes.size = 0.3
+flakes.metallic = 1
+ink = #f4f4f0

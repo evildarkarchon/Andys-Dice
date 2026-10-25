@@ -136,6 +136,50 @@ class DiceSceneTest {
     }
 
     @Test
+    void aDieAboutToBeRerolledGlowsWarmerThanTheSameDieUnlit() throws Exception {
+        // Onyx, the default: a dark body, so a warm glow over it shows plainly.
+        Quaterniond turned = new Quaterniond().rotationXYZ(0.4, 0.7, 0.2);
+        int[] unlit = channelSums(dieWithGlow(new DiceScene.Die(DieKind.D12, new Vector3d(), turned)));
+        int[] noGlow = channelSums(dieWithGlow(new DiceScene.Die(DieKind.D12, new Vector3d(), turned, 0)));
+        int[] glowing = channelSums(dieWithGlow(new DiceScene.Die(DieKind.D12, new Vector3d(), turned, 1)));
+
+        assertThat(noGlow).as("a glow of 0 draws the Die as before").containsExactly(unlit);
+        // Warm: red rises most, blue least.
+        int red = glowing[0] - unlit[0];
+        int green = glowing[1] - unlit[1];
+        int blue = glowing[2] - unlit[2];
+        assertThat(red).as("red rises, of %d", unlit[0]).isGreaterThan(unlit[0] / 5);
+        assertThat(red).isGreaterThan(green);
+        assertThat(green).isGreaterThan(blue);
+        assertThat(blue).isGreaterThanOrEqualTo(0);
+    }
+
+    /** Draws one Die from close in front, in the default Dice Set. */
+    private static Still dieWithGlow(DiceScene.Die die) throws Exception {
+        return capture.take(renderer, () -> {
+            scene.setDiceSet(DiceSetCatalogue.builtIn().fallback());
+            scene.setCamera(new DiceScene.Camera(new Vector3d(0, 25, 40), new Vector3d(), 32));
+            scene.setDice(List.of(die));
+        }).get(10, TimeUnit.SECONDS);
+    }
+
+    /** The red, green and blue sums over every pixel the Die covers. */
+    private static int[] channelSums(Still still) {
+        int[] sums = new int[3];
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                int argb = still.argb(x, y);
+                if (argb != DiceScene.BACKGROUND_ARGB) {
+                    sums[0] += (argb >> 16) & 0xff;
+                    sums[1] += (argb >> 8) & 0xff;
+                    sums[2] += argb & 0xff;
+                }
+            }
+        }
+        return sums;
+    }
+
+    @Test
     void withNoDiceOnlyTheBackgroundIsDrawn() throws Exception {
         Still still = capture.take(renderer, () -> scene.setDice(List.of())).get(10, TimeUnit.SECONDS);
 

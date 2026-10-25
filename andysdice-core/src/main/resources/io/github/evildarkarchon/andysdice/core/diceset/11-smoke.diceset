@@ -1,0 +1,10 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# Translucent: transmission.color is what white light looks like after 10 mm inside the body.
+format = 1
+name = Smoke / white
+base = #3a3a3c
+roughness = 0.06
+transmission = 1
+transmission.color = #9c9ca0
+ior = 1.54
+ink = #f4f4f0

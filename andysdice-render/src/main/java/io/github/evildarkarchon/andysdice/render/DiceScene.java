@@ -15,6 +15,7 @@ import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
 import static org.lwjgl.opengl.GL20C.glUniform3f;
+import static org.lwjgl.opengl.GL20C.glUniform4fv;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
 
@@ -48,7 +49,14 @@ import org.joml.Vector3dc;
  *
  * <p>One uber-shader ({@code die.frag}, ticket #42, ADR-0009) draws every Dice Set from its parameters: solid,
  * swirl, speckle, pearl and metal. A swirled Dice Set's field is baked into a 3D texture the first time it is
- * drawn. Until ticket #43, a translucent Dice Set is drawn opaque.
+ * drawn.
+ *
+ * <p>A translucent Dice Set (ticket #43, ADR-0009) is drawn after everything opaque, from a copy of the frame taken
+ * at that point: each Die refracts what is behind it through its body and shows its far faces' Numerals, with a
+ * volume march of {@link #setVolumeSteps} samples through the body. Translucent Dice don't see one another.
+ *
+ * <p>A Die about to be picked up for a Reroll Throw carries a {@linkplain Die#glow() glow}, drawn as a warm,
+ * rim-weighted highlight over its Dice Set (ticket #47, {@link Pickup}).
  *
  * <p>Once {@link #setTray} has chosen one, the Dice lie in a Tray (ticket #44, ADR-0010), drawn first by
  * {@link TrayRenderer} from the same outline physics collides with.
@@ -56,13 +64,19 @@ import org.joml.Vector3dc;
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
  *
- * <p>{@link #setDice}, {@link #setCamera} and {@link #setDiceSet} may be called from any thread and take effect at
- * the next frame; everything else runs on the render thread, as a {@link FrameRenderer}.
+ * <p>{@link #setDice}, {@link #setCamera}, {@link #setDiceSet} and {@link #setVolumeSteps} may be called from any
+ * thread and take effect at the next frame; everything else runs on the render thread, as a {@link FrameRenderer}.
  */
 public final class DiceScene implements FrameRenderer {
 
     /** The background, as the opaque ARGB a capture reads back: a dark felt green. */
     public static final int BACKGROUND_ARGB = 0xff12301c;
+
+    /** The samples a translucent Die's volume march takes until {@link #setVolumeSteps} says otherwise (ADR-0009). */
+    public static final int DEFAULT_VOLUME_STEPS = 8;
+
+    /** The most samples {@link #setVolumeSteps} accepts. */
+    public static final int MAX_VOLUME_STEPS = 64;
 
     /** Physics poses are in centimetres, the renderer's world in millimetres. */
     private static final double MM_PER_CM = 10;
@@ -73,18 +87,35 @@ public final class DiceScene implements FrameRenderer {
      * @param kind its Die Kind, which picks the mesh
      * @param position its centre in the world, in mm
      * @param orientation the rotation from its z-up model frame into the y-up world
+     * @param glow how strongly it shows the reroll highlight, 0 (none) to 1: a Die about to be picked up for a
+     *             Reroll Throw or Cocked Rethrow glows (#47, ADR-0010)
      */
-    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+    public record Die(DieKind kind, Vector3dc position, Quaterniondc orientation, double glow) {
 
         /**
          * Checks the parts and copies them, so that the Die cannot change after it is handed over.
          *
          * @throws NullPointerException if any part is {@code null}
+         * @throws IllegalArgumentException if the glow is not within [0, 1]
          */
         public Die {
             Objects.requireNonNull(kind, "kind");
             position = new Vector3d(Objects.requireNonNull(position, "position"));
             orientation = new Quaterniond(Objects.requireNonNull(orientation, "orientation"));
+            if (!(glow >= 0 && glow <= 1)) {
+                throw new IllegalArgumentException("glow out of range: " + glow);
+            }
+        }
+
+        /**
+         * A Die that doesn't glow, as every Die is but the ones being picked up.
+         *
+         * @param kind its Die Kind
+         * @param position its centre in the world, in mm
+         * @param orientation the rotation from its z-up model frame into the y-up world
+         */
+        public Die(DieKind kind, Vector3dc position, Quaterniondc orientation) {
+            this(kind, position, orientation, 0);
         }
 
         /**
@@ -142,6 +173,8 @@ public final class DiceScene implements FrameRenderer {
     private volatile List<Die> dice = List.of();
     private volatile Camera camera = DEFAULT_CAMERA;
     private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
+    private volatile int volumeSteps = DEFAULT_VOLUME_STEPS;
+    private volatile int clearColour = BACKGROUND_ARGB;
     // Null until a Tray is chosen: the gallery's stills and the Dice-only tests draw no Tray.
     private volatile Tray tray;
     private final TrayRenderer trayRenderer = new TrayRenderer();
@@ -149,6 +182,9 @@ public final class DiceScene implements FrameRenderer {
     // Render thread only.
     private final Map<DieKind, GlMesh> meshes = new EnumMap<>(DieKind.class);
     private final Map<DieKind, GlAtlas> atlases = new EnumMap<>(DieKind.class);
+    // Each Die Kind's flat faces for the translucent path: plane and atlas map, 12 floats a face.
+    private final Map<DieKind, float[]> faceTables = new EnumMap<>(DieKind.class);
+    private final OpaquePassCopy opaquePass = new OpaquePassCopy();
     private SwirlVolumes swirls;
     private DiceSetUniforms diceSetUniforms;
     private int program;
@@ -160,11 +196,19 @@ public final class DiceScene implements FrameRenderer {
     private int fillUniform;
     private int fillColourUniform;
     private int mmPerUvUniform;
+    private int facesUniform;
+    private int faceCountUniform;
+    private int volumeStepsUniform;
+    private int glowUniform;
 
-    // The texture units the engraving's atlas and the swirl volume are bound to.
+    // The texture units the engraving's atlas, the swirl volume and the opaque pass's copy are bound to. Each
+    // sampler has a unit of its own: two samplers of different types on one unit make a draw fail.
     private static final int MASK_UNIT = 0;
     private static final int SLOPE_UNIT = 1;
     private static final int SWIRL_UNIT = 2;
+    private static final int BACKGROUND_UNIT = 3;
+    // NumeralLayout.faceTable()'s three vec4 per face, as die.frag's uFaces reads them.
+    private static final int FACE_TABLE_FLOATS = 12;
 
     /** Creates an empty scene; its GL objects are made in {@link #init()}. */
     public DiceScene() {}
@@ -212,6 +256,32 @@ public final class DiceScene implements FrameRenderer {
     }
 
     /**
+     * Sets how many samples a translucent Die's volume march takes through its body, where its clouds scatter and
+     * its glitter glints: fewer is cheaper on the GPU and coarser to look at. The lever a Quality Preset sets
+     * (ADR-0014); opaque Dice Sets never march. Takes effect at the next frame; any thread.
+     *
+     * @param steps the samples per pixel, 1 to {@value #MAX_VOLUME_STEPS}; {@value #DEFAULT_VOLUME_STEPS} until set
+     * @throws IllegalArgumentException if the count is out of range
+     */
+    public void setVolumeSteps(int steps) {
+        if (steps < 1 || steps > MAX_VOLUME_STEPS) {
+            throw new IllegalArgumentException("volume steps out of range 1.." + MAX_VOLUME_STEPS + ": " + steps);
+        }
+        this.volumeSteps = steps;
+    }
+
+    /**
+     * Sets the colour the frame is cleared to, which is what shows wherever nothing is drawn, including through a
+     * translucent Die when no Tray is under it. For tests: they put a recognisable colour behind the Dice. Any
+     * thread.
+     *
+     * @param argb the colour as opaque ARGB; {@link #BACKGROUND_ARGB} until set
+     */
+    void setClearColour(int argb) {
+        this.clearColour = argb;
+    }
+
+    /**
      * How many swirl volumes have been baked so far. Render thread only, after {@link #init()}; for tests.
      *
      * @return the count of distinct swirl fields drawn since {@link #init()}
@@ -244,9 +314,14 @@ public final class DiceScene implements FrameRenderer {
         fillUniform = glGetUniformLocation(program, "uFillDirection");
         fillColourUniform = glGetUniformLocation(program, "uFillColour");
         mmPerUvUniform = glGetUniformLocation(program, "uMmPerUv");
+        facesUniform = glGetUniformLocation(program, "uFaces");
+        faceCountUniform = glGetUniformLocation(program, "uFaceCount");
+        volumeStepsUniform = glGetUniformLocation(program, "uVolumeSteps");
+        glowUniform = glGetUniformLocation(program, "uGlow");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
         glUniform1i(glGetUniformLocation(program, "uSlope"), SLOPE_UNIT);
+        glUniform1i(glGetUniformLocation(program, "uBackground"), BACKGROUND_UNIT);
         glUniform1f(glGetUniformLocation(program, "uDepth"), (float) NumeralAtlas.VISIBLE_DEPTH_MM);
         diceSetUniforms = new DiceSetUniforms(program, SWIRL_UNIT);
         glUseProgram(0);
@@ -255,14 +330,16 @@ public final class DiceScene implements FrameRenderer {
         // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
         for (DieKind kind : DieKind.values()) {
             meshes.put(kind, new GlMesh(kind));
-            atlases.put(kind, new GlAtlas(NumeralAtlas.rasterise(NumeralLayout.of(kind))));
+            NumeralLayout layout = NumeralLayout.of(kind);
+            atlases.put(kind, new GlAtlas(NumeralAtlas.rasterise(layout)));
+            faceTables.put(kind, layout.faceTable());
         }
     }
 
     @Override
     public void render(int width, int height) {
-        glClearColor(((BACKGROUND_ARGB >> 16) & 0xff) / 255f, ((BACKGROUND_ARGB >> 8) & 0xff) / 255f,
-                (BACKGROUND_ARGB & 0xff) / 255f, 1);
+        int clear = clearColour;
+        glClearColor(((clear >> 16) & 0xff) / 255f, ((clear >> 8) & 0xff) / 255f, (clear & 0xff) / 255f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         List<Die> drawn = dice;
         Tray shown = tray;
@@ -270,10 +347,12 @@ public final class DiceScene implements FrameRenderer {
             return;
         }
         Camera view = camera;
+        DiceSet set = diceSet;
         glUseProgram(program);
         // Before the depth test and culling go on, and before the Tray is drawn: a first use of a swirled Dice Set
         // bakes its volume here, with a full-screen triangle into a framebuffer of its own.
-        diceSetUniforms.apply(diceSet, swirls);
+        diceSetUniforms.apply(set, swirls);
+        glUniform1i(volumeStepsUniform, volumeSteps);
         double distance = view.eye().distance(view.target());
         // Near and far bracket everything within a metre of the target, which holds any Tray and its Dice.
         double near = Math.max(1, distance - 1000);
@@ -287,6 +366,13 @@ public final class DiceScene implements FrameRenderer {
             // The Tray before the Dice, and with no culling: its walls are seen from both sides.
             trayRenderer.draw(shown, viewProjectionColumns, view.eye(), KEY, KEY_COLOUR, FILL, FILL_COLOUR);
         }
+        if (set.translucent() && !drawn.isEmpty()) {
+            // Everything opaque is drawn by now (the Tray), so this is what the translucent Dice refract. Every Die
+            // of a Roll shares one Dice Set, so there are no opaque Dice to draw first; they would go before this.
+            opaquePass.copy(width, height);
+        }
+        // Bound after the Tray, which has texture units of its own to set.
+        opaquePass.bind(BACKGROUND_UNIT);
         // Back faces culled: the meshes wind counter-clockwise from outside, so a wrongly wound one shows.
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
@@ -306,6 +392,10 @@ public final class DiceScene implements FrameRenderer {
             GlAtlas atlas = atlases.get(die.kind());
             atlas.bind(MASK_UNIT, SLOPE_UNIT);
             glUniform1f(mmPerUvUniform, atlas.mmPerUv());
+            float[] faces = faceTables.get(die.kind());
+            glUniform4fv(facesUniform, faces);
+            glUniform1i(faceCountUniform, faces.length / FACE_TABLE_FLOATS);
+            glUniform1f(glowUniform, (float) die.glow());
             meshes.get(die.kind()).draw();
         }
         glUseProgram(0);
@@ -322,6 +412,7 @@ public final class DiceScene implements FrameRenderer {
         atlases.values().forEach(GlAtlas::delete);
         atlases.clear();
         swirls.delete();
+        opaquePass.delete();
         glDeleteProgram(program);
         trayRenderer.dispose();
     }
