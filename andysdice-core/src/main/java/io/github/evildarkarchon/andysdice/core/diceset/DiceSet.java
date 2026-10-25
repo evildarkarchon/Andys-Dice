@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param swirl a second resin folded through the body
  * @param flakes speckle or glitter in the body
  * @param pearl the strength of a colour-shifting sheen where the swirl is, 0..2
- * @param transmission how translucent the body is (ticket #43 draws it; until then every Dice Set is drawn opaque)
+ * @param transmission how translucent the body is: light refracts through it to what is behind (ticket #43)
  * @param ink the paint in the engraved Numerals
  */
 public record DiceSet(String identity, String name, SrgbColour base, double roughness, double metallic,

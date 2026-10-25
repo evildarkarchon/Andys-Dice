@@ -10,3 +10,15 @@ vec3 aces(vec3 x) {
 vec3 toneMap(vec3 linear) {
     return pow(aces(linear), vec3(1.0 / 2.2));
 }
+
+// The inverse of toneMap(), from the bytes back to linear light, so that translucent Dice (#43) can absorb and tint
+// the opaque pass they refract as light rather than as display values. Undo the gamma, then take the positive root
+// of y (2.43x^2 + 0.59x + 0.14) = 2.51x^2 + 0.03x. ACES saturates near 1, where the root runs off to infinity, so
+// the input is capped just below that: the brightest pixels come back bright but finite.
+vec3 unToneMap(vec3 display) {
+    vec3 y = min(pow(display, vec3(2.2)), vec3(0.985));
+    vec3 a = 2.43 * y - 2.51;
+    vec3 b = 0.59 * y - 0.03;
+    vec3 c = 0.14 * y;
+    return (-b - sqrt(max(b * b - 4.0 * a * c, 0.0))) / (2.0 * a);
+}
