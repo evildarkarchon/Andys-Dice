@@ -130,7 +130,7 @@ class SoundOutputTest {
         });
 
         await(() -> opener.sinks.size() == 1 && opener.sinks.getFirst().closed);
-        assertThat(loadedOn.get()).isEqualTo(AudioThread.NAME);
+        assertThat(loadedOn.get()).isEqualTo(SoundOutput.THREAD_NAME);
         assertThat(opener.sinks.getFirst().blocks).as("the probe plays nothing").isEmpty();
         assertThat(unavailable).isEmpty();
     }
