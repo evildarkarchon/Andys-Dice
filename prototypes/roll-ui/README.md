@@ -4,6 +4,15 @@
 > [How should the v1 Roll UI look and behave?](https://github.com/evildarkarchon/Andys-Dice/issues/19)
 > and is kept as a primary source.
 
+**Verdict (2026-10-24).** The layout is variant C, the notebook sidebar. The box stays editable while dice
+move, and Enter queues one next Roll. Shift fast-forwards ×4, and there is no skip; the mouse-hold
+fast-forward is dropped because a drag on the tray now orbits. The camera settles in, and the player can drag to
+orbit and wheel to zoom. Errors keep C's display: on Enter only, the span is selected and a popup shows the
+message. The settings, Roll History and Saved Rolls take C's tabs. UI tests run on JavaFX's own headless
+platform, without TestFX, recorded in
+[ADR-0011](https://github.com/evildarkarchon/Andys-Dice/blob/main/docs/adr/0011-ui-verified-on-javafx-headless-platform-without-testfx.md).
+The full answer is the [resolution](https://github.com/evildarkarchon/Andys-Dice/issues/19#issuecomment-6393081238).
+
 **Question.** How should the v1 Roll UI look and behave around the 3D tray? That covers entry (a text box, die
 buttons, or both), how a Roll is triggered and what input does while a Throw plays, where and when the Roll
 Result and its breakdown appear (unkept Dice, reroll chains, terms as written), how a parse error and its span
