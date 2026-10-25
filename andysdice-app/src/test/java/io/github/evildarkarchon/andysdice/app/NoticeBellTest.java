@@ -258,12 +258,6 @@ class NoticeBellTest extends HeadlessUiTest {
         return (Region) ((Popup) list()).getContent().getFirst();
     }
 
-    /** Every popup window showing now (the bell's list is one). */
-    private static List<PopupWindow> showingPopups() {
-        return Window.getWindows().stream().filter(PopupWindow.class::isInstance).map(PopupWindow.class::cast)
-                .filter(Window::isShowing).toList();
-    }
-
     /** The first background fill of a region after CSS, or null with no background. */
     private static Paint background(Region region) {
         region.applyCss();
