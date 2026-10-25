@@ -18,18 +18,25 @@ import javafx.stage.Stage;
  * pulse advances at 60 Hz.
  *
  * <p>{@link Main} launches it. Without Jolt's native or an OpenGL 3.3 core context it logs why, naming the
- * requirement and the detected renderer and driver (ADR-0002's fail-fast), and the process exits with
- * {@link #STARTUP_FAILED}. With {@value SmokeTest#FLAG} it runs the {@link SmokeTest} once the window is up.
+ * requirement and the detected renderer and driver (ADR-0002's fail-fast), shows the same in the failure panel,
+ * and the process exits with {@link #STARTUP_FAILED} once the Player quits or closes the window. A failure later
+ * in the session (spec §3.2 "Runtime failure") replaces the Tray with that panel, and the process then exits with
+ * {@link #RUNTIME_FAILED}. With {@value SmokeTest#FLAG} it runs the {@link SmokeTest} once the window is up, and
+ * either failure exits at once instead of waiting for Quit.
  */
 public final class AndysDice extends Application {
 
     /** Exit status when Jolt or the GL context couldn't start. */
     static final int STARTUP_FAILED = 1;
 
+    /** Exit status after a runtime failure ended the session (spec §3.2 "Runtime failure"). */
+    static final int RUNTIME_FAILED = 3;
+
     private static final System.Logger LOG = System.getLogger(AndysDice.class.getName());
 
     // Handed from Main to the instance JavaFX creates, and back: launch() returns only after the toolkit stops.
     private static volatile Instant launched = Instant.now();
+    private static volatile FailureGuard failures = new FailureGuard(null);
     private static volatile int exitStatus;
 
     private Skeleton skeleton;
@@ -42,10 +49,13 @@ public final class AndysDice extends Application {
      *
      * @param launchedAt when the process started, for the launch-to-window time in the log
      * @param args the command line
+     * @param guard where failures that end the session go; it shows them in the failure panel once the window
+     *     is up
      * @return the process's exit status
      */
-    static int launch(Instant launchedAt, String[] args) {
+    static int launch(Instant launchedAt, String[] args, FailureGuard guard) {
         launched = Objects.requireNonNull(launchedAt, "launchedAt");
+        failures = Objects.requireNonNull(guard, "guard");
         exitStatus = 0;
         Application.launch(AndysDice.class, args);
         return exitStatus;
@@ -60,13 +70,21 @@ public final class AndysDice extends Application {
         }
         // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
         // SecureRandom.
+        FailureGuard guard = failures;
         try {
-            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom());
+            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom(),
+                    guard);
         } catch (JoltStartupException | GlUnavailableException e) {
             // The message names what is missing; for GL, the 3.3 core requirement and the renderer, vendor and
-            // version the driver reported (ADR-0002). #53 shows it in the failure panel; until then the log has it.
+            // version the driver reported (ADR-0002). The log has it, and so does the failure panel.
             LOG.log(Level.ERROR, "Start-up failed: " + e.getMessage(), e);
-            quit(STARTUP_FAILED);
+            // Set before the window opens: closing it is as much a way out as Quit, and exits non-zero too.
+            exitStatus = STARTUP_FAILED;
+            FailureScreen.startup(stage, Failure.startup(e, guard.logFile()), () -> quit(STARTUP_FAILED));
+            if (smoke) {
+                // The smoke test never waits on a person.
+                quit(STARTUP_FAILED);
+            }
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
@@ -75,6 +93,16 @@ public final class AndysDice extends Application {
         MainWindow.open(stage, skeleton.pane());
         LOG.log(Level.INFO, "Window shown " + Duration.between(launched, Instant.now()).toMillis()
                 + " ms after launch");
+
+        // From now on a failure that ends the session (spec §3.2 "Runtime failure") replaces the Tray with the
+        // failure panel; one that came before the window was up is shown at once.
+        guard.attach(failure -> {
+            exitStatus = RUNTIME_FAILED;
+            FailureScreen.show(skeleton.pane(), failure, () -> quit(RUNTIME_FAILED));
+            if (smoke) {
+                quit(RUNTIME_FAILED);
+            }
+        }, Platform::runLater);
 
         if (smoke) {
             SmokeTest.run(skeleton, this::quit);

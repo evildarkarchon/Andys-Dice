@@ -44,6 +44,15 @@ interface GlContext extends AutoCloseable {
      */
     void pumpEvents();
 
+    /**
+     * Asks the driver whether the context has been lost to a GPU reset (spec §3.2 "Runtime failure"). Only a
+     * context made to report resets can tell; one whose driver couldn't promise that always answers "not lost".
+     *
+     * @return what the driver reported, in a few words, or {@code null} while the context is usable as far as the
+     *     driver says
+     */
+    String lostReason();
+
     /** Releases the context and its window. Called once, at exit, on the thread that created it. */
     @Override
     void close();

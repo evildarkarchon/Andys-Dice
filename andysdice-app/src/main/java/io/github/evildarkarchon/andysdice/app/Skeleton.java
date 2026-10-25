@@ -47,15 +47,17 @@ final class Skeleton implements AutoCloseable {
     private ChainPlayback showing;
 
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
-            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators) {
+            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators, FailureGuard failures) {
         this.worker = worker;
         this.renderer = renderer;
         this.scene = scene;
         this.view = view;
         this.camera = camera;
         this.generators = generators;
-        // The GL Tray behind the Tray seam: the frame view, fed by the render thread through the transport.
-        this.session = new RollSession(clock, pulses, worker::submit, Platform::runLater, generators, TRAY,
+        // The GL Tray behind the Tray seam: the frame view, fed by the render thread through the transport. A
+        // pre-simulation job that throws ends the session (spec §3.2 "Runtime failure"), so the worker reports it.
+        this.session = new RollSession(clock, pulses, failures.reporting(worker::submit), Platform::runLater,
+                generators, TRAY,
                 new TraySurface() {
                     @Override
                     public Node node() {
@@ -103,9 +105,28 @@ final class Skeleton implements AutoCloseable {
      * @throws io.github.evildarkarchon.andysdice.render.GlUnavailableException if there is no OpenGL 3.3 core
      */
     static Skeleton start(PlaybackClock clock, Pulses pulses, Generators generators) {
+        // No panel to show a failure in: an unattached guard only logs it.
+        return start(clock, pulses, generators, new FailureGuard(null));
+    }
+
+    /**
+     * Starts Jolt and the GL context as {@link #start(PlaybackClock, Pulses, Generators)} does, reporting what
+     * ends the session to {@code failures}: a pre-simulation job that throws, and the render thread's death,
+     * which is also how a lost GL context ends it (spec §3.2 "Runtime failure").
+     *
+     * @param clock the playback clock
+     * @param pulses what advances the clock while a Throw plays
+     * @param generators the Face Value, Release and sound variation generators, each seeded on its own
+     * @param failures where failures that end the session go
+     * @return the running skeleton
+     * @throws io.github.evildarkarchon.andysdice.physics.JoltStartupException if Jolt can't start
+     * @throws io.github.evildarkarchon.andysdice.render.GlUnavailableException if there is no OpenGL 3.3 core
+     */
+    static Skeleton start(PlaybackClock clock, Pulses pulses, Generators generators, FailureGuard failures) {
         Objects.requireNonNull(clock, "clock");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
+        Objects.requireNonNull(failures, "failures");
         PhysicsWorker worker = PhysicsWorker.start();
         DiceScene scene = new DiceScene();
         // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
@@ -122,12 +143,14 @@ final class Skeleton implements AutoCloseable {
             worker.close();
             throw e;
         }
+        // A render thread that ends before close() is dead, whatever killed it; nothing restarts it (ADR-0002).
+        failures.watch(FailureGuard.RENDER_THREAD, renderer.stopped());
         // The view reports its physical size (and again after a move to a monitor with another scale); the render
         // target follows it under the cap below High (ADR-0014), and JavaFX scales a capped frame up.
         view.setOnTargetSizeChanged(RenderTargetCap.capping(renderer::resize));
         // The first-run Tray is empty; draw it once so the view isn't blank until the first Roll.
         renderer.requestFrame();
-        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators);
+        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators, failures);
     }
 
     /**

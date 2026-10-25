@@ -291,6 +291,22 @@ final class RollUi extends BorderPane {
         return tray;
     }
 
+    /**
+     * Ends the session on screen (spec §3.2 "Runtime failure", #53): the Tray area holds only the failure panel,
+     * the Tray's own node taken out of the window, and the sidebar and the toolbar are disabled behind it, so
+     * nothing can be rolled, chosen or changed once the session has failed.
+     *
+     * @param panel the failure panel
+     */
+    void showFailure(Node panel) {
+        Objects.requireNonNull(panel, "panel");
+        // The main area's centre is the Tray area the constructor made around the Tray.
+        StackPane trayArea = (StackPane) ((BorderPane) getCenter()).getCenter();
+        trayArea.getChildren().setAll(panel);
+        sidebar.setDisable(true);
+        toolbar.setDisable(true);
+    }
+
     /** A tab whose content is an empty pane for its ticket to fill. */
     private static Tab tab(String title) {
         Tab tab = new Tab(title, new StackPane());
