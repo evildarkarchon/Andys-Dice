@@ -17,11 +17,14 @@ import static org.lwjgl.opengl.GL30C.glBindVertexArray;
 import static org.lwjgl.opengl.GL30C.glDeleteVertexArrays;
 import static org.lwjgl.opengl.GL30C.glGenVertexArrays;
 
+import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.render.mesh.DieMesh;
+import io.github.evildarkarchon.andysdice.render.numerals.EngravedVertices;
 
 /**
- * A {@link DieMesh} uploaded to the GPU: a vertex array with interleaved positions (attribute 0) and normals
- * (attribute 1), and an element buffer of its triangles.
+ * A Die Kind's rounded {@link DieMesh} uploaded to the GPU with its engraving attributes
+ * ({@link EngravedVertices}): a vertex array with interleaved position (attribute 0), normal (1), atlas UV (2)
+ * and tangent (3), and an element buffer of its triangles.
  *
  * <p>Render thread only.
  */
@@ -33,30 +36,37 @@ final class GlMesh {
     private final int indexCount;
 
     /**
-     * Uploads a mesh.
+     * Uploads a Die Kind's mesh. The percentile d10 gets buffers of its own: it shares the d10's triangles but
+     * not its atlas UVs.
      *
-     * @param mesh the mesh to upload
+     * @param kind the Die Kind
      */
-    GlMesh(DieMesh mesh) {
+    GlMesh(DieKind kind) {
         RenderThread.checkRenderThread();
-        int[] indices = mesh.indices();
+        int[] indices = DieMesh.of(kind).indices();
         indexCount = indices.length;
         vertexArray = glGenVertexArrays();
         glBindVertexArray(vertexArray);
         vertices = glGenBuffers();
         glBindBuffer(GL_ARRAY_BUFFER, vertices);
-        glBufferData(GL_ARRAY_BUFFER, mesh.interleavedPositionsAndNormals(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, EngravedVertices.of(kind), GL_STATIC_DRAW);
         elements = glGenBuffers();
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elements);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
-        int stride = 6 * Float.BYTES;
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, stride, 3L * Float.BYTES);
-        glEnableVertexAttribArray(1);
+        int stride = EngravedVertices.FLOATS_PER_VERTEX * Float.BYTES;
+        attribute(0, 3, stride, 0);
+        attribute(1, 3, stride, 3);
+        attribute(2, 2, stride, 6);
+        attribute(3, 3, stride, 8);
         // Unbind the vertex array first: it records the element buffer binding, which must stay with it.
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    /** Points one float attribute at its slice of each interleaved vertex. */
+    private static void attribute(int location, int size, int stride, int offsetFloats) {
+        glVertexAttribPointer(location, size, GL_FLOAT, false, stride, (long) offsetFloats * Float.BYTES);
+        glEnableVertexAttribArray(location);
     }
 
     /** @return how many triangles {@link #draw()} draws */
