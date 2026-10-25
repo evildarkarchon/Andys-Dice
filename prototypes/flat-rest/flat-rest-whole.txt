@@ -1,0 +1,244 @@
+Issue #21 flat-rest measurements. 300 Throws of the 20-Dice cap per row, seeds 1000..1299.
+Trays: ADR-0010's three built-ins, 300 x 200 mm, 30 mm walls, escape = visible walls.
+
+== whole: re-simulate the whole Throw until flat (ADR-0001 as written), ceiling 48 attempts ==
+attempts @T = mean / p95 / max attempts to the first attempt flat within T degrees; p = per-attempt flat rate;
+fail@c = Throws (of 300) with no flat attempt in the first c; est = (1-p)^c, the failure rate extrapolated.
+cocked dice = over attempts that came to rest: share of cocked dice by tilt band and by what they lean on.
+
+-- felt/walnut rect --
+base           attempts/Throw 4.99, 5.9 ms/attempt, rest 0.79 s, nudges/attempt 0.00, physics endings {REST=1496}
+    @ 4 deg  attempts  4.99 / 13 / 27   p 0.201  fail@12  19 est 6.8e-02  fail@24   3 est 4.6e-03  fail@48   0 est 2.2e-05
+    @ 6 deg  attempts  4.62 / 13 / 27   p 0.217  fail@12  17 est 5.3e-02  fail@24   2 est 2.9e-03  fail@48   0 est 8.1e-06
+    @ 8 deg  attempts  4.10 / 11 / 27   p 0.244  fail@12  11 est 3.5e-02  fail@24   2 est 1.2e-03  fail@48   0 est 1.5e-06
+    @10 deg  attempts  3.72 / 10 / 22   p 0.269  fail@12   9 est 2.3e-02  fail@24   0 est 5.4e-04  fail@48   0 est 2.9e-07
+    @15 deg  attempts  2.96 /  8 / 15   p 0.338  fail@12   4 est 7.1e-03  fail@24   0 est 5.0e-05  fail@48   0 est 2.5e-09
+    cocked dice per resting attempt 1.84; tilt 4-6 7%, 6-8 7%, 8-10 6%, 10-15 16%, 15-25 24%, >25 40%; lean die 99% wall 1% floor 0%; stacked flat 0.36% of dice
+spread         attempts/Throw 3.22, 4.7 ms/attempt, rest 0.77 s, nudges/attempt 0.00, physics endings {REST=967}
+    @ 4 deg  attempts  3.22 /  9 / 17   p 0.310  fail@12   5 est 1.2e-02  fail@24   0 est 1.3e-04  fail@48   0 est 1.8e-08
+    @ 6 deg  attempts  2.90 /  8 / 15   p 0.344  fail@12   3 est 6.3e-03  fail@24   0 est 4.0e-05  fail@48   0 est 1.6e-09
+    @ 8 deg  attempts  2.56 /  7 / 15   p 0.391  fail@12   2 est 2.6e-03  fail@24   0 est 6.9e-06  fail@48   0 est 4.7e-11
+    @10 deg  attempts  2.33 /  6 / 13   p 0.429  fail@12   1 est 1.2e-03  fail@24   0 est 1.4e-06  fail@48   0 est 2.1e-12
+    @15 deg  attempts  1.88 /  4 / 10   p 0.531  fail@12   0 est 1.1e-04  fail@24   0 est 1.3e-08  fail@48   0 est 1.6e-16
+    cocked dice per resting attempt 1.27; tilt 4-6 10%, 6-8 9%, 8-10 9%, 10-15 20%, 15-25 33%, >25 20%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+gentle         attempts/Throw 4.18, 5.1 ms/attempt, rest 0.77 s, nudges/attempt 0.00, physics endings {REST=1254}
+    @ 4 deg  attempts  4.18 / 12 / 18   p 0.239  fail@12  13 est 3.8e-02  fail@24   0 est 1.4e-03  fail@48   0 est 2.0e-06
+    @ 6 deg  attempts  3.89 / 11 / 18   p 0.257  fail@12   9 est 2.8e-02  fail@24   0 est 7.9e-04  fail@48   0 est 6.3e-07
+    @ 8 deg  attempts  3.58 /  9 / 14   p 0.280  fail@12   6 est 2.0e-02  fail@24   0 est 3.8e-04  fail@48   0 est 1.5e-07
+    @10 deg  attempts  3.29 /  8 / 14   p 0.304  fail@12   3 est 1.3e-02  fail@24   0 est 1.7e-04  fail@48   0 est 2.8e-08
+    @15 deg  attempts  2.71 /  7 / 13   p 0.369  fail@12   1 est 3.9e-03  fail@24   0 est 1.6e-05  fail@48   0 est 2.4e-10
+    cocked dice per resting attempt 1.52; tilt 4-6 6%, 6-8 6%, 8-10 6%, 10-15 14%, 15-25 19%, >25 49%; lean die 99% wall 1% floor 0%; stacked flat 0.79% of dice
+spread+gentle  attempts/Throw 2.61, 4.0 ms/attempt, rest 0.74 s, nudges/attempt 0.00, physics endings {REST=783}
+    @ 4 deg  attempts  2.61 /  6 / 16   p 0.383  fail@12   2 est 3.0e-03  fail@24   0 est 9.2e-06  fail@48   0 est 8.5e-11
+    @ 6 deg  attempts  2.43 /  6 / 16   p 0.412  fail@12   2 est 1.7e-03  fail@24   0 est 3.0e-06  fail@48   0 est 8.9e-12
+    @ 8 deg  attempts  2.16 /  5 /  9   p 0.464  fail@12   0 est 5.7e-04  fail@24   0 est 3.2e-07  fail@48   0 est 1.0e-13
+    @10 deg  attempts  1.99 /  5 /  9   p 0.503  fail@12   0 est 2.3e-04  fail@24   0 est 5.3e-08  fail@48   0 est 2.8e-15
+    @15 deg  attempts  1.61 /  3 /  6   p 0.622  fail@12   0 est 8.4e-06  fail@24   0 est 7.1e-11  fail@48   0 est 5.0e-21
+    cocked dice per resting attempt 0.89; tilt 4-6 8%, 6-8 10%, 8-10 10%, 10-15 21%, 15-25 31%, >25 20%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+dieF 0.2       attempts/Throw 3.47, 5.6 ms/attempt, rest 0.75 s, nudges/attempt 0.00, physics endings {REST=1039, ESCAPED=1}
+    @ 4 deg  attempts  3.47 /  9 / 17   p 0.288  fail@12   4 est 1.7e-02  fail@24   0 est 2.8e-04  fail@48   0 est 8.0e-08
+    @ 6 deg  attempts  3.20 /  9 / 15   p 0.313  fail@12   2 est 1.1e-02  fail@24   0 est 1.2e-04  fail@48   0 est 1.5e-08
+    @ 8 deg  attempts  2.92 /  8 / 15   p 0.342  fail@12   1 est 6.6e-03  fail@24   0 est 4.3e-05  fail@48   0 est 1.9e-09
+    @10 deg  attempts  2.74 /  7 / 12   p 0.365  fail@12   0 est 4.3e-03  fail@24   0 est 1.8e-05  fail@48   0 est 3.3e-10
+    @15 deg  attempts  2.38 /  6 / 10   p 0.421  fail@12   0 est 1.4e-03  fail@24   0 est 2.0e-06  fail@48   0 est 4.1e-12
+    cocked dice per resting attempt 1.36; tilt 4-6 6%, 6-8 8%, 8-10 7%, 10-15 14%, 15-25 23%, >25 42%; lean die 98% wall 2% floor 0%; stacked flat 0.15% of dice
+dieF 0.1       attempts/Throw 2.79, 5.7 ms/attempt, rest 0.77 s, nudges/attempt 0.00, physics endings {REST=836, ESCAPED=1, TIMED_OUT=1}
+    @ 4 deg  attempts  2.79 /  7 / 25   p 0.358  fail@12   2 est 4.9e-03  fail@24   1 est 2.4e-05  fail@48   0 est 5.8e-10
+    @ 6 deg  attempts  2.48 /  6 / 14   p 0.404  fail@12   1 est 2.0e-03  fail@24   0 est 4.1e-06  fail@48   0 est 1.7e-11
+    @ 8 deg  attempts  2.26 /  6 / 12   p 0.443  fail@12   0 est 8.9e-04  fail@24   0 est 7.9e-07  fail@48   0 est 6.3e-13
+    @10 deg  attempts  2.15 /  5 / 12   p 0.466  fail@12   0 est 5.4e-04  fail@24   0 est 2.9e-07  fail@48   0 est 8.5e-14
+    @15 deg  attempts  1.89 /  5 /  9   p 0.528  fail@12   0 est 1.2e-04  fail@24   0 est 1.5e-08  fail@48   0 est 2.2e-16
+    cocked dice per resting attempt 1.16; tilt 4-6 9%, 6-8 6%, 8-10 7%, 10-15 16%, 15-25 23%, >25 40%; lean die 98% wall 2% floor 0%; stacked flat 0.11% of dice
+sleep strict   attempts/Throw 4.96, 7.1 ms/attempt, rest 1.05 s, nudges/attempt 0.00, physics endings {REST=1489}
+    @ 4 deg  attempts  4.96 / 13 / 27   p 0.201  fail@12  19 est 6.7e-02  fail@24   3 est 4.5e-03  fail@48   0 est 2.0e-05
+    @ 6 deg  attempts  4.59 / 13 / 27   p 0.218  fail@12  17 est 5.3e-02  fail@24   2 est 2.8e-03  fail@48   0 est 7.6e-06
+    @ 8 deg  attempts  4.08 / 11 / 27   p 0.245  fail@12  11 est 3.4e-02  fail@24   2 est 1.2e-03  fail@48   0 est 1.4e-06
+    @10 deg  attempts  3.69 / 10 / 22   p 0.271  fail@12   9 est 2.3e-02  fail@24   0 est 5.1e-04  fail@48   0 est 2.6e-07
+    @15 deg  attempts  2.90 /  8 / 15   p 0.344  fail@12   3 est 6.3e-03  fail@24   0 est 4.0e-05  fail@48   0 est 1.6e-09
+    cocked dice per resting attempt 1.83; tilt 4-6 7%, 6-8 7%, 8-10 6%, 10-15 16%, 15-25 24%, >25 40%; lean die 99% wall 1% floor 0%; stacked flat 0.36% of dice
+nudge          attempts/Throw 3.59, 7.2 ms/attempt, rest 0.86 s, nudges/attempt 5.05, physics endings {REST=1076}
+    @ 4 deg  attempts  3.59 / 10 / 19   p 0.279  fail@12   7 est 2.0e-02  fail@24   0 est 3.9e-04  fail@48   0 est 1.5e-07
+    @ 6 deg  attempts  3.24 /  9 / 19   p 0.309  fail@12   6 est 1.2e-02  fail@24   0 est 1.4e-04  fail@48   0 est 2.0e-08
+    @ 8 deg  attempts  2.89 /  8 / 18   p 0.346  fail@12   4 est 6.1e-03  fail@24   0 est 3.7e-05  fail@48   0 est 1.4e-09
+    @10 deg  attempts  2.68 /  8 / 18   p 0.374  fail@12   3 est 3.6e-03  fail@24   0 est 1.3e-05  fail@48   0 est 1.8e-10
+    @15 deg  attempts  2.24 /  5 / 13   p 0.447  fail@12   2 est 8.2e-04  fail@24   0 est 6.7e-07  fail@48   0 est 4.4e-13
+    cocked dice per resting attempt 1.48; tilt 4-6 8%, 6-8 8%, 8-10 7%, 10-15 16%, 15-25 20%, >25 41%; lean die 99% wall 1% floor 0%; stacked flat 0.39% of dice
+s+g dieF 0.2   attempts/Throw 1.97, 3.9 ms/attempt, rest 0.75 s, nudges/attempt 0.00, physics endings {REST=591}
+    @ 4 deg  attempts  1.97 /  5 / 11   p 0.508  fail@12   0 est 2.0e-04  fail@24   0 est 4.1e-08  fail@48   0 est 1.7e-15
+    @ 6 deg  attempts  1.84 /  5 /  8   p 0.544  fail@12   0 est 8.0e-05  fail@24   0 est 6.4e-09  fail@48   0 est 4.1e-17
+    @ 8 deg  attempts  1.75 /  4 /  8   p 0.570  fail@12   0 est 4.0e-05  fail@24   0 est 1.6e-09  fail@48   0 est 2.5e-18
+    @10 deg  attempts  1.70 /  4 /  8   p 0.587  fail@12   0 est 2.5e-05  fail@24   0 est 6.0e-10  fail@48   0 est 3.6e-19
+    @15 deg  attempts  1.39 /  3 /  7   p 0.719  fail@12   0 est 2.4e-07  fail@24   0 est 5.7e-14  fail@48   0 est 3.2e-27
+    cocked dice per resting attempt 0.64; tilt 4-6 8%, 6-8 8%, 8-10 7%, 10-15 23%, 15-25 34%, >25 19%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+s+g nudge      attempts/Throw 1.91, 4.7 ms/attempt, rest 0.83 s, nudges/attempt 2.42, physics endings {REST=574}
+    @ 4 deg  attempts  1.91 /  4 /  8   p 0.523  fail@12   0 est 1.4e-04  fail@24   0 est 2.0e-08  fail@48   0 est 3.8e-16
+    @ 6 deg  attempts  1.83 /  4 /  8   p 0.547  fail@12   0 est 7.4e-05  fail@24   0 est 5.4e-09  fail@48   0 est 3.0e-17
+    @ 8 deg  attempts  1.70 /  4 /  8   p 0.589  fail@12   0 est 2.3e-05  fail@24   0 est 5.3e-10  fail@48   0 est 2.8e-19
+    @10 deg  attempts  1.57 /  3 /  5   p 0.638  fail@12   0 est 5.0e-06  fail@24   0 est 2.5e-11  fail@48   0 est 6.3e-22
+    @15 deg  attempts  1.37 /  3 /  4   p 0.730  fail@12   0 est 1.5e-07  fail@24   0 est 2.3e-14  fail@48   0 est 5.1e-28
+    cocked dice per resting attempt 0.62; tilt 4-6 10%, 6-8 9%, 8-10 8%, 10-15 22%, 15-25 32%, >25 18%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+combo          attempts/Throw 1.59, 4.5 ms/attempt, rest 0.79 s, nudges/attempt 1.68, physics endings {REST=478}
+    @ 4 deg  attempts  1.59 /  3 /  8   p 0.628  fail@12   0 est 7.1e-06  fail@24   0 est 5.1e-11  fail@48   0 est 2.6e-21
+    @ 6 deg  attempts  1.53 /  3 /  8   p 0.652  fail@12   0 est 3.1e-06  fail@24   0 est 9.8e-12  fail@48   0 est 9.7e-23
+    @ 8 deg  attempts  1.44 /  3 /  7   p 0.696  fail@12   0 est 6.2e-07  fail@24   0 est 3.9e-13  fail@48   0 est 1.5e-25
+    @10 deg  attempts  1.35 /  3 /  4   p 0.741  fail@12   0 est 9.2e-08  fail@24   0 est 8.5e-15  fail@48   0 est 7.2e-29
+    @15 deg  attempts  1.19 /  2 /  3   p 0.840  fail@12   0 est 2.7e-10  fail@24   0 est 7.5e-20  fail@48   0 est 5.7e-39
+    cocked dice per resting attempt 0.43; tilt 4-6 7%, 6-8 13%, 8-10 13%, 10-15 26%, 15-25 30%, >25 12%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+
+-- leather/padded hex --
+base           attempts/Throw 7.38, 5.9 ms/attempt, rest 0.79 s, nudges/attempt 0.00, physics endings {REST=2205, ESCAPED=10}
+    @ 4 deg  attempts  7.38 / 20 / 42   p 0.135  fail@12  50 est 1.7e-01  fail@24   8 est 3.0e-02  fail@48   0 est 9.3e-04
+    @ 6 deg  attempts  6.45 / 17 / 42   p 0.155  fail@12  41 est 1.3e-01  fail@24   4 est 1.8e-02  fail@48   0 est 3.1e-04
+    @ 8 deg  attempts  5.67 / 16 / 27   p 0.176  fail@12  33 est 9.7e-02  fail@24   2 est 9.5e-03  fail@48   0 est 9.0e-05
+    @10 deg  attempts  4.95 / 13 / 25   p 0.202  fail@12  20 est 6.7e-02  fail@24   1 est 4.4e-03  fail@48   0 est 2.0e-05
+    @15 deg  attempts  3.66 / 10 / 24   p 0.273  fail@12   5 est 2.2e-02  fail@24   0 est 4.7e-04  fail@48   0 est 2.2e-07
+    cocked dice per resting attempt 2.40; tilt 4-6 7%, 6-8 6%, 8-10 7%, 10-15 15%, 15-25 24%, >25 41%; lean die 98% wall 2% floor 0%; stacked flat 0.41% of dice
+spread         attempts/Throw 5.53, 5.1 ms/attempt, rest 0.79 s, nudges/attempt 0.00, physics endings {REST=1660}
+    @ 4 deg  attempts  5.53 / 16 / 38   p 0.181  fail@12  25 est 9.1e-02  fail@24   4 est 8.4e-03  fail@48   0 est 7.0e-05
+    @ 6 deg  attempts  4.52 / 13 / 38   p 0.221  fail@12  17 est 5.0e-02  fail@24   1 est 2.5e-03  fail@48   0 est 6.1e-06
+    @ 8 deg  attempts  4.02 / 12 / 26   p 0.249  fail@12  13 est 3.2e-02  fail@24   1 est 1.0e-03  fail@48   0 est 1.1e-06
+    @10 deg  attempts  3.46 /  9 / 26   p 0.289  fail@12   7 est 1.7e-02  fail@24   1 est 2.8e-04  fail@48   0 est 7.9e-08
+    @15 deg  attempts  2.46 /  6 / 13   p 0.406  fail@12   1 est 1.9e-03  fail@24   0 est 3.7e-06  fail@48   0 est 1.4e-11
+    cocked dice per resting attempt 1.86; tilt 4-6 9%, 6-8 8%, 8-10 9%, 10-15 20%, 15-25 32%, >25 22%; lean die 97% wall 3% floor 0%; stacked flat 0.00% of dice
+gentle         attempts/Throw 5.40, 5.3 ms/attempt, rest 0.78 s, nudges/attempt 0.00, physics endings {REST=1619, TIMED_OUT=1}
+    @ 4 deg  attempts  5.40 / 15 / >48   p 0.185  fail@12  24 est 8.6e-02  fail@24   3 est 7.5e-03  fail@48   1 est 5.6e-05
+    @ 6 deg  attempts  4.83 / 13 / >48   p 0.206  fail@12  18 est 6.2e-02  fail@24   2 est 3.9e-03  fail@48   1 est 1.5e-05
+    @ 8 deg  attempts  4.15 / 11 / 23   p 0.241  fail@12  12 est 3.7e-02  fail@24   0 est 1.3e-03  fail@48   0 est 1.8e-06
+    @10 deg  attempts  3.74 / 10 / 23   p 0.267  fail@12   9 est 2.4e-02  fail@24   0 est 5.7e-04  fail@48   0 est 3.3e-07
+    @15 deg  attempts  2.84 /  8 / 13   p 0.352  fail@12   2 est 5.5e-03  fail@24   0 est 3.0e-05  fail@48   0 est 9.2e-10
+    cocked dice per resting attempt 1.66; tilt 4-6 7%, 6-8 7%, 8-10 6%, 10-15 15%, 15-25 22%, >25 43%; lean die 95% wall 5% floor 0%; stacked flat 0.58% of dice
+spread+gentle  attempts/Throw 3.50, 4.3 ms/attempt, rest 0.76 s, nudges/attempt 0.00, physics endings {REST=1049}
+    @ 4 deg  attempts  3.50 /  8 / 22   p 0.286  fail@12   7 est 1.8e-02  fail@24   0 est 3.1e-04  fail@48   0 est 9.5e-08
+    @ 6 deg  attempts  3.07 /  8 / 14   p 0.326  fail@12   1 est 8.8e-03  fail@24   0 est 7.8e-05  fail@48   0 est 6.1e-09
+    @ 8 deg  attempts  2.84 /  7 / 12   p 0.352  fail@12   0 est 5.5e-03  fail@24   0 est 3.0e-05  fail@48   0 est 9.0e-10
+    @10 deg  attempts  2.63 /  6 / 12   p 0.380  fail@12   0 est 3.2e-03  fail@24   0 est 1.1e-05  fail@48   0 est 1.1e-10
+    @15 deg  attempts  1.96 /  5 /  9   p 0.509  fail@12   0 est 1.9e-04  fail@24   0 est 3.8e-08  fail@48   0 est 1.4e-15
+    cocked dice per resting attempt 1.25; tilt 4-6 9%, 6-8 10%, 8-10 10%, 10-15 20%, 15-25 30%, >25 21%; lean die 94% wall 6% floor 0%; stacked flat 0.00% of dice
+dieF 0.2       attempts/Throw 5.55, 5.8 ms/attempt, rest 0.77 s, nudges/attempt 0.00, physics endings {REST=1664, ESCAPED=2}
+    @ 4 deg  attempts  5.55 / 17 / 32   p 0.180  fail@12  26 est 9.2e-02  fail@24   5 est 8.5e-03  fail@48   0 est 7.3e-05
+    @ 6 deg  attempts  4.92 / 14 / 27   p 0.203  fail@12  16 est 6.5e-02  fail@24   2 est 4.3e-03  fail@48   0 est 1.8e-05
+    @ 8 deg  attempts  4.50 / 11 / 27   p 0.222  fail@12  12 est 4.9e-02  fail@24   2 est 2.4e-03  fail@48   0 est 5.8e-06
+    @10 deg  attempts  3.87 / 10 / 19   p 0.258  fail@12   4 est 2.8e-02  fail@24   0 est 7.7e-04  fail@48   0 est 5.9e-07
+    @15 deg  attempts  3.21 /  9 / 17   p 0.311  fail@12   2 est 1.1e-02  fail@24   0 est 1.3e-04  fail@48   0 est 1.7e-08
+    cocked dice per resting attempt 2.01; tilt 4-6 7%, 6-8 7%, 8-10 6%, 10-15 14%, 15-25 26%, >25 39%; lean die 98% wall 2% floor 0%; stacked flat 0.24% of dice
+dieF 0.1       attempts/Throw 4.57, 5.9 ms/attempt, rest 0.78 s, nudges/attempt 0.00, physics endings {REST=1368, ESCAPED=3}
+    @ 4 deg  attempts  4.57 / 12 / 22   p 0.219  fail@12  11 est 5.2e-02  fail@24   0 est 2.7e-03  fail@48   0 est 7.1e-06
+    @ 6 deg  attempts  4.15 / 11 / 19   p 0.241  fail@12   6 est 3.7e-02  fail@24   0 est 1.3e-03  fail@48   0 est 1.8e-06
+    @ 8 deg  attempts  3.64 /  9 / 19   p 0.275  fail@12   5 est 2.1e-02  fail@24   0 est 4.5e-04  fail@48   0 est 2.0e-07
+    @10 deg  attempts  3.42 /  9 / 15   p 0.292  fail@12   4 est 1.6e-02  fail@24   0 est 2.5e-04  fail@48   0 est 6.3e-08
+    @15 deg  attempts  2.69 /  7 / 13   p 0.372  fail@12   1 est 3.7e-03  fail@24   0 est 1.4e-05  fail@48   0 est 2.0e-10
+    cocked dice per resting attempt 1.69; tilt 4-6 6%, 6-8 7%, 8-10 6%, 10-15 15%, 15-25 26%, >25 40%; lean die 97% wall 3% floor 0%; stacked flat 0.13% of dice
+sleep strict   attempts/Throw 7.28, 7.3 ms/attempt, rest 1.06 s, nudges/attempt 0.00, physics endings {REST=2172, ESCAPED=10, TIMED_OUT=1}
+    @ 4 deg  attempts  7.28 / 20 / 42   p 0.137  fail@12  50 est 1.7e-01  fail@24   8 est 2.9e-02  fail@48   0 est 8.3e-04
+    @ 6 deg  attempts  6.46 / 18 / 32   p 0.155  fail@12  43 est 1.3e-01  fail@24   4 est 1.8e-02  fail@48   0 est 3.1e-04
+    @ 8 deg  attempts  5.71 / 16 / 32   p 0.175  fail@12  34 est 9.9e-02  fail@24   2 est 9.8e-03  fail@48   0 est 9.6e-05
+    @10 deg  attempts  4.98 / 14 / 23   p 0.201  fail@12  21 est 6.8e-02  fail@24   0 est 4.6e-03  fail@48   0 est 2.1e-05
+    @15 deg  attempts  3.65 / 10 / 22   p 0.274  fail@12   6 est 2.1e-02  fail@24   0 est 4.6e-04  fail@48   0 est 2.1e-07
+    cocked dice per resting attempt 2.38; tilt 4-6 7%, 6-8 6%, 8-10 7%, 10-15 15%, 15-25 24%, >25 41%; lean die 98% wall 2% floor 0%; stacked flat 0.41% of dice
+nudge          attempts/Throw 4.90, 7.6 ms/attempt, rest 0.90 s, nudges/attempt 6.66, physics endings {REST=1461, ESCAPED=8, TIMED_OUT=1}
+    @ 4 deg  attempts  4.90 / 13 / 23   p 0.204  fail@12  19 est 6.5e-02  fail@24   0 est 4.2e-03  fail@48   0 est 1.7e-05
+    @ 6 deg  attempts  4.33 / 12 / 23   p 0.231  fail@12  12 est 4.3e-02  fail@24   0 est 1.8e-03  fail@48   0 est 3.4e-06
+    @ 8 deg  attempts  3.85 / 10 / 22   p 0.260  fail@12   7 est 2.7e-02  fail@24   0 est 7.4e-04  fail@48   0 est 5.5e-07
+    @10 deg  attempts  3.52 / 10 / 22   p 0.284  fail@12   6 est 1.8e-02  fail@24   0 est 3.3e-04  fail@48   0 est 1.1e-07
+    @15 deg  attempts  2.73 /  8 / 20   p 0.366  fail@12   1 est 4.2e-03  fail@24   0 est 1.8e-05  fail@48   0 est 3.2e-10
+    cocked dice per resting attempt 1.95; tilt 4-6 8%, 6-8 7%, 8-10 7%, 10-15 15%, 15-25 22%, >25 42%; lean die 98% wall 2% floor 0%; stacked flat 0.44% of dice
+s+g dieF 0.2   attempts/Throw 2.45, 4.2 ms/attempt, rest 0.76 s, nudges/attempt 0.00, physics endings {REST=734}
+    @ 4 deg  attempts  2.45 /  5 / 13   p 0.409  fail@12   2 est 1.8e-03  fail@24   0 est 3.3e-06  fail@48   0 est 1.1e-11
+    @ 6 deg  attempts  2.19 /  5 / 12   p 0.456  fail@12   0 est 6.7e-04  fail@24   0 est 4.5e-07  fail@48   0 est 2.0e-13
+    @ 8 deg  attempts  2.04 /  5 / 12   p 0.490  fail@12   0 est 3.1e-04  fail@24   0 est 9.5e-08  fail@48   0 est 9.0e-15
+    @10 deg  attempts  1.94 /  4 / 12   p 0.516  fail@12   0 est 1.6e-04  fail@24   0 est 2.7e-08  fail@48   0 est 7.2e-16
+    @15 deg  attempts  1.59 /  3 /  7   p 0.630  fail@12   0 est 6.5e-06  fail@24   0 est 4.3e-11  fail@48   0 est 1.8e-21
+    cocked dice per resting attempt 0.86; tilt 4-6 9%, 6-8 8%, 8-10 7%, 10-15 22%, 15-25 31%, >25 23%; lean die 92% wall 8% floor 0%; stacked flat 0.00% of dice
+s+g nudge      attempts/Throw 2.36, 5.1 ms/attempt, rest 0.86 s, nudges/attempt 3.26, physics endings {REST=708}
+    @ 4 deg  attempts  2.36 /  6 /  9   p 0.424  fail@12   0 est 1.3e-03  fail@24   0 est 1.8e-06  fail@48   0 est 3.2e-12
+    @ 6 deg  attempts  2.22 /  6 /  9   p 0.450  fail@12   0 est 7.7e-04  fail@24   0 est 5.9e-07  fail@48   0 est 3.5e-13
+    @ 8 deg  attempts  2.01 /  5 /  9   p 0.498  fail@12   0 est 2.5e-04  fail@24   0 est 6.5e-08  fail@48   0 est 4.2e-15
+    @10 deg  attempts  1.85 /  4 /  9   p 0.542  fail@12   0 est 8.6e-05  fail@24   0 est 7.4e-09  fail@48   0 est 5.5e-17
+    @15 deg  attempts  1.58 /  4 /  6   p 0.632  fail@12   0 est 6.3e-06  fail@24   0 est 3.9e-11  fail@48   0 est 1.5e-21
+    cocked dice per resting attempt 0.83; tilt 4-6 10%, 6-8 10%, 8-10 10%, 10-15 21%, 15-25 30%, >25 18%; lean die 95% wall 5% floor 0%; stacked flat 0.00% of dice
+combo          attempts/Throw 1.71, 4.8 ms/attempt, rest 0.84 s, nudges/attempt 2.24, physics endings {REST=514}
+    @ 4 deg  attempts  1.71 /  4 /  6   p 0.584  fail@12   0 est 2.7e-05  fail@24   0 est 7.4e-10  fail@48   0 est 5.4e-19
+    @ 6 deg  attempts  1.63 /  4 /  6   p 0.612  fail@12   0 est 1.2e-05  fail@24   0 est 1.3e-10  fail@48   0 est 1.8e-20
+    @ 8 deg  attempts  1.54 /  3 /  5   p 0.648  fail@12   0 est 3.6e-06  fail@24   0 est 1.3e-11  fail@48   0 est 1.7e-22
+    @10 deg  attempts  1.45 /  3 /  4   p 0.688  fail@12   0 est 8.5e-07  fail@24   0 est 7.2e-13  fail@48   0 est 5.2e-25
+    @15 deg  attempts  1.32 /  3 /  4   p 0.759  fail@12   0 est 3.7e-08  fail@24   0 est 1.4e-15  fail@48   0 est 2.0e-30
+    cocked dice per resting attempt 0.54; tilt 4-6 9%, 6-8 9%, 8-10 14%, 10-15 18%, 15-25 28%, >25 22%; lean die 94% wall 6% floor 0%; stacked flat 0.00% of dice
+
+-- walnut/walnut rect --
+base           attempts/Throw 4.03, 5.7 ms/attempt, rest 0.79 s, nudges/attempt 0.00, physics endings {REST=1164, ESCAPED=45}
+    @ 4 deg  attempts  4.03 / 10 / 16   p 0.248  fail@12   7 est 3.3e-02  fail@24   0 est 1.1e-03  fail@48   0 est 1.1e-06
+    @ 6 deg  attempts  3.74 / 10 / 16   p 0.268  fail@12   6 est 2.4e-02  fail@24   0 est 5.7e-04  fail@48   0 est 3.2e-07
+    @ 8 deg  attempts  3.35 /  9 / 13   p 0.299  fail@12   2 est 1.4e-02  fail@24   0 est 2.0e-04  fail@48   0 est 4.0e-08
+    @10 deg  attempts  3.19 /  9 / 13   p 0.313  fail@12   2 est 1.1e-02  fail@24   0 est 1.2e-04  fail@48   0 est 1.4e-08
+    @15 deg  attempts  2.62 /  6 / 13   p 0.382  fail@12   1 est 3.1e-03  fail@24   0 est 9.8e-06  fail@48   0 est 9.5e-11
+    cocked dice per resting attempt 1.58; tilt 4-6 7%, 6-8 6%, 8-10 5%, 10-15 14%, 15-25 21%, >25 46%; lean die 99% wall 1% floor 0%; stacked flat 0.55% of dice
+spread         attempts/Throw 3.26, 5.1 ms/attempt, rest 0.84 s, nudges/attempt 0.00, physics endings {REST=976, ESCAPED=1}
+    @ 4 deg  attempts  3.26 /  9 / 15   p 0.307  fail@12   3 est 1.2e-02  fail@24   0 est 1.5e-04  fail@48   0 est 2.3e-08
+    @ 6 deg  attempts  2.95 /  8 / 15   p 0.339  fail@12   1 est 7.0e-03  fail@24   0 est 4.9e-05  fail@48   0 est 2.4e-09
+    @ 8 deg  attempts  2.75 /  8 / 12   p 0.364  fail@12   0 est 4.4e-03  fail@24   0 est 1.9e-05  fail@48   0 est 3.7e-10
+    @10 deg  attempts  2.51 /  7 / 10   p 0.398  fail@12   0 est 2.2e-03  fail@24   0 est 5.0e-06  fail@48   0 est 2.6e-11
+    @15 deg  attempts  1.99 /  5 /  9   p 0.502  fail@12   0 est 2.3e-04  fail@24   0 est 5.5e-08  fail@48   0 est 3.0e-15
+    cocked dice per resting attempt 1.37; tilt 4-6 9%, 6-8 8%, 8-10 9%, 10-15 18%, 15-25 32%, >25 24%; lean die 99% wall 1% floor 0%; stacked flat 0.10% of dice
+gentle         attempts/Throw 2.00, 4.6 ms/attempt, rest 0.81 s, nudges/attempt 0.00, physics endings {REST=597, ESCAPED=2}
+    @ 4 deg  attempts  2.00 /  5 /  8   p 0.501  fail@12   0 est 2.4e-04  fail@24   0 est 5.7e-08  fail@48   0 est 3.3e-15
+    @ 6 deg  attempts  1.92 /  5 /  7   p 0.522  fail@12   0 est 1.4e-04  fail@24   0 est 2.1e-08  fail@48   0 est 4.2e-16
+    @ 8 deg  attempts  1.78 /  4 /  7   p 0.561  fail@12   0 est 5.2e-05  fail@24   0 est 2.7e-09  fail@48   0 est 7.1e-18
+    @10 deg  attempts  1.68 /  4 /  7   p 0.594  fail@12   0 est 2.0e-05  fail@24   0 est 4.0e-10  fail@48   0 est 1.6e-19
+    @15 deg  attempts  1.49 /  3 /  5   p 0.671  fail@12   0 est 1.6e-06  fail@24   0 est 2.6e-12  fail@48   0 est 6.6e-24
+    cocked dice per resting attempt 0.68; tilt 4-6 9%, 6-8 9%, 8-10 8%, 10-15 14%, 15-25 22%, >25 37%; lean die 98% wall 2% floor 0%; stacked flat 0.34% of dice
+spread+gentle  attempts/Throw 1.69, 4.0 ms/attempt, rest 0.80 s, nudges/attempt 0.00, physics endings {REST=506}
+    @ 4 deg  attempts  1.69 /  4 /  7   p 0.593  fail@12   0 est 2.1e-05  fail@24   0 est 4.3e-10  fail@48   0 est 1.8e-19
+    @ 6 deg  attempts  1.65 /  4 /  7   p 0.607  fail@12   0 est 1.3e-05  fail@24   0 est 1.8e-10  fail@48   0 est 3.3e-20
+    @ 8 deg  attempts  1.56 /  3 /  7   p 0.642  fail@12   0 est 4.4e-06  fail@24   0 est 1.9e-11  fail@48   0 est 3.7e-22
+    @10 deg  attempts  1.51 /  3 /  7   p 0.662  fail@12   0 est 2.2e-06  fail@24   0 est 4.9e-12  fail@48   0 est 2.4e-23
+    @15 deg  attempts  1.35 /  3 /  4   p 0.743  fail@12   0 est 8.5e-08  fail@24   0 est 7.2e-15  fail@48   0 est 5.1e-29
+    cocked dice per resting attempt 0.55; tilt 4-6 8%, 6-8 11%, 8-10 7%, 10-15 24%, 15-25 36%, >25 15%; lean die 96% wall 4% floor 0%; stacked flat 0.00% of dice
+dieF 0.2       attempts/Throw 3.09, 5.5 ms/attempt, rest 0.80 s, nudges/attempt 0.00, physics endings {REST=905, ESCAPED=21}
+    @ 4 deg  attempts  3.09 /  8 / 16   p 0.324  fail@12   3 est 9.1e-03  fail@24   0 est 8.3e-05  fail@48   0 est 6.9e-09
+    @ 6 deg  attempts  2.91 /  8 / 16   p 0.344  fail@12   2 est 6.3e-03  fail@24   0 est 4.0e-05  fail@48   0 est 1.6e-09
+    @ 8 deg  attempts  2.76 /  7 / 16   p 0.362  fail@12   1 est 4.6e-03  fail@24   0 est 2.1e-05  fail@48   0 est 4.3e-10
+    @10 deg  attempts  2.63 /  7 / 13   p 0.381  fail@12   1 est 3.2e-03  fail@24   0 est 1.0e-05  fail@48   0 est 1.0e-10
+    @15 deg  attempts  2.28 /  6 / 12   p 0.438  fail@12   0 est 9.9e-04  fail@24   0 est 9.9e-07  fail@48   0 est 9.7e-13
+    cocked dice per resting attempt 1.26; tilt 4-6 5%, 6-8 6%, 8-10 6%, 10-15 13%, 15-25 24%, >25 46%; lean die 99% wall 1% floor 0%; stacked flat 0.40% of dice
+dieF 0.1       attempts/Throw 2.76, 5.5 ms/attempt, rest 0.80 s, nudges/attempt 0.00, physics endings {REST=806, ESCAPED=22}
+    @ 4 deg  attempts  2.76 /  7 / 13   p 0.362  fail@12   1 est 4.5e-03  fail@24   0 est 2.0e-05  fail@48   0 est 4.2e-10
+    @ 6 deg  attempts  2.62 /  7 / 13   p 0.382  fail@12   1 est 3.1e-03  fail@24   0 est 9.6e-06  fail@48   0 est 9.2e-11
+    @ 8 deg  attempts  2.50 /  7 / 13   p 0.400  fail@12   1 est 2.2e-03  fail@24   0 est 4.7e-06  fail@48   0 est 2.2e-11
+    @10 deg  attempts  2.40 /  7 / 13   p 0.416  fail@12   1 est 1.6e-03  fail@24   0 est 2.5e-06  fail@48   0 est 6.1e-12
+    @15 deg  attempts  2.14 /  5 /  9   p 0.468  fail@12   0 est 5.1e-04  fail@24   0 est 2.6e-07  fail@48   0 est 7.0e-14
+    cocked dice per resting attempt 1.09; tilt 4-6 5%, 6-8 5%, 8-10 6%, 10-15 12%, 15-25 24%, >25 48%; lean die 97% wall 3% floor 0%; stacked flat 0.18% of dice
+sleep strict   attempts/Throw 3.99, 6.9 ms/attempt, rest 1.06 s, nudges/attempt 0.00, physics endings {REST=1152, ESCAPED=44, TIMED_OUT=2}
+    @ 4 deg  attempts  3.99 / 10 / 16   p 0.250  fail@12   7 est 3.1e-02  fail@24   0 est 9.9e-04  fail@48   0 est 9.8e-07
+    @ 6 deg  attempts  3.70 / 10 / 16   p 0.270  fail@12   6 est 2.3e-02  fail@24   0 est 5.2e-04  fail@48   0 est 2.7e-07
+    @ 8 deg  attempts  3.31 /  9 / 13   p 0.302  fail@12   2 est 1.3e-02  fail@24   0 est 1.8e-04  fail@48   0 est 3.2e-08
+    @10 deg  attempts  3.17 /  9 / 13   p 0.316  fail@12   2 est 1.1e-02  fail@24   0 est 1.1e-04  fail@48   0 est 1.2e-08
+    @15 deg  attempts  2.57 /  6 / 13   p 0.389  fail@12   1 est 2.7e-03  fail@24   0 est 7.3e-06  fail@48   0 est 5.3e-11
+    cocked dice per resting attempt 1.57; tilt 4-6 7%, 6-8 6%, 8-10 5%, 10-15 14%, 15-25 22%, >25 46%; lean die 99% wall 1% floor 0%; stacked flat 0.56% of dice
+nudge          attempts/Throw 2.93, 7.0 ms/attempt, rest 0.85 s, nudges/attempt 4.12, physics endings {REST=845, ESCAPED=34}
+    @ 4 deg  attempts  2.93 /  8 / 16   p 0.341  fail@12   3 est 6.7e-03  fail@24   0 est 4.5e-05  fail@48   0 est 2.0e-09
+    @ 6 deg  attempts  2.79 /  7 / 13   p 0.358  fail@12   2 est 4.9e-03  fail@24   0 est 2.4e-05  fail@48   0 est 5.8e-10
+    @ 8 deg  attempts  2.68 /  7 / 13   p 0.374  fail@12   2 est 3.6e-03  fail@24   0 est 1.3e-05  fail@48   0 est 1.8e-10
+    @10 deg  attempts  2.48 /  6 / 11   p 0.403  fail@12   0 est 2.0e-03  fail@24   0 est 4.2e-06  fail@48   0 est 1.7e-11
+    @15 deg  attempts  2.14 /  5 / 11   p 0.467  fail@12   0 est 5.2e-04  fail@24   0 est 2.7e-07  fail@48   0 est 7.4e-14
+    cocked dice per resting attempt 1.28; tilt 4-6 5%, 6-8 6%, 8-10 5%, 10-15 15%, 15-25 20%, >25 49%; lean die 99% wall 1% floor 0%; stacked flat 0.60% of dice
+s+g dieF 0.2   attempts/Throw 1.46, 4.0 ms/attempt, rest 0.81 s, nudges/attempt 0.00, physics endings {REST=438}
+    @ 4 deg  attempts  1.46 /  3 /  8   p 0.685  fail@12   0 est 9.6e-07  fail@24   0 est 9.2e-13  fail@48   0 est 8.4e-25
+    @ 6 deg  attempts  1.44 /  3 /  8   p 0.696  fail@12   0 est 6.2e-07  fail@24   0 est 3.9e-13  fail@48   0 est 1.5e-25
+    @ 8 deg  attempts  1.41 /  3 /  8   p 0.711  fail@12   0 est 3.4e-07  fail@24   0 est 1.2e-13  fail@48   0 est 1.3e-26
+    @10 deg  attempts  1.36 /  3 /  8   p 0.733  fail@12   0 est 1.3e-07  fail@24   0 est 1.6e-14  fail@48   0 est 2.7e-28
+    @15 deg  attempts  1.25 /  2 /  5   p 0.798  fail@12   0 est 4.7e-09  fail@24   0 est 2.2e-17  fail@48   0 est 4.7e-34
+    cocked dice per resting attempt 0.39; tilt 4-6 5%, 6-8 8%, 8-10 9%, 10-15 23%, 15-25 34%, >25 20%; lean die 98% wall 2% floor 0%; stacked flat 0.00% of dice
+s+g nudge      attempts/Throw 1.40, 4.6 ms/attempt, rest 0.85 s, nudges/attempt 1.43, physics endings {REST=421}
+    @ 4 deg  attempts  1.40 /  3 /  5   p 0.713  fail@12   0 est 3.2e-07  fail@24   0 est 1.0e-13  fail@48   0 est 1.0e-26
+    @ 6 deg  attempts  1.35 /  3 /  4   p 0.743  fail@12   0 est 8.5e-08  fail@24   0 est 7.2e-15  fail@48   0 est 5.1e-29
+    @ 8 deg  attempts  1.32 /  3 /  4   p 0.756  fail@12   0 est 4.5e-08  fail@24   0 est 2.0e-15  fail@48   0 est 4.2e-30
+    @10 deg  attempts  1.28 /  2 /  4   p 0.781  fail@12   0 est 1.2e-08  fail@24   0 est 1.4e-16  fail@48   0 est 2.1e-32
+    @15 deg  attempts  1.18 /  2 /  4   p 0.850  fail@12   0 est 1.3e-10  fail@24   0 est 1.7e-20  fail@48   0 est 3.0e-40
+    cocked dice per resting attempt 0.35; tilt 4-6 11%, 6-8 9%, 8-10 13%, 10-15 22%, 15-25 32%, >25 12%; lean die 96% wall 4% floor 0%; stacked flat 0.00% of dice
+combo          attempts/Throw 1.30, 4.6 ms/attempt, rest 0.84 s, nudges/attempt 1.02, physics endings {REST=390}
+    @ 4 deg  attempts  1.30 /  2 /  8   p 0.769  fail@12   0 est 2.3e-08  fail@24   0 est 5.2e-16  fail@48   0 est 2.7e-31
+    @ 6 deg  attempts  1.28 /  2 /  8   p 0.779  fail@12   0 est 1.3e-08  fail@24   0 est 1.8e-16  fail@48   0 est 3.2e-32
+    @ 8 deg  attempts  1.23 /  2 /  3   p 0.813  fail@12   0 est 1.8e-09  fail@24   0 est 3.3e-18  fail@48   0 est 1.1e-35
+    @10 deg  attempts  1.19 /  2 /  3   p 0.843  fail@12   0 est 2.3e-10  fail@24   0 est 5.3e-20  fail@48   0 est 2.8e-39
+    @15 deg  attempts  1.13 /  2 /  3   p 0.888  fail@12   0 est 4.1e-12  fail@24   0 est 1.7e-23  fail@48   0 est 2.8e-46
+    cocked dice per resting attempt 0.26; tilt 4-6 6%, 6-8 12%, 8-10 15%, 10-15 20%, 15-25 30%, >25 18%; lean die 97% wall 3% floor 0%; stacked flat 0.00% of dice

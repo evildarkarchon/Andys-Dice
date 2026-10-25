@@ -1,0 +1,6 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+format = 1
+name = Ivory / black
+base = #dccfae
+roughness = 0.32
+ink = #141414

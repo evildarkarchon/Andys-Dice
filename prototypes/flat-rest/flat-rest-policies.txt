@@ -1,0 +1,51 @@
+Issue #21 flat-rest measurements. 300 Throws of the 20-Dice cap per row, seeds 1000..1299.
+Trays: ADR-0010's three built-ins, 300 x 200 mm, 30 mm walls, escape = visible walls.
+
+== cocked-only: freeze the flat dice, re-throw only the cocked ones (visible), at 4 deg; ceiling 48 attempts ==
+visible = re-throw rounds the player watches after the first landing (mean / p95 / max); dice = dice per re-throw;
+silent = attempts re-simulated unseen (escapes, time-outs) per Throw; fail = Throws (of 300) that hit the ceiling.
+
+-- felt/walnut rect --
+base           visible 1.02 / 2 / 6, dice 2.08, Throws with any re-throw 79%, silent 0.00, fail 0
+spread+gentle  visible 0.81 / 2 / 6, dice 1.41, Throws with any re-throw 61%, silent 0.00, fail 0
+s+g dieF 0.2   visible 0.57 / 2 / 4, dice 1.31, Throws with any re-throw 47%, silent 0.00, fail 0
+combo          visible 0.39 / 1 / 2, dice 1.19, Throws with any re-throw 37%, silent 0.00, fail 0
+
+-- leather/padded hex --
+base           visible 1.07 / 2 / 5, dice 2.38, Throws with any re-throw 87%, silent 0.00, fail 0
+spread+gentle  visible 0.96 / 2 / 6, dice 1.57, Throws with any re-throw 75%, silent 0.00, fail 0
+s+g dieF 0.2   visible 0.70 / 2 / 4, dice 1.38, Throws with any re-throw 58%, silent 0.00, fail 0
+combo          visible 0.46 / 1 / 3, dice 1.28, Throws with any re-throw 41%, silent 0.00, fail 0
+
+-- walnut/walnut rect --
+base           visible 0.81 / 2 / 3, dice 2.01, Throws with any re-throw 74%, silent 0.04, fail 0
+spread+gentle  visible 0.45 / 1 / 2, dice 1.37, Throws with any re-throw 42%, silent 0.00, fail 0
+s+g dieF 0.2   visible 0.36 / 1 / 2, dice 1.22, Throws with any re-throw 34%, silent 0.00, fail 0
+combo          visible 0.25 / 1 / 2, dice 1.12, Throws with any re-throw 24%, silent 0.00, fail 0
+
+== reroll: ADR-0006 Reroll Throw of k dice among 20 - k frozen at rest, whole retries at 4 deg ==
+attempts = mean / max attempts for the Reroll Throw; fail = Reroll Throws (of those with a flat start) hitting 48.
+
+-- felt/walnut rect --
+base             k=1  attempts  1.24 /  7 fail 0   k=4  attempts  2.47 / 13 fail 0   k=10 attempts  5.31 / 31 fail 0
+spread+gentle    k=1  attempts  1.28 /  7 fail 0   k=4  attempts  2.51 / 24 fail 0   k=10 attempts  2.68 / 28 fail 0
+s+g dieF 0.2     k=1  attempts  1.15 /  5 fail 0   k=4  attempts  2.13 / 17 fail 0   k=10 attempts  2.08 / 16 fail 0
+combo            k=1  attempts  1.09 /  4 fail 0   k=4  attempts  1.60 /  8 fail 0   k=10 attempts  1.59 /  7 fail 0
+
+-- leather/padded hex --
+base             k=1  attempts  1.11 /  3 fail 0   k=4  attempts  2.33 / 24 fail 0   k=10 attempts  5.11 / 42 fail 0
+spread+gentle    k=1  attempts  1.21 /  4 fail 0   k=4  attempts  2.04 / 10 fail 0   k=10 attempts  2.71 / 17 fail 0
+s+g dieF 0.2     k=1  attempts  1.14 /  4 fail 0   k=4  attempts  1.94 /  9 fail 0   k=10 attempts  2.18 / 10 fail 0
+combo            k=1  attempts  1.10 /  4 fail 0   k=4  attempts  1.48 /  6 fail 0   k=10 attempts  1.81 /  6 fail 0
+
+-- walnut/walnut rect --
+base             k=1  attempts  1.06 /  3 fail 0   k=4  attempts  1.39 /  6 fail 0   k=10 attempts  2.20 / 10 fail 0
+spread+gentle    k=1  attempts  1.05 /  3 fail 0   k=4  attempts  1.34 /  6 fail 0   k=10 attempts  1.56 /  7 fail 0
+s+g dieF 0.2     k=1  attempts  1.08 /  3 fail 0   k=4  attempts  1.26 /  5 fail 0   k=10 attempts  1.36 /  8 fail 0
+combo            k=1  attempts  1.04 /  3 fail 0   k=4  attempts  1.14 /  3 fail 0   k=10 attempts  1.18 /  4 fail 0
+
+== count: whole retries at 4 deg vs number of dice (first n of the 20-Dice mix), felt/walnut rect ==
+base             n=2   1.04 (p 0.96, fail@12 est 3e-17)   n=5   1.20 (p 0.84, fail@12 est 4e-10)   n=10  2.13 (p 0.47, fail@12 est 5e-04)   n=15  2.10 (p 0.48, fail@12 est 4e-04)   n=20  4.99 (p 0.20, fail@12 est 7e-02)   n=25 20.78 (p 0.04, fail@12 est 6e-01)
+spread+gentle    n=2   1.03 (p 0.97, fail@12 est 1e-18)   n=5   1.13 (p 0.88, fail@12 est 7e-12)   n=10  1.55 (p 0.64, fail@12 est 4e-06)   n=15  1.95 (p 0.51, fail@12 est 2e-04)   n=20  2.61 (p 0.38, fail@12 est 3e-03)   n=25  6.22 (p 0.16, fail@12 est 1e-01)
+s+g dieF 0.2     n=2   1.02 (p 0.98, fail@12 est 3e-21)   n=5   1.09 (p 0.92, fail@12 est 7e-14)   n=10  1.38 (p 0.72, fail@12 est 2e-07)   n=15  1.64 (p 0.61, fail@12 est 1e-05)   n=20  1.97 (p 0.51, fail@12 est 2e-04)   n=25  3.32 (p 0.30, fail@12 est 1e-02)
+combo            n=2   1.01 (p 0.99, fail@12 est 9e-25)   n=5   1.05 (p 0.95, fail@12 est 3e-16)   n=10  1.21 (p 0.83, fail@12 est 6e-10)   n=15  1.40 (p 0.71, fail@12 est 3e-07)   n=20  1.59 (p 0.63, fail@12 est 7e-06)   n=25  2.12 (p 0.47, fail@12 est 5e-04)
