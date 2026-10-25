@@ -1,0 +1,11 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+# A little cloudiness: some of the light scatters inside, so thick parts glow green.
+format = 1
+name = Emerald / white
+base = #0a4a24
+roughness = 0.05
+transmission = 1
+transmission.color = #2cb85c
+ior = 1.57
+cloudiness = 0.12
+ink = #f2f2ea

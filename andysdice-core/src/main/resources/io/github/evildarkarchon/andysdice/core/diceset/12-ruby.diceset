@@ -1,0 +1,11 @@
+# Andy's Dice Dice Set. PROTOTYPE candidate; colours are sRGB hex.
+format = 1
+name = Ruby / gold
+base = #6a0812
+roughness = 0.05
+transmission = 1
+transmission.color = #d0142c
+ior = 1.58
+ink = #e6b860
+ink.metallic = 1
+ink.roughness = 0.35
