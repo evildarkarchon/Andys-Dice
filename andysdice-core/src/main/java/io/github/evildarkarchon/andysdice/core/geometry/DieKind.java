@@ -101,11 +101,32 @@ public enum DieKind {
     }
 
     /**
+     * The rotation group of the Die's solid, derived from it by {@link Symmetry#groupOf(Solid)}: 12 rotations for
+     * the d4, 24 for the d6 and d8, 10 for the d10, 60 for the d12 and d20. The percentile d10 returns the very
+     * list the d10 does.
+     *
+     * @return the shared, immutable group, identity first
+     */
+    public List<Symmetry> symmetries() {
+        return Solids.SYMMETRIES.get(this);
+    }
+
+    /**
      * Builds every solid once, on first use. A holder class, because an enum's constructor may not read the
      * enum's other constants, and the percentile d10 must share the d10's instance.
      */
     private static final class Solids {
         private static final Map<DieKind, Solid> BY_KIND = build();
+        private static final Map<DieKind, List<Symmetry>> SYMMETRIES = buildSymmetries();
+
+        /** Derives each solid's group once; the percentile d10 shares the d10's solid and so its group. */
+        private static Map<DieKind, List<Symmetry>> buildSymmetries() {
+            Map<DieKind, List<Symmetry>> out = new EnumMap<>(DieKind.class);
+            for (DieKind kind : values()) {
+                out.put(kind, kind == PERCENTILE_D10 ? out.get(D10) : Symmetry.groupOf(BY_KIND.get(kind)));
+            }
+            return out;
+        }
 
         /** Builds one solid per Die Kind, in declaration order, so the d10's exists before the percentile's. */
         private static Map<DieKind, Solid> build() {
