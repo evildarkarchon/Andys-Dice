@@ -14,7 +14,7 @@ import java.util.List;
  * code runs, too late for the smoke test's {@code prism.verbose} and for logging the toolkit's start-up.
  *
  * <p>The process exits with the status {@link AndysDice#launch} returns: 0 after a normal quit or a passed smoke
- * test, non-zero after a start-up failure or a failed smoke test.
+ * test, non-zero after a start-up failure, a runtime failure or a failed smoke test.
  */
 public final class Main {
 
@@ -47,14 +47,14 @@ public final class Main {
         if (log != null) {
             LOG.log(Level.INFO, "Log file: " + log.file());
         }
-        // v1 is crash-only (spec §3): whatever escapes a thread is at least on record before the session ends.
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) ->
-                LOG.log(Level.ERROR, "Uncaught exception on thread " + thread.getName(), error));
+        // v1 is crash-only (spec §3): whatever escapes a thread is on record, and ends the session in the failure
+        // panel once the window is up.
+        FailureGuard failures = FailureGuard.install(log == null ? null : log.file());
         if (smoke) {
             SmokeTest.prepare();
         }
 
-        int status = AndysDice.launch(launched, args);
+        int status = AndysDice.launch(launched, args, failures);
 
         LOG.log(status == 0 ? Level.INFO : Level.ERROR, "Andy's Dice exiting with status " + status);
         if (log != null) {

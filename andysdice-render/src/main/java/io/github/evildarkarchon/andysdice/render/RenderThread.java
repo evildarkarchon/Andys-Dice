@@ -7,6 +7,7 @@ import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,6 +45,9 @@ public final class RenderThread implements AutoCloseable {
     // The latest size asked for, width in the high half and height in the low; NO_SIZE once applied.
     private final AtomicLong requestedSize = new AtomicLong(NO_SIZE);
     private volatile boolean running = true;
+    // Set by close(), so the thread's end can be told apart from a death.
+    private volatile boolean closing;
+    private final CompletableFuture<Void> stopped = new CompletableFuture<>();
     private Thread thread;
     private GlDriver driver;
 
@@ -160,11 +164,27 @@ public final class RenderThread implements AutoCloseable {
     }
 
     /**
+     * Tells when the render thread has ended, and why. v1 is crash-only (spec §3.2 "Runtime failure"): a render
+     * thread that ends without {@link #close()} is a dead one, and the app shows its failure panel. Nothing is
+     * recovered, since no second render thread can be started in this JVM (ADR-0002).
+     *
+     * <p>Whatever ended the thread also still reaches the thread's uncaught-exception handler.
+     *
+     * @return a stage that completes normally once the thread has ended after {@link #close()}, and exceptionally
+     *     when it died: with what a frame threw, with a {@link GlContextLostException} when the driver reported
+     *     the context lost, or with an {@link IllegalStateException} if it ended for no reason it could see
+     */
+    public CompletionStage<Void> stopped() {
+        return stopped.minimalCompletionStage();
+    }
+
+    /**
      * Stops the render thread and releases the renderer, the transport, the render target and the context, in
      * that order. For app exit only: no render thread can be started again in this JVM.
      */
     @Override
     public void close() {
+        closing = true;
         running = false;
         wakeUp();
         try {
@@ -195,14 +215,37 @@ public final class RenderThread implements AutoCloseable {
             running = false;
             release();
             ready.completeExceptionally(t);
+            stopped.completeExceptionally(t);
             return;
         }
         ready.complete(context.driver());
+        Throwable death = null;
         try {
             loop();
+        } catch (Throwable t) {
+            death = t;
+            // Rethrown as well, so the thread's uncaught-exception handler (the app's failure guard) sees it.
+            throw t;
         } finally {
             running = false;
-            release();
+            try {
+                release();
+            } finally {
+                ended(death);
+            }
+        }
+    }
+
+    /** Completes {@link #stopped()}: normally after {@link #close()}, exceptionally otherwise. */
+    private void ended(Throwable death) {
+        if (death != null) {
+            stopped.completeExceptionally(death);
+        } else if (closing) {
+            stopped.complete(null);
+        } else {
+            // The loop only returns by itself when the thread is interrupted.
+            stopped.completeExceptionally(new IllegalStateException("the render thread stopped without being"
+                    + " closed"));
         }
     }
 
@@ -224,6 +267,12 @@ public final class RenderThread implements AutoCloseable {
                 message = messages.poll();
             }
             context.pumpEvents();
+            // A lost context draws nothing ever again, and ADR-0002 allows no second one: end the thread, which
+            // the app shows as its runtime failure (spec §3.2). Asking is cheap and never waits for the GPU.
+            String lost = context.lostReason();
+            if (lost != null) {
+                throw new GlContextLostException("the OpenGL driver reported the context lost: " + lost);
+            }
             applyRequestedSize();
             boolean wanted = frameRequested.get() && width > 0;
             if (wanted && transport.canSubmit()) {

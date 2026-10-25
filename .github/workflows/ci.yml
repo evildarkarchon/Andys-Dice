@@ -4,7 +4,8 @@
 #   a real OpenGL 4.6 core driver in place of GDI Generic's GL 1.1. That includes the assembly's Failsafe tests
 #   of the built app-image: `AndysDice.exe --smoke-test` must exit 0 (ADR-0005).
 # - windows-no-mesa: the packaged zip on the bare runner, whose only OpenGL is GDI Generic 1.1. The launch must
-#   fail fast (ADR-0002): a non-zero exit, logging the GL 3.3 requirement and the renderer and driver it found.
+#   fail fast (ADR-0002): the failure panel, then a non-zero exit once its window is closed, logging the GL 3.3
+#   requirement and the renderer and driver it found.
 # - ubuntu: compile plus every test except the gl-tagged ones, which keeps the build Linux-capable (ADR-0004).
 #   The no-gl profile excludes them by tag; a gl test never skips itself (ADR-0005).
 #
@@ -100,16 +101,52 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $unzipped
           $image = Join-Path $unzipped 'AndysDice'
 
-          # A plain launch, as the user's. Should GL somehow work, the window stays up and the timeout fails the job.
+          # A plain launch, as the user's. Without GL 3.3 it shows the failure panel (spec §3.2) and waits for the
+          # Player, so once the log says the panel is up the window is closed as a Player would close it, which
+          # must exit non-zero. Should GL somehow work, no panel appears and the timeout fails the job.
           $app = Start-Process -FilePath (Join-Path $image 'AndysDice.exe') -WorkingDirectory $unzipped -PassThru
           # Reading Handle now keeps the process's handle open, without which ExitCode can read as empty.
           $null = $app.Handle
-          if (-not $app.WaitForExit(120000)) {
-            $app.Kill($true)
-            throw 'AndysDice.exe was still running after 2 minutes; it should have failed fast without GL 3.3'
+          $logFile = Join-Path $image 'data/logs/andysdice.log'
+          $deadline = (Get-Date).AddMinutes(2)
+          $panelShown = $false
+          while (-not $app.HasExited -and (Get-Date) -lt $deadline) {
+            if ((Test-Path $logFile) -and ((Get-Content -Raw -Encoding utf8 $logFile) -match 'Failure panel shown: ')) {
+              $panelShown = $true
+              break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $app.HasExited) {
+            if (-not $panelShown) {
+              $app.Kill($true)
+              throw 'AndysDice.exe showed no failure panel within 2 minutes; it should have failed fast without GL 3.3'
+            }
+            # The launcher runs the app in a child process of its own, which owns the window, so the window is
+            # looked for there too. It may take a moment to count as a main window; ask again for up to 10 s.
+            $closed = $false
+            for ($i = 0; $i -lt 20 -and -not $closed -and -not $app.HasExited; $i++) {
+              $ids = @($app.Id) + @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($app.Id)" |
+                  ForEach-Object { $_.ProcessId })
+              foreach ($id in $ids) {
+                $process = Get-Process -Id $id -ErrorAction SilentlyContinue
+                if ($process -and $process.MainWindowHandle -ne 0 -and $process.CloseMainWindow()) {
+                  $closed = $true
+                  break
+                }
+              }
+              if (-not $closed) { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $closed -and -not $app.HasExited) {
+              $app.Kill($true)
+              throw 'the failure panel is in the log, but AndysDice.exe has no window to close'
+            }
+            if (-not $app.WaitForExit(30000)) {
+              $app.Kill($true)
+              throw 'AndysDice.exe was still running 30 s after its failure panel window was closed'
+            }
           }
 
-          $logFile = Join-Path $image 'data/logs/andysdice.log'
           if (-not (Test-Path $logFile)) { throw "no log at $logFile" }
           $log = Get-Content -Raw -Encoding utf8 $logFile
           Write-Output $log
@@ -121,6 +158,9 @@ jobs:
           }
           if ($log -notmatch '\(renderer: (?!unknown)[^,]+, vendor: [^,]+, version: \d+\.\d+[^)]*\)') {
             throw 'the start-up failure does not name the detected renderer and driver'
+          }
+          if ($log -notmatch "Failure panel shown: Andy's Dice needs OpenGL 3\.3 core, but ") {
+            throw 'the failure panel did not name the OpenGL 3.3 core requirement'
           }
 
   ubuntu:
