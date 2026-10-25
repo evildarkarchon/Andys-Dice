@@ -17,10 +17,101 @@
     <artifactId>andysdice-physics</artifactId>
     <name>Andy's Dice: physics</name>
 
+    <properties>
+        <!-- The jolt-jni native flavour to unpack (ADR-0003): ReleaseSp ships; the jolt-debug profile swaps in DebugSp. -->
+        <jolt-jni.flavour>ReleaseSp</jolt-jni.flavour>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.evildarkarchon.andysdice</groupId>
             <artifactId>andysdice-core</artifactId>
         </dependency>
+        <!-- jolt-jni's class jar (module com.github.stephengold.joltjni) comes from the OS profile below. -->
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              ADR-0003/0004: the default ReleaseSp native (never _avx2 or _fma) is laid out on disk at build time,
+              flat in target/natives, and our loader System.loads it from there; nothing is extracted at runtime.
+              The classifier jar is unpacked, never made a dependency, so it can't land on the module path.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-jolt-native</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.github.stephengold</groupId>
+                                    <artifactId>jolt-jni-${jolt-jni.platform}</artifactId>
+                                    <version>${jolt-jni.version}</version>
+                                    <classifier>${jolt-jni.flavour}</classifier>
+                                    <includes>**/*.dll,**/*.so,**/*.dylib</includes>
+                                    <!-- ADR-0004 wants a flat natives directory, not the jar's nested path. -->
+                                    <fileMappers>
+                                        <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                    </fileMappers>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/natives</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- jolt-jni publishes one artifact per platform; its class jars are identical, its natives are not. -->
+        <profile>
+            <id>jolt-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <jolt-jni.platform>Windows64</jolt-jni.platform>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>com.github.stephengold</groupId>
+                    <artifactId>jolt-jni-Windows64</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>jolt-linux</id>
+            <activation>
+                <os>
+                    <name>linux</name>
+                </os>
+            </activation>
+            <properties>
+                <jolt-jni.platform>Linux64</jolt-jni.platform>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>com.github.stephengold</groupId>
+                    <artifactId>jolt-jni-Linux64</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <!-- ADR-0003: the DebugSp native, for development only (mvn -Pjolt-debug ...). Its asserts are live and
+             it counts native allocations, which the tests use to check every native object is freed. -->
+        <profile>
+            <id>jolt-debug</id>
+            <properties>
+                <jolt-jni.flavour>DebugSp</jolt-jni.flavour>
+            </properties>
+        </profile>
+    </profiles>
 </project>

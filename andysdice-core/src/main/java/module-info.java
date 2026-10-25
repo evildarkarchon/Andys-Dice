@@ -13,4 +13,5 @@ module io.github.evildarkarchon.andysdice.core {
     exports io.github.evildarkarchon.andysdice.core.expression;
     exports io.github.evildarkarchon.andysdice.core.facevalue;
     exports io.github.evildarkarchon.andysdice.core.geometry;
+    exports io.github.evildarkarchon.andysdice.core.simulation;
 }

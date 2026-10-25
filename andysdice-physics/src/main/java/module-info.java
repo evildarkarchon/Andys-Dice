@@ -5,5 +5,8 @@
  * {@code System.load}s Jolt's native from the app's natives directory (ADR-0004).
  */
 module io.github.evildarkarchon.andysdice.physics {
-    requires io.github.evildarkarchon.andysdice.core;
+    requires transitive io.github.evildarkarchon.andysdice.core;
+    requires com.github.stephengold.joltjni;
+
+    exports io.github.evildarkarchon.andysdice.physics;
 }
