@@ -19,6 +19,7 @@ import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
 import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
+import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -62,7 +63,7 @@ final class RollController {
          * @param job the job
          * @return its result, completed exceptionally if it threw
          */
-        CompletableFuture<Optional<Planned>> submit(Function<Simulator, Optional<Planned>> job);
+        CompletableFuture<Optional<ThrowPlayback>> submit(Function<Simulator, Optional<ThrowPlayback>> job);
     }
 
     /** Where the Throw is drawn: the Tray. */
@@ -70,10 +71,9 @@ final class RollController {
         /**
          * Puts a Throw on the Tray at its Release, in place of the Dice there.
          *
-         * @param recording the Throw's Recording
-         * @param turns each Die's Numbering Rotation, in the Recording's order
+         * @param playback the pre-simulated Throw, with each Die's Die Kind and Numbering Rotation
          */
-        void show(Recording recording, List<Orientation> turns);
+        void show(ThrowPlayback playback);
 
         /**
          * Draws the Throw on the Tray at a moment of its playback.
@@ -81,21 +81,6 @@ final class RollController {
          * @param seconds playback time since the Throw's Release
          */
         void showTime(double seconds);
-    }
-
-    /**
-     * A pre-simulated Throw ready to play: its Recording, with each Die's Numbering Rotation.
-     *
-     * @param recording the accepted Attempt's Recording
-     * @param turns each Die's Numbering Rotation
-     */
-    record Planned(Recording recording, List<Orientation> turns) {
-
-        /** Copies the turns. */
-        Planned {
-            Objects.requireNonNull(recording, "recording");
-            turns = List.copyOf(turns);
-        }
     }
 
     /** The Throw now playing, with when it started on the clock and the Roll Result it reveals at rest. */
@@ -193,7 +178,7 @@ final class RollController {
         underWay = true;
         setStatus(new RollStatus.Rolling(expression));
         RandomGenerator releaseGenerator = releases;
-        CompletableFuture<Optional<Planned>> planned;
+        CompletableFuture<Optional<ThrowPlayback>> planned;
         try {
             planned = physics.submit(simulator -> plan(simulator, releaseGenerator, targetFace));
         } catch (RuntimeException e) {
@@ -209,7 +194,7 @@ final class RollController {
      *
      * @return the Throw ready to play, or empty if no Attempt came to rest flat
      */
-    private static Optional<Planned> plan(Simulator simulator, RandomGenerator releases, int targetFace) {
+    private static Optional<ThrowPlayback> plan(Simulator simulator, RandomGenerator releases, int targetFace) {
         AttemptRequest request = new AttemptRequest(List.of(SkeletonCube.INSTANCE), new Release.Drawn(releases),
                 List.of(), SkeletonTray.GEOMETRY, SkeletonTray.MATERIALS);
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -217,8 +202,7 @@ final class RollController {
             if (result.ending() == Ending.AT_REST) {
                 Orientation landed = result.recording().finalPose(0).orientation();
                 Quaterniondc turn = NumberingRotation.of(SkeletonCube.upFace(landed), targetFace).rotation();
-                return Optional.of(new Planned(result.recording(), List.of(new Orientation(
-                        (float) turn.x(), (float) turn.y(), (float) turn.z(), (float) turn.w()))));
+                return Optional.of(new ThrowPlayback(result.recording(), List.of(DieKind.D6), List.of(turn)));
             }
             LOG.log(System.Logger.Level.DEBUG, "Attempt {0} of {1} ended {2}; retrying", attempt, MAX_ATTEMPTS,
                     result.ending());
@@ -228,7 +212,7 @@ final class RollController {
     }
 
     /** The pre-simulation is done: play its Throw, or fail the Roll leaving the Tray as it was. */
-    private void arrived(RollExpression expression, RollResult result, Optional<Planned> planned,
+    private void arrived(RollExpression expression, RollResult result, Optional<ThrowPlayback> planned,
             Throwable error) {
         if (error != null || planned.isEmpty()) {
             underWay = false;
@@ -239,7 +223,7 @@ final class RollController {
             return;
         }
         Recording recording = planned.get().recording();
-        tray.show(recording, planned.get().turns());
+        tray.show(planned.get());
         // Playback starts now on the clock, wherever the clock has got to.
         playing = new Playing(expression, result, clock.time(), recording.restTime());
     }

@@ -16,6 +16,8 @@ import io.github.evildarkarchon.andysdice.core.simulation.Recording;
 import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
+import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -25,7 +27,6 @@ import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
-import org.joml.Quaterniond;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -131,10 +132,10 @@ class RollControllerTest {
         controller.roll("1d6");
         physics.finish();
 
-        Orientation turn = tray.turns.getLast().getFirst();
-        Orientation drawn = fall.finalPose(0).orientation().times(turn);
+        DiceScene.Die drawn = tray.playbacks.getLast().diceAt(fall.restTime()).getFirst();
         int value = new FaceValueGenerator(new SplittableRandom(FACE_SEED)).faceValue(DieKind.D6);
-        UpFace up = UpFace.read(DieKind.D6, new Quaterniond(drawn.x(), drawn.y(), drawn.z(), drawn.w()));
+        UpFace up = UpFace.read(DieKind.D6, drawn.orientation());
+        assertThat(drawn.kind()).isEqualTo(DieKind.D6);
         assertThat(up.face()).isEqualTo(FaceValues.face(DieKind.D6, value));
         assertThat(up.cocked()).isFalse();
     }
@@ -288,16 +289,16 @@ class RollControllerTest {
     /** A physics worker that holds each job until the test lets it run, as if pre-simulating took a while. */
     private static final class HeldPhysics implements RollController.PhysicsJobs {
         private final Simulator simulator;
-        Function<Simulator, Optional<RollController.Planned>> held;
-        private CompletableFuture<Optional<RollController.Planned>> result;
+        Function<Simulator, Optional<ThrowPlayback>> held;
+        private CompletableFuture<Optional<ThrowPlayback>> result;
 
         HeldPhysics(Simulator simulator) {
             this.simulator = simulator;
         }
 
         @Override
-        public CompletableFuture<Optional<RollController.Planned>> submit(
-                Function<Simulator, Optional<RollController.Planned>> job) {
+        public CompletableFuture<Optional<ThrowPlayback>> submit(
+                Function<Simulator, Optional<ThrowPlayback>> job) {
             held = job;
             result = new CompletableFuture<>();
             return result;
@@ -305,8 +306,8 @@ class RollControllerTest {
 
         /** Runs the held job, as the worker would, and completes its future. */
         void finish() {
-            Function<Simulator, Optional<RollController.Planned>> job = held;
-            CompletableFuture<Optional<RollController.Planned>> future = result;
+            Function<Simulator, Optional<ThrowPlayback>> job = held;
+            CompletableFuture<Optional<ThrowPlayback>> future = result;
             held = null;
             try {
                 future.complete(job.apply(simulator));
@@ -319,13 +320,13 @@ class RollControllerTest {
     /** A Tray that remembers what it was asked to show. */
     private static final class RecordingTray implements RollController.TrayView {
         final List<Recording> shown = new ArrayList<>();
-        final List<List<Orientation>> turns = new ArrayList<>();
+        final List<ThrowPlayback> playbacks = new ArrayList<>();
         final List<Double> times = new ArrayList<>();
 
         @Override
-        public void show(Recording recording, List<Orientation> dieTurns) {
-            shown.add(recording);
-            turns.add(dieTurns);
+        public void show(ThrowPlayback playback) {
+            shown.add(playback.recording());
+            playbacks.add(playback);
             times.clear();
             times.add(0.0);
         }
