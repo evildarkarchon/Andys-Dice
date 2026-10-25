@@ -29,10 +29,15 @@ import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.mesh.DieMesh;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralAtlas;
 import io.github.evildarkarchon.andysdice.render.numerals.NumeralLayout;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.joml.Matrix4d;
 import org.joml.Matrix4dc;
 import org.joml.Quaterniond;
@@ -221,6 +226,9 @@ public final class DiceScene implements FrameRenderer {
     // NumeralLayout.faceTable()'s three vec4 per face, as die.frag's uFaces reads them.
     private static final int FACE_TABLE_FLOATS = 12;
 
+    /** At most this many numeral atlases are rasterised at once, in {@link #init()}. */
+    private static final int ATLAS_THREADS = 4;
+
     /** The model matrix of what is already in world space: the Tray's walls, in the shadow pass. */
     private static final float[] IDENTITY = columns(new Matrix4d());
 
@@ -371,12 +379,63 @@ public final class DiceScene implements FrameRenderer {
         shadowMap = new ShadowMap();
         frame = new SceneFrame();
         // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
-        // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
+        // The 7 atlases are most of the launch's wait (ADR-0014's 3 s), so they are rasterised on CPU threads in
+        // parallel while this thread uploads the meshes; every GL upload stays here, on the render thread.
+        Map<DieKind, NumeralLayout> layouts = new EnumMap<>(DieKind.class);
         for (DieKind kind : DieKind.values()) {
-            meshes.put(kind, new GlMesh(kind));
-            NumeralLayout layout = NumeralLayout.of(kind);
-            atlases.put(kind, new GlAtlas(NumeralAtlas.rasterise(layout)));
-            faceTables.put(kind, layout.faceTable());
+            layouts.put(kind, NumeralLayout.of(kind));
+        }
+        List<DieKind> largestFirst = layouts.keySet().stream()
+                .sorted(Comparator.comparingInt((DieKind kind) -> layouts.get(kind).grid()).reversed())
+                .toList();
+        // Bounded, and largest first: the d20's atlas alone is about a quarter of the work, so a few threads finish
+        // as soon as seven would, while holding fewer half-built atlases (some hundred MB each at peak) at once.
+        int threads = Math.clamp(Runtime.getRuntime().availableProcessors(), 1, ATLAS_THREADS);
+        ExecutorService rasteriser = Executors.newFixedThreadPool(threads,
+                Thread.ofPlatform().name("andysdice-atlas-", 0).daemon(true).factory());
+        try {
+            Map<DieKind, Future<NumeralAtlas>> rasterised = new EnumMap<>(DieKind.class);
+            for (DieKind kind : largestFirst) {
+                NumeralLayout layout = layouts.get(kind);
+                rasterised.put(kind, rasteriser.submit(() -> NumeralAtlas.rasterise(layout)));
+            }
+            for (DieKind kind : DieKind.values()) {
+                meshes.put(kind, new GlMesh(kind));
+                faceTables.put(kind, layouts.get(kind).faceTable());
+            }
+            for (DieKind kind : largestFirst) {
+                // Removed as it is uploaded, so each atlas's arrays can be collected as soon as they are on the GPU.
+                atlases.put(kind, new GlAtlas(await(rasterised.remove(kind))));
+            }
+        } finally {
+            // Only does anything if an upload threw: the remaining rasterisations are no longer wanted.
+            rasteriser.shutdownNow();
+        }
+    }
+
+    /**
+     * Waits for an atlas being rasterised off the render thread.
+     *
+     * @param atlas the rasterisation
+     * @return the atlas
+     * @throws IllegalStateException if the render thread is interrupted while it waits (its interrupt is kept)
+     * @throws RuntimeException or {@link Error} as the rasterisation threw it
+     */
+    private static NumeralAtlas await(Future<NumeralAtlas> atlas) {
+        try {
+            return atlas.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while rasterising the numeral atlases", e);
+        } catch (ExecutionException e) {
+            // Rethrown as itself, so a failure reads the same as it did when the atlases were made on this thread.
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (e.getCause() instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("a numeral atlas couldn't be rasterised", e.getCause());
         }
     }
 
