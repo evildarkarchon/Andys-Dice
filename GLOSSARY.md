@@ -13,8 +13,8 @@ The shape and numbering of a die, identified by its face count, plus the percent
 _Avoid_: Die type, die size
 
 **Dice Set**:
-A matched visual style (material, colour, numeral ink) applied to the dice in a roll, modelled on the 7-piece D&D set: d4, d6, d8, d10, percentile d10, d12, d20.
-_Avoid_: Skin, theme, pack
+A matched visual style (material, colour, numeral ink) applied to the dice in a roll, modelled on the 7-piece D&D set: d4, d6, d8, d10, percentile d10, d12, d20. Some ship with the app, and a player can add their own.
+_Avoid_: Skin, theme, pack, material (the Dice Set is the whole look, not just the body)
 
 **Numeral**:
 A number engraved into a die face and filled with ink. Most faces carry one, and a d4 face carries three, one per corner. It is what a die shows, as distinct from the Face Value it stands for.
