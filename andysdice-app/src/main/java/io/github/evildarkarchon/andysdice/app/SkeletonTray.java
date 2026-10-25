@@ -16,12 +16,12 @@ final class SkeletonTray {
     /**
      * Green felt in walnut, from the tray prototype's numbers (spec Appendix C), as the combined pair values the
      * simulator takes: Jolt's geometric mean of a 0.4 die against felt's 0.5 and the walls' 0.5, felt's 0.15
-     * bounce and the walls' 0.5, die-on-die friction 0.2 (ADR-0013), and felt's spin damping.
+     * bounce and the walls' 0.5, die-on-die friction 0.2 (ADR-0013) with the floor's bounce, and felt's spin
+     * damping.
      */
-    static final TrayMaterials MATERIALS = new TrayMaterials(
+    static final TrayMaterials MATERIALS = TrayMaterials.of(
             new ContactMaterial((float) Math.sqrt(0.4 * 0.5), 0.15f),
-            new ContactMaterial((float) Math.sqrt(0.4 * 0.5), 0.5f),
-            new ContactMaterial(0.2f, 0.15f), 0.6f);
+            new ContactMaterial((float) Math.sqrt(0.4 * 0.5), 0.5f), 0.6f);
 
     private SkeletonTray() {}
 }

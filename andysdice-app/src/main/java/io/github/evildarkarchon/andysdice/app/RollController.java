@@ -11,9 +11,11 @@ import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValues;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.NumberingRotation;
+import io.github.evildarkarchon.andysdice.core.geometry.UpFace;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
+import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
@@ -29,6 +31,7 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
+import org.joml.Quaterniond;
 import org.joml.Quaterniondc;
 
 /**
@@ -195,13 +198,15 @@ final class RollController {
      * @return the Throw ready to play, or empty if no Attempt came to rest flat
      */
     private static Optional<ThrowPlayback> plan(Simulator simulator, RandomGenerator releases, int targetFace) {
-        AttemptRequest request = new AttemptRequest(List.of(SkeletonCube.INSTANCE), new Release.Drawn(releases),
-                List.of(), SkeletonTray.GEOMETRY, SkeletonTray.MATERIALS);
+        // The d6's own solid as a rounded hull (#37), the same solid #40's rounded mesh draws.
+        AttemptRequest request = new AttemptRequest(List.of(DieKindBody.of(DieKind.D6)),
+                new Release.Drawn(releases), List.of(), SkeletonTray.GEOMETRY, SkeletonTray.MATERIALS);
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             Attempt result = simulator.simulate(request);
             if (result.ending() == Ending.AT_REST) {
                 Orientation landed = result.recording().finalPose(0).orientation();
-                Quaterniondc turn = NumberingRotation.of(SkeletonCube.upFace(landed), targetFace).rotation();
+                UpFace up = UpFace.read(DieKind.D6, new Quaterniond(landed.x(), landed.y(), landed.z(), landed.w()));
+                Quaterniondc turn = NumberingRotation.of(up, targetFace).rotation();
                 return Optional.of(new ThrowPlayback(result.recording(), List.of(DieKind.D6), List.of(turn)));
             }
             LOG.log(System.Logger.Level.DEBUG, "Attempt {0} of {1} ended {2}; retrying", attempt, MAX_ATTEMPTS,

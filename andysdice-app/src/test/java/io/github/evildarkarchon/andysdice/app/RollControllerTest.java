@@ -10,6 +10,7 @@ import io.github.evildarkarchon.andysdice.core.geometry.UpFace;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
+import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
 import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
@@ -83,7 +84,7 @@ class RollControllerTest {
 
         assertThat(simulator.requests).hasSize(1);
         AttemptRequest request = simulator.requests.getFirst();
-        assertThat(request.dice()).hasSize(1);
+        assertThat(request.dice()).containsExactly(DieKindBody.of(DieKind.D6));
         assertThat(request.release()).isInstanceOf(Release.Drawn.class);
         assertThat(request.frozen()).isEmpty();
         assertThat(tray.shown).containsExactly(FALL);
