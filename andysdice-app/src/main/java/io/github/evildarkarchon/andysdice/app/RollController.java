@@ -142,7 +142,8 @@ final class RollController {
      */
     void roll(String input) {
         if (underWay) {
-            // A Roll typed during another becomes the Queued Roll in #49; until then it is ignored.
+            // A Roll asked for during another is queued in front of the controller (RollQueue, #50), so one that
+            // still reaches it here is ignored.
             return;
         }
         RollExpression expression;

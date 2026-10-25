@@ -60,6 +60,8 @@ final class Palette {
             graphic("the bell's icon while unread", ON_ACCENT, NOTICE),
             graphic("the Notice list's outline over the window", OUTLINE, BACKGROUND),
             text("the parse-error popup", ON_ERROR, ERROR),
+            text("the \"next:\" chip's text (#50)", TEXT, RAISED),
+            graphic("the \"next:\" chip's outline on the toolbar (#50)", ACCENT, SURFACE),
             graphic("icons on the surface", ICON, SURFACE),
             graphic("icons on a button", ICON, RAISED),
             graphic("the focus ring on the surface", FOCUS, SURFACE),

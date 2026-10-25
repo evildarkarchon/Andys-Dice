@@ -148,10 +148,14 @@ final class RollUi extends BorderPane {
         expressionBox.requestFocus();
     }
 
-    /** Rolls what the box holds, then puts focus back in it (a Roll button press would otherwise keep it). */
+    /**
+     * Rolls what the box holds, with focus put back in it first (a Roll button press would otherwise keep it).
+     * Focus comes first because a text field gaining focus may select all of itself; the handler then sets the
+     * selection it wants (an error's span, or the accepted expression) and that is what stays.
+     */
     private void roll() {
-        onRoll.accept(expressionBox.getText());
         focusBox();
+        onRoll.accept(expressionBox.getText());
     }
 
     /**

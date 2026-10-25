@@ -24,6 +24,8 @@ final class RollSession {
     private final RollController controller;
     private final RollUi ui;
     private final Notices notices = new Notices();
+    private final RollQueue queue;
+    private final RollEntry entry;
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     /**
@@ -57,21 +59,30 @@ final class RollSession {
                 });
         ui = new RollUi(tray.node());
         NoticeBell.attach(ui.bell(), notices);
-        ui.setOnRoll(controller::roll);
+        // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
+        queue = new RollQueue(controller, clock);
+        entry = new RollEntry(ui, queue);
         ui.showStatus(controller.status());
         controller.setOnStatusChanged(status -> {
             ui.showStatus(status);
-            // Only playback needs the pulse; once the Dice rest (or nothing will move) and the Tray has stopped
-            // moving (the camera settled in), let JavaFX idle.
-            if (!(status instanceof RollStatus.Rolling) && !tray.moving()) {
+            // Before the pulse check: a reveal (or failure) starts a Queued Roll's beat.
+            queue.statusChanged(status);
+            if (queue.waiting() && !controller.underWay()) {
+                // The beat is timed on the clock, so the pulse must run through it even with nothing moving (a
+                // Roll that failed in pre-simulation may never have started it).
+                pulses.start();
+            } else if (!(status instanceof RollStatus.Rolling) && !tray.moving()) {
+                // Only playback needs the pulse; once the Dice rest (or nothing will move) and the Tray has
+                // stopped moving (the camera settled in), let JavaFX idle.
                 pulses.stop();
             }
             onStatusChanged.accept(status);
         });
         // After the controller's own listener: once the Roll is over, the Tray may still be moving on the clock
-        // (the camera's settle-in after the last Throw), so the pulse stops only when that is done too.
+        // (the camera's settle-in after the last Throw), so the pulse stops only when that is done too, and no
+        // Queued Roll is waiting out its beat.
         clock.addListener(c -> {
-            if (!controller.underWay() && !tray.moving()) {
+            if (!controller.underWay() && !tray.moving() && !queue.waiting()) {
                 pulses.stop();
             }
         });
@@ -102,6 +113,25 @@ final class RollSession {
      */
     Notices notices() {
         return notices;
+    }
+
+    /**
+     * Returns entry in the box: the error popup, the Queued Roll and its chip.
+     *
+     * @return the entry wiring Enter and the Roll button go through
+     */
+    RollEntry entry() {
+        return entry;
+    }
+
+    /**
+     * Rolls a Roll Expression that already parses, from a Saved Roll or a Roll History entry: at once, or as the
+     * Queued Roll while Dice move, exactly as Enter in the box does (spec §3.2 "Entry").
+     *
+     * @param expression the Roll Expression as written
+     */
+    void roll(String expression) {
+        queue.roll(expression);
     }
 
     /**
