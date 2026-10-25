@@ -4,9 +4,11 @@
 // flakes (speckle or glitter) and a pearl sheen; a solid resin is simply one whose extras are all zero. The
 // Numerals are ADR-0008's engravings (engraving.glsl), filled with the Dice Set's opaque ink.
 //
-// From the tray prototype's die.frag, opaque path only: translucency (transmission, the volume march and the
-// refracted opaque pass) is ticket #43, so a translucent Dice Set draws opaque here. Shadows and the other Light
-// Rigs are #45, the reroll glow #47.
+// From the tray prototype's die.frag. A translucent Dice Set (#43, the prototype's technique C) refracts the view
+// ray into the body, finds where it leaves against the Die Kind's face planes (a Die is convex), marches the path
+// for clouds and glitter, shows the far face's Numerals from behind, and refracts the exit ray onto a copy of the
+// opaque pass (or reflects the room, past the critical angle). Shadows and the other Light Rigs are #45, the
+// reroll glow #47.
 
 #include "hash.glsl"
 #include "engraving.glsl"
@@ -20,6 +22,7 @@ in vec2 vUv;
 in vec3 vModelPosition;
 
 uniform mat4 uModel;          // rotation and translation only: mat3(uModel) turns model directions to world
+uniform mat4 uViewProjection; // world to clip, to find where a refracted ray lands in the opaque pass
 
 uniform vec3 uEye;            // camera position, world mm
 uniform vec3 uKeyDirection;   // toward the key light, normalised
@@ -44,8 +47,20 @@ uniform float uPearl;
 uniform vec3 uInk;
 uniform float uInkMetal;
 uniform float uInkRough;
+uniform float uTransmission;  // 0 = opaque (the translucent path is skipped), 1 = clear
+uniform vec3 uTransmissionColour; // the colour of white light after 10 mm inside the body
+uniform float uIor;
+uniform float uCloud;         // how much light the body scatters
 
 uniform vec3 uSeed;           // this Die's offset into the swirl and flake fields, mm, so no two Dice match
+uniform float uGlow;          // 0..1: this Die is about to be picked up for a Reroll Throw (#47)
+
+// Translucency only. The Die Kind's flat faces in model space, three vec4 each (NumeralLayout.faceTable()):
+// the plane (n, n.centre), then the atlas map (U, u0) and (V, v0), so uv = (U.x + u0, V.x + v0). A d20 has 20.
+uniform vec4 uFaces[60];
+uniform int uFaceCount;
+uniform sampler2D uBackground; // a copy of the frame after the opaque pass, as the render target holds it
+uniform int uVolumeSteps;     // samples of the march through the body: a Quality Preset lever (ADR-0009: 8)
 
 out vec4 fragColour;
 
@@ -111,6 +126,97 @@ float flakeAt(vec3 p, out vec3 fn) {
     return 1.0 - smoothstep(0.26, 0.32, length(q - centre));
 }
 
+// How far the model-space ray (p, d) runs before it leaves the Die, and the face it leaves through. A Die is
+// convex, so that is the nearest of the planes the ray is heading out of. The rounded edges are ignored (a known
+// v1 limit, ADR-0009): a ray that would leave through a fillet leaves through the flat face's plane beyond it.
+float exitDistance(vec3 p, vec3 d, out int face) {
+    float t = 1e4;
+    face = 0;
+    for (int i = 0; i < uFaceCount; i++) {
+        vec4 plane = uFaces[i * 3];
+        float facing = dot(plane.xyz, d);
+        if (facing > 1e-4) {
+            float ti = (plane.w - dot(plane.xyz, p)) / facing;
+            if (ti < t) {
+                t = ti;
+                face = i;
+            }
+        }
+    }
+    return max(t, 0.0);
+}
+
+// What the eye sees through a translucent body at model-space point p, where the view ray enters along the
+// model-space surface normal n: light carried from behind the Die, plus the light its clouds and glitter send to
+// the eye. R turns model directions into the world; KL is toward the key light.
+vec3 throughTheBody(vec3 p, vec3 n, vec3 viewModel, mat3 R, vec3 KL) {
+    vec3 d = refract(-viewModel, n, 1.0 / uIor);
+    // A grazing ray the maths can't bend (it can't really happen going into a denser body) goes straight in.
+    if (dot(d, d) < 1e-6) d = -n;
+    int face;
+    float t = exitDistance(p, d, face);
+    // Beer-Lambert: the colour given for 10 mm of body sets the absorption per mm.
+    vec3 sigma = -log(max(uTransmissionColour, vec3(1e-3))) / 10.0;
+    // The light that reaches the inside of the body to be scattered: the room above and a share of the key.
+    vec3 inside = env(vec3(0.0, 1.0, 0.0), 1.0) + uKeyColour * 0.15;
+
+    // March the body: swirl clouds absorb and scatter, glitter flakes glint. The swirl texture is sampled at an
+    // explicit LOD, so the loop's non-uniform control flow is harmless.
+    float dt = t / float(uVolumeSteps);
+    vec3 Tr = vec3(1.0);
+    vec3 scattered = vec3(0.0);
+    vec3 glints = vec3(0.0);
+    vec3 towardEye = -(R * d);
+    for (int i = 0; i < uVolumeSteps; i++) {
+        vec3 x = p + d * ((float(i) + 0.5) * dt);
+        float sv = swirlAt(x);
+        float k = (uCloud + 0.8 * sv) * 0.35;
+        vec3 extinction = sigma + k;
+        vec3 stepTr = exp(-extinction * dt);
+        scattered += Tr * mix(uTransmissionColour, uSwirlColour, sv) * inside * 0.25 * k
+                / max(extinction, vec3(1e-3)) * (1.0 - stepTr);
+        vec3 fn;
+        float fl = flakeAt(x, fn);
+        if (fl > 0.0) {
+            vec3 H = normalize(towardEye + KL);
+            float g = pow(abs(dot(R * fn, H)), 40.0);
+            glints += Tr * fl * uFlakeColour * (uKeyColour * g * 3.0 + inside * 0.2);
+            Tr *= 1.0 - 0.6 * fl;
+        }
+        Tr *= stepTr;
+    }
+
+    // Leave through the far face. Its ink (seen from behind, so mirrored) blocks the view; elsewhere the ray
+    // refracts out onto whatever the opaque pass drew, or reflects back in past the critical angle.
+    vec3 e = p + d * t;
+    vec3 outward = uFaces[face * 3].xyz;
+    vec4 U = uFaces[face * 3 + 1];
+    vec4 Vm = uFaces[face * 3 + 2];
+    vec2 backUv = vec2(dot(U.xyz, e) + U.w, dot(Vm.xyz, e) + Vm.w);
+    // One mip down: a far Numeral is seen blurred through the body, and an explicit LOD is needed in this branch.
+    float backInk = textureLod(uMask, backUv, 1.0).r;
+    vec3 o = refract(d, -outward, uIor);
+    vec3 behind;
+    if (dot(o, o) < 1e-6) {
+        behind = env(R * reflect(d, -outward), uRough) * 0.7;
+    } else {
+        vec3 ow = R * o;
+        behind = env(ow, uRough);
+        vec3 ew = (uModel * vec4(e, 1.0)).xyz;
+        // A ray heading down meets the floor (y = 0); where that lands on screen is what the opaque pass shows
+        // there. Off screen, or heading up, the room stands in.
+        if (ow.y < -0.02) {
+            vec4 clip = uViewProjection * vec4(ew + ow * (-ew.y / ow.y), 1.0);
+            vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+            if (clip.w > 0.0 && all(greaterThan(suv, vec2(0.0))) && all(lessThan(suv, vec2(1.0)))) {
+                behind = unToneMap(textureLod(uBackground, suv, 0.0).rgb);
+            }
+        }
+    }
+    behind = mix(behind, uInk * inside * 0.6, backInk);
+    return behind * Tr + scattered + glints;
+}
+
 void main() {
     vec3 V = normalize(uEye - vWorldPosition);
     vec3 Ng = normalize(vWorldNormal);
@@ -137,15 +243,18 @@ void main() {
         Nb = normalize(mix(N, fw * sign(dot(fw, N)), 0.7 * flake * uFlakeMetal));
     }
 
-    // Ink is opaque paint over everything (ADR-0009), with a colour, metallic and roughness of its own.
+    // Ink is opaque paint over everything (ADR-0009), with a colour, metallic and roughness of its own, so it
+    // also stops a translucent body's light where it lies.
+    float tw = uTransmission > 0.0 ? uTransmission * (1.0 - ink) : 0.0;
     vec3 Ns = normalize(mix(Nb, N, ink));
     albedo = mix(albedo, uInk, ink);
     rough = mix(rough, uInkRough, ink);
     metal = mix(metal, uInkMetal, ink);
 
     // A metal has no diffuse at all: its colour is its reflectance (F0), so all it shows is what it reflects.
+    // Light that goes through a translucent body isn't scattered back off its surface either.
     vec3 f0 = mix(vec3(0.04), albedo, metal);
-    vec3 diffColour = albedo * (1.0 - metal);
+    vec3 diffColour = albedo * (1.0 - metal) * (1.0 - tw);
     float a = max(rough * rough, 0.002);
 
     vec3 colour = directLight(Ns, V, KL, uKeyColour, diffColour, f0, a) * e.keyOcclusion;
@@ -168,6 +277,19 @@ void main() {
         colour += uPearl * s * (1.0 - ink) * tint
                 * (lobe * 0.08 * uKeyColour * e.keyOcclusion + env(Rv, 0.6) * 0.12 + 0.05 * fres);
     }
+
+    // Translucency, worked in model space where the face planes live. What the surface doesn't reflect (by the
+    // same split-sum Fresnel the reflection used) goes in and comes back out as the view through the body.
+    if (tw > 0.0) {
+        mat3 R = mat3(uModel);
+        mat3 toModel = transpose(R);
+        float Fv = 0.04 * ab.x + ab.y;
+        colour += throughTheBody(vModelPosition, toModel * N, toModel * V, R, KL) * tw * (1.0 - Fv);
+    }
+
+    // The reroll glow (#47, the tray prototype's): warm and weighted to the rim, so the Player sees which Dice go
+    // back. Added last, over whatever the Dice Set drew, the view through a translucent body included.
+    if (uGlow > 0.0) colour += uGlow * vec3(1.0, 0.70, 0.25) * (0.06 + 1.2 * pow(1.0 - max(dot(Ng, V), 0.0), 3.0));
 
     // Opaque: the bridge hands JavaFX premultiplied pixels, and alpha 1 makes them plain ones.
     fragColour = vec4(toneMap(colour), 1.0);
