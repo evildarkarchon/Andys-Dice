@@ -40,14 +40,14 @@ final class Skeleton implements AutoCloseable {
     private static final BooleanSupplier REDUCED_MOTION = () -> Platform.getPreferences().isReducedMotion();
 
     /**
-     * The Tray every Roll is thrown into, drawn in and framed by: the default built-in, green felt in walnut
-     * (ADR-0010), until the Look tab (#57) lets the Player choose and remembers the choice.
+     * The Tray the scene starts with, before the Look tab (#57) shows the Player's choice: the default built-in,
+     * green felt in walnut (ADR-0010).
      */
     static final Tray TRAY = BuiltInTrays.defaultTray();
 
     /**
-     * The Light Rig the Tray is drawn under: the default, Studio (ADR-0010), until the Look tab (#57) lets the Player
-     * choose it, separately from the Tray, and remembers the choice.
+     * The Light Rig the scene starts with, before the Look tab (#57) shows the Player's choice: the default, Studio
+     * (ADR-0010).
      */
     static final LightRig LIGHT_RIG = LightRig.DEFAULT;
 
@@ -90,6 +90,17 @@ final class Skeleton implements AutoCloseable {
                     @Override
                     public void showTime(double seconds) {
                         draw(showing, seconds);
+                    }
+
+                    @Override
+                    public void showLook(Look look) {
+                        // The scene takes each part on the render thread at its next frame; the camera reframes
+                        // for the new Tray's walls at once.
+                        scene.setDiceSet(look.diceSet());
+                        scene.setTray(look.tray());
+                        scene.setLightRig(look.lightRig());
+                        camera.setFraming(Framing.of(look.tray().geometry()));
+                        showCamera();
                     }
 
                     @Override
@@ -221,6 +232,18 @@ final class Skeleton implements AutoCloseable {
      */
     Notices notices() {
         return session.notices();
+    }
+
+    /**
+     * Fills the Look tab (#57) and draws the Tray in the stored look: the Dice Set, Tray and Light Rig picked
+     * there reach the scene, the camera and the next Roll's physics.
+     *
+     * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
+     * @param settings the live settings holding the choices
+     * @return the Look tab's content
+     */
+    LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
+        return session.attachLook(catalogue, settings);
     }
 
     /**

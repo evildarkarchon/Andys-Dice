@@ -99,6 +99,9 @@ public final class AndysDice extends Application {
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        // The Player Files are read once, here (spec §3.3, §3.4): each one skipped is a Notice behind the bell, and
+        // the Tray is drawn in the stored look before the window opens.
+        skeleton.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.

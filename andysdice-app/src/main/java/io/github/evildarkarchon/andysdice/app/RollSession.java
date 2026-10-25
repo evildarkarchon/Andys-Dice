@@ -27,6 +27,8 @@ final class RollSession {
     private final RollQueue queue;
     private final RollEntry entry;
     private final FastForward fastForward;
+    /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
+    private final TraySurface tray;
     private Consumer<RollStatus> onStatusChanged = status -> {};
 
     /**
@@ -63,7 +65,7 @@ final class RollSession {
         this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
-        Objects.requireNonNull(tray, "tray");
+        this.tray = Objects.requireNonNull(tray, "tray");
         controller = new RollController(clock, physics, fxThread, new FaceValueGenerator(generators.faceValues()),
                 generators.releases(), throwInto, new RollController.TrayView() {
                     @Override
@@ -164,6 +166,23 @@ final class RollSession {
      */
     void roll(String expression) {
         queue.roll(expression);
+    }
+
+    /**
+     * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
+     * through the Tray seam and becomes the Tray the next Roll is thrown into.
+     *
+     * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
+     * @param settings the live settings holding the choices
+     * @return the tab's content, already in the Look tab
+     */
+    LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
+        LookTab look = new LookTab(catalogue, settings, chosen -> {
+            tray.showLook(chosen);
+            controller.setTray(chosen.tray());
+        });
+        ui.lookTab().setContent(look.node());
+        return look;
     }
 
     /**
