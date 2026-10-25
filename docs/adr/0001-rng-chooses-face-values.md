@@ -10,5 +10,5 @@ A single injected `RandomGenerator` (seeded from `SecureRandom` in the app, from
 ## Consequences
 
 - Physics determinism is not required, because the renderer plays back a recording and nothing re-simulates expecting the same outcome. Any future replay stores the recording, not a seed.
-- A pre-simulated Throw that ends with a Cocked Die or a Die outside the tray is discarded and re-simulated whole, silently and under a retry cap. Exceeding the cap is an error, never a fudged result. *Amended by ADR-0006:* when a Roll Expression has Reroll Throws, only the failing Throw is re-simulated, and the Dice already at rest stay frozen.
+- A pre-simulated Throw that ends with a Cocked Die or a Die outside the tray is discarded and re-simulated whole, silently and under a retry cap. Exceeding the cap is an error, never a fudged result. *Amended by ADR-0006:* when a Roll Expression has Reroll Throws, only the failing Throw is re-simulated, and the Dice already at rest stay frozen. *Amended by ADR-0013:* the cap is 24 attempts, and exceeding it leads to a visible Cocked Rethrow of only the Cocked Dice, not an error. The error remains only past 3 Cocked Rethrows, or when no attempt came to rest.
 - The Roll Result is revealed only when playback reaches the moment every Die is at rest, even though it is known before the Throw starts.

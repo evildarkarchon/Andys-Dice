@@ -65,8 +65,12 @@ The number a single die shows once it is at rest.
 _Avoid_: Pip, die result
 
 **Cocked Die**:
-A Die that comes to rest without a single face (or, for a d4, a single vertex) pointing up, such as one leaning on a wall of the Tray or on another Die. It has no Face Value, so a Throw never ends with one.
+A Die that comes to rest without a single face (or, for a d4, a single vertex) pointing up, such as one leaning on a wall of the Tray or on another Die. It has no Face Value, so a Roll never ends with one.
 _Avoid_: Leaner, tilted die
+
+**Cocked Rethrow**:
+A Throw of only the Cocked Dice left by a Throw, made while the other Dice stay where they lie, to give them the Face Values they never had. Unlike a Reroll Throw, it replaces no Face Value.
+_Avoid_: Cocked reroll, re-throw, do-over
 
 **Escaped Die**:
 A Die that leaves the Tray over its walls during a Throw. A Throw never ends with one.
