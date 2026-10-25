@@ -128,8 +128,15 @@ final class NoticeBell {
         notices.all().addListener((Observable change) -> {
             // What arrives while the list is open is seen at once, so it is read.
             if (list.isShowing()) {
+                // fillList replaces the Dismiss all button; if the old one had focus, the new one takes it at once.
+                // Left to itself, the scene moves focus off a removed node only on a later pulse, so whether the
+                // list still had a focused button depended on timing.
+                boolean dismissFocused = listRoot.lookupAll("." + DISMISS_CLASS).stream().anyMatch(Node::isFocused);
                 notices.markAllRead();
                 fillList();
+                if (dismissFocused) {
+                    listRoot.lookupAll("." + DISMISS_CLASS).forEach(Node::requestFocus);
+                }
             }
             refresh();
         });
