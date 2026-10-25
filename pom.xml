@@ -8,6 +8,7 @@
 
   Build (Windows, JDK 27):  mvn verify
   Build without GL tests:   mvn verify -Pno-gl
+  The soak (slow tests):    mvn verify -Psoak -pl andysdice-physics -am
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -102,8 +103,14 @@
              so the native-access set can't be dropped by accident. -->
         <andysdice.test.jvmArgs></andysdice.test.jvmArgs>
 
-        <!-- JUnit tag expression of test groups to leave out. Empty runs everything; the no-gl profile sets it. -->
-        <andysdice.test.excludedGroups></andysdice.test.excludedGroups>
+        <!--
+          The slow-tagged tests (the soak, ADR-0005) are left out of every build but the soak profile's, which
+          empties this. It is kept apart from the gl exclusion below so the two profiles combine.
+        -->
+        <andysdice.test.excludedSlow>slow</andysdice.test.excludedSlow>
+
+        <!-- JUnit tags of test groups to leave out, comma-separated. The no-gl profile adds gl. -->
+        <andysdice.test.excludedGroups>${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -321,7 +328,19 @@
         <profile>
             <id>no-gl</id>
             <properties>
-                <andysdice.test.excludedGroups>gl</andysdice.test.excludedGroups>
+                <!-- With -Psoak as well, excludedSlow is empty and this is "gl,", which Surefire reads as gl. -->
+                <andysdice.test.excludedGroups>gl,${andysdice.test.excludedSlow}</andysdice.test.excludedGroups>
+            </properties>
+        </profile>
+        <!--
+          The soak (ADR-0005, ADR-0013, ADR-0014): also runs the slow-tagged tests, chiefly physics' JoltSoakTest,
+          which throws 1,000 20-Dice Rolls into each built-in Tray through the real planner and Jolt and fails on
+          core's Soak gates. Run by the nightly workflow: mvn verify -Psoak -pl andysdice-physics -am
+        -->
+        <profile>
+            <id>soak</id>
+            <properties>
+                <andysdice.test.excludedSlow></andysdice.test.excludedSlow>
             </properties>
         </profile>
     </profiles>

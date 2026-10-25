@@ -7,49 +7,52 @@ import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValues;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.UpFace;
+import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
+import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
+import io.github.evildarkarchon.andysdice.core.planner.ThrowKind;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.simulation.Attempt;
 import io.github.evildarkarchon.andysdice.core.simulation.AttemptRequest;
 import io.github.evildarkarchon.andysdice.core.simulation.DieKindBody;
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
-import io.github.evildarkarchon.andysdice.core.simulation.Orientation;
 import io.github.evildarkarchon.andysdice.core.simulation.Recording;
 import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
-import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import org.joml.Quaterniond;
+import org.joml.Vector3d;
+import org.joml.Vector3dc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Enter on {@code 1d6}, over a scripted simulator and a playback clock advanced by hand: nothing moves until the
- * Throw is pre-simulated, the Recording then plays at the clock's time, and the Roll Result appears only at rest.
- * No GL, no Jolt, no JavaFX, and no test sleeps (ADR-0011).
+ * Enter on a Roll Expression, over a scripted simulator, scripted Face Values and a playback clock advanced by
+ * hand: the whole chain of Throws is planned on the physics worker before anything moves, the Throws then play in
+ * order with the other Dice lying still, and the Roll Result appears only once the last Throw is at rest. No GL,
+ * no Jolt, no JavaFX, and no test sleeps (ADR-0011).
  */
 class RollControllerTest {
 
-    private static final long FACE_SEED = 34;
     private static final double FRAME = 1.0 / 60;
 
-    /** Half a second of a cube falling flat onto the floor, with its +y face (the d6's 3) up. */
-    private static final Recording FALL = fall(Orientation.IDENTITY);
+    /** The spec's message for a Roll whose Dice wouldn't settle (spec §3.2). */
+    private static final String WOULDNT_SETTLE =
+            "The Dice wouldn't settle. Nothing was rolled. Press Enter to try again.";
 
     private PlaybackClock clock;
     private ScriptedSimulator simulator;
     private HeldPhysics physics;
     private RecordingTray tray;
     private List<RollStatus> statuses;
-    private RollController controller;
 
     @BeforeEach
     void setUp() {
@@ -58,63 +61,155 @@ class RollControllerTest {
         physics = new HeldPhysics(simulator);
         tray = new RecordingTray();
         statuses = new ArrayList<>();
-        controller = new RollController(clock, physics, Runnable::run,
-                new FaceValueGenerator(new SplittableRandom(FACE_SEED)), new SplittableRandom(1), tray);
+    }
+
+    /** A controller whose Face Value generator draws exactly these values. */
+    private RollController controller(ScriptedRandom faces) {
+        RollController controller = new RollController(clock, physics, Runnable::run, new FaceValueGenerator(faces),
+                new SplittableRandom(1), tray);
         controller.setOnStatusChanged(statuses::add);
+        return controller;
+    }
+
+    private RollController controller(int... faces) {
+        return controller(new ScriptedRandom(faces));
+    }
+
+    /** Advances the clock a frame at a time until the Roll is no longer under way, or ten seconds pass. */
+    private void playToRest(RollController controller) {
+        for (int i = 0; controller.underWay() && i < 600; i++) {
+            clock.advance(FRAME);
+        }
     }
 
     @Test
     void beforeAnyRollTheTrayIsEmptyAndTheControllerIsReady() {
+        RollController controller = controller();
+
         assertThat(controller.status()).isInstanceOf(RollStatus.Ready.class);
-        assertThat(tray.shown).isEmpty();
+        assertThat(tray.chains).isEmpty();
     }
 
     @Test
-    void enterPreSimulatesOnThePhysicsWorkerBeforeAnythingMoves() {
-        simulator.script(atRest(FALL));
+    void enterPlansTheWholeChainOnThePhysicsWorkerBeforeAnythingMoves() {
+        // 4d6rr1: the first roll shows a 1, so one Reroll Throw of that Die follows the first Throw.
+        RollController controller = controller(1, 4, 5, 6, 3);
 
-        controller.roll("1d6");
+        controller.roll("4d6rr1kh3");
 
         assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
         assertThat(physics.held).isNotNull();
         assertThat(simulator.requests).isEmpty();
-        assertThat(tray.shown).isEmpty();
+        assertThat(tray.chains).isEmpty();
 
         physics.finish();
 
-        assertThat(simulator.requests).hasSize(1);
-        AttemptRequest request = simulator.requests.getFirst();
-        assertThat(request.dice()).containsExactly(DieKindBody.of(DieKind.D6));
-        assertThat(request.release()).isInstanceOf(Release.Drawn.class);
-        assertThat(request.frozen()).isEmpty();
-        assertThat(tray.shown).containsExactly(FALL);
+        // Both Throws were simulated in that one job, before the Tray was given anything to play.
+        assertThat(simulator.requests).hasSize(2);
+        AttemptRequest first = simulator.requests.getFirst();
+        assertThat(first.dice()).containsExactly(DieKindBody.of(DieKind.D6), DieKindBody.of(DieKind.D6),
+                DieKindBody.of(DieKind.D6), DieKindBody.of(DieKind.D6));
+        assertThat(first.release()).isInstanceOf(Release.Drawn.class);
+        assertThat(first.frozen()).isEmpty();
+        assertThat(simulator.requests.get(1).dice()).hasSize(1);
+        assertThat(simulator.requests.get(1).frozen()).hasSize(3);
+        assertThat(tray.chains).hasSize(1);
+        assertThat(tray.chains.getFirst().plan().throwChain()).hasSize(2);
         assertThat(tray.times).containsExactly(0.0);
     }
 
     @Test
-    void theRecordingPlaysAtTheClocksTimeAndTheResultAppearsOnlyAtRest() {
-        simulator.script(atRest(FALL));
-        controller.roll("1d6");
+    void eachDieIsItsOwnDieKindTurnedSoTheChosenFaceIsUpAtRest() {
+        RollController controller = controller(3, 5, 7, 9, 11, 19, 42);
+        controller.roll("1d4+1d6+1d8+1d10+1d12+1d20+1d%");
         physics.finish();
 
-        while (clock.time() + FRAME < FALL.restTime()) {
+        ChainPlayback chain = tray.chains.getLast();
+        List<DiceScene.Die> atRest = chain.diceAt(chain.restTime());
+        assertThat(atRest).extracting(DiceScene.Die::kind).containsExactly(DieKind.D4, DieKind.D6, DieKind.D8,
+                DieKind.D10, DieKind.D12, DieKind.D20, DieKind.PERCENTILE_D10, DieKind.D10);
+        int[] faces = {
+            FaceValues.face(DieKind.D4, 3), FaceValues.face(DieKind.D6, 5), FaceValues.face(DieKind.D8, 7),
+            FaceValues.face(DieKind.D10, 9), FaceValues.face(DieKind.D12, 11), FaceValues.face(DieKind.D20, 19),
+            FaceValues.percentileTensFace(42), FaceValues.percentileUnitsFace(42)
+        };
+        for (int die = 0; die < atRest.size(); die++) {
+            DiceScene.Die drawn = atRest.get(die);
+            UpFace up = UpFace.read(drawn.kind(), drawn.orientation());
+            assertThat(up.face()).as("die %d (%s)", die, drawn.kind()).isEqualTo(faces[die]);
+            assertThat(up.cocked()).isFalse();
+        }
+    }
+
+    @Test
+    void rerollThrowsPlayInOrderWithTheOtherDiceLyingStill() {
+        // 4d6rr1: rolls 0 and 2 show 1, so round 1 rerolls both; roll 0 shows 1 again, so round 2 rerolls it alone.
+        RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+
+        ChainPlayback chain = tray.chains.getLast();
+        List<PlannedThrow> throwChain = chain.plan().throwChain();
+        assertThat(throwChain).extracting(PlannedThrow::kind)
+                .containsExactly(ThrowKind.FIRST, ThrowKind.REROLL, ThrowKind.REROLL);
+        assertThat(throwChain).extracting(PlannedThrow::thrown)
+                .containsExactly(List.of(0, 1, 2, 3), List.of(0, 2), List.of(0));
+
+        List<Integer> order = new ArrayList<>();
+        List<DiceScene.Die> before = chain.diceAt(0);
+        boolean[] movedInThrow = new boolean[throwChain.size()];
+        while (controller.underWay() && clock.time() < 10) {
+            clock.advance(FRAME);
+            double t = tray.times.getLast();
+            int playing = chain.throwAt(t);
+            if (order.isEmpty() || order.getLast() != playing) {
+                order.add(playing);
+            }
+            List<DiceScene.Die> now = chain.diceAt(t);
+            for (int frozen : throwChain.get(playing).frozen()) {
+                assertThat(now.get(frozen)).as("Frozen Die %d at %.3f s in Throw %d", frozen, t, playing)
+                        .isEqualTo(before.get(frozen));
+            }
+            for (int thrown : throwChain.get(playing).thrown()) {
+                movedInThrow[playing] |= !now.get(thrown).equals(before.get(thrown));
+            }
+            before = now;
+        }
+
+        assertThat(order).containsExactly(0, 1, 2);
+        assertThat(movedInThrow).containsOnly(true);
+        // The last Throw leaves its Die where its Recording ends, in the renderer's mm.
+        Recording last = throwChain.getLast().recording();
+        Vector3 end = last.finalPose(0).position();
+        assertThat(before.get(0).position().distance(new Vector3d(end.x() * 10, end.y() * 10, end.z() * 10)))
+                .isLessThan(1e-3);
+    }
+
+    @Test
+    void theRollResultAppearsOnlyAfterTheLastThrowIsAtRest() {
+        RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+
+        while (clock.time() + FRAME < chain.restTime()) {
             clock.advance(FRAME);
             assertThat(tray.times.getLast()).isCloseTo(clock.time(), within(1e-9));
             assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
         }
         clock.advance(FRAME);
 
-        int expected = new FaceValueGenerator(new SplittableRandom(FACE_SEED)).faceValue(DieKind.D6);
+        // Rolls show 2 (after 1, 1), 4, 3 (after 1) and 6; the highest three make 13.
         RollStatus.Rested rested = (RollStatus.Rested) controller.status();
-        assertThat(rested.result().total()).isEqualTo(expected);
-        assertThat(rested.expression().canonical()).isEqualTo("1d6");
+        assertThat(rested.result().total()).isEqualTo(13);
+        assertThat(rested.text()).isEqualTo("4d6rr1kh3 = 13");
         assertThat(statuses).filteredOn(RollStatus.Rested.class::isInstance).hasSize(1);
     }
 
     @Test
     void theClockStartingLaterThanZeroStillPlaysFromTheRelease() {
+        RollController controller = controller(4);
         clock.advance(12.5);
-        simulator.script(atRest(FALL));
         controller.roll("1d6");
         physics.finish();
 
@@ -125,115 +220,97 @@ class RollControllerTest {
     }
 
     @Test
-    void theCubeIsTurnedSoTheChosenFaceValueIsTheOneUpAtRest() {
-        // Landed with a different face up each time; the Numbering Rotation must still show the chosen value.
-        Orientation tipped = Orientation.about(new Vector3(1, 0, 0), (float) (Math.PI / 2));
-        Recording fall = fall(tipped);
-        simulator.script(atRest(fall));
+    void theDiceStayOnTheTrayUntilTheNextRollIsReadyToPlay() {
+        RollController controller = controller(4, 2);
         controller.roll("1d6");
         physics.finish();
-
-        DiceScene.Die drawn = tray.playbacks.getLast().diceAt(fall.restTime()).getFirst();
-        int value = new FaceValueGenerator(new SplittableRandom(FACE_SEED)).faceValue(DieKind.D6);
-        UpFace up = UpFace.read(DieKind.D6, drawn.orientation());
-        assertThat(drawn.kind()).isEqualTo(DieKind.D6);
-        assertThat(up.face()).isEqualTo(FaceValues.face(DieKind.D6, value));
-        assertThat(up.cocked()).isFalse();
-    }
-
-    @Test
-    void theCubeStaysOnTheTrayUntilTheNextRollIsReadyToPlay() {
-        simulator.script(atRest(FALL), atRest(fall(Orientation.about(new Vector3(0, 0, 1), 1.5708f))));
-        controller.roll("1d6");
-        physics.finish();
-        for (int i = 0; i < 120; i++) {
-            clock.advance(FRAME);
-        }
+        playToRest(controller);
+        int drawn = tray.times.size();
+        clock.advance(2);
         assertThat(controller.status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(tray.times).hasSize(drawn);
 
         controller.roll("1d6");
         clock.advance(FRAME);
 
-        // Still pre-simulating: the first cube is left where it lies, and nothing is redrawn.
-        assertThat(tray.shown).hasSize(1);
+        // Still pre-simulating: the first Dice are left where they lie, and nothing is redrawn.
+        assertThat(tray.chains).hasSize(1);
+        assertThat(tray.times).hasSize(drawn);
         physics.finish();
-        assertThat(tray.shown).hasSize(2);
+        assertThat(tray.chains).hasSize(2);
+    }
+
+    @Test
+    void aModifierIsAddedToTheResult() {
+        RollController controller = controller(4);
+        controller.roll("1d6+5");
+        physics.finish();
+        playToRest(controller);
+
+        assertThat(((RollStatus.Rested) controller.status()).result().total()).isEqualTo(9);
     }
 
     @Test
     void anInvalidRollExpressionRollsNothingAndSaysWhy() {
+        RollController controller = controller();
+
         controller.roll("1d6+");
 
         RollStatus.Refused refused = (RollStatus.Refused) controller.status();
         assertThat(refused.message()).isNotBlank();
         assertThat(physics.held).isNull();
-        assertThat(tray.shown).isEmpty();
+        assertThat(tray.chains).isEmpty();
     }
 
     @Test
-    void anExpressionOtherThanOneD6IsRefusedForNow() {
+    void aFailedRollMovesNothingKeepsThePreviousDiceAndShowsItsReason() {
+        RollController controller = controller(4, 2, 5);
+        controller.roll("1d6");
+        physics.finish();
+        playToRest(controller);
+        int drawn = tray.times.size();
+
+        // Every Attempt of the next Roll's first Throw times out.
+        simulator.then(24, Ending.TIMED_OUT);
         controller.roll("2d6");
-        controller.roll("1d20");
-
-        assertThat(controller.status()).isInstanceOf(RollStatus.Refused.class);
-        assertThat(physics.held).isNull();
-    }
-
-    @Test
-    void aModifierIsAddedToTheResult() {
-        simulator.script(atRest(FALL));
-        controller.roll("1d6+5");
         physics.finish();
         clock.advance(1);
 
-        int expected = new FaceValueGenerator(new SplittableRandom(FACE_SEED)).faceValue(DieKind.D6) + 5;
-        assertThat(((RollStatus.Rested) controller.status()).result().total()).isEqualTo(expected);
+        RollStatus.Failed failed = (RollStatus.Failed) controller.status();
+        assertThat(failed.text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(controller.underWay()).isFalse();
+        assertThat(tray.chains).hasSize(1);
+        assertThat(tray.times).hasSize(drawn);
     }
 
     @Test
-    void attemptsThatDontComeToRestFlatAreRetriedSilently() {
-        Recording cockedFall = fall(Orientation.about(new Vector3(1, 0, 0), 0.3f));
-        simulator.script(new Attempt(Ending.COCKED, cockedFall, Set.of(0)), timedOut(), atRest(FALL));
+    void aRollPastTheRerollBackstopFailsWithNothingSimulated() {
+        RollController controller = controller(new ScriptedRandom().thenRepeat(101, 1));
 
-        controller.roll("1d6");
+        controller.roll("1d6rr1");
         physics.finish();
 
-        assertThat(simulator.requests).hasSize(3);
-        assertThat(tray.shown).containsExactly(FALL);
-    }
-
-    @Test
-    void whenNoAttemptComesToRestTheRollFailsAndTheTrayKeepsItsDice() {
-        simulator.script(atRest(FALL));
-        controller.roll("1d6");
-        physics.finish();
-        clock.advance(1);
-
-        for (int i = 0; i < RollController.MAX_ATTEMPTS; i++) {
-            simulator.script(timedOut());
-        }
-        controller.roll("1d6");
-        physics.finish();
-
-        assertThat(simulator.requests).hasSize(1 + RollController.MAX_ATTEMPTS);
-        assertThat(controller.status()).isInstanceOf(RollStatus.Failed.class);
-        assertThat(tray.shown).containsExactly(FALL);
+        assertThat(controller.status().text()).isEqualTo("Too many rerolls. Nothing was rolled.");
+        assertThat(simulator.requests).isEmpty();
+        assertThat(tray.chains).isEmpty();
     }
 
     @Test
     void aPhysicsErrorFailsTheRollRatherThanHangingIt() {
-        simulator.script();
+        RollController controller = controller(4);
+        simulator.failNext();
 
         controller.roll("1d6");
         physics.finish();
 
         assertThat(controller.status()).isInstanceOf(RollStatus.Failed.class);
-        assertThat(tray.shown).isEmpty();
+        assertThat(controller.underWay()).isFalse();
+        assertThat(tray.chains).isEmpty();
     }
 
     @Test
     void enterWhileARollIsUnderWayStartsNoSecondRoll() {
-        simulator.script(atRest(FALL), atRest(FALL));
+        RollController controller = controller(4, 2, 3);
         controller.roll("1d6");
         controller.roll("1d6");
         physics.finish();
@@ -243,63 +320,87 @@ class RollControllerTest {
         assertThat(simulator.requests).hasSize(1);
     }
 
-    /** One cube dropping from 5 cm to rest on the floor over half a second, ending in {@code end}. */
-    private static Recording fall(Orientation end) {
-        int samples = 61;
-        float[] poses = new float[samples * 7];
-        for (int s = 0; s < samples; s++) {
-            float u = s / (float) (samples - 1);
-            float[] pose = {0, 5 - 4.2f * u, 0, end.x() * u, end.y() * u, end.z() * u, 1 - (1 - end.w()) * u};
-            float norm = (float) Math.sqrt(pose[3] * pose[3] + pose[4] * pose[4] + pose[5] * pose[5]
-                    + pose[6] * pose[6]);
-            for (int k = 3; k < 7; k++) {
-                pose[k] /= norm;
-            }
-            System.arraycopy(pose, 0, poses, s * 7, 7);
-        }
-        return new Recording(1, poses, 0.5f, List.of());
-    }
-
-    private static Attempt atRest(Recording recording) {
-        return new Attempt(Ending.AT_REST, recording, Set.of());
-    }
-
-    private static Attempt timedOut() {
-        return new Attempt(Ending.TIMED_OUT, FALL, Set.of());
-    }
-
-    /** A simulator that answers each Attempt from a script, and fails once the script runs out. */
+    /**
+     * A simulator that ends each Attempt as scripted (at rest once the script runs out) with a 50/120 s
+     * Recording of every thrown Die falling from its Release to lie flat on a face, at a position unique to the
+     * Attempt and the Die. Its Recordings never move Frozen Dice, as a real one's never do.
+     */
     private static final class ScriptedSimulator implements Simulator {
-        final Deque<Attempt> script = new ArrayDeque<>();
+        private static final int SAMPLES = 51;
+        final Deque<Ending> script = new ArrayDeque<>();
         final List<AttemptRequest> requests = new ArrayList<>();
+        private boolean failNext;
 
-        void script(Attempt... attempts) {
-            script.addAll(List.of(attempts));
+        /** Scripts the next {@code times} Attempts to end in {@code ending}; a cocked one cocks request Die 0. */
+        void then(int times, Ending ending) {
+            for (int i = 0; i < times; i++) {
+                script.add(ending);
+            }
+        }
+
+        /** Makes the next Attempt throw, as a crashed engine would. */
+        void failNext() {
+            failNext = true;
         }
 
         @Override
         public Attempt simulate(AttemptRequest request) {
-            requests.add(request);
-            if (script.isEmpty()) {
-                throw new IllegalStateException("The scripted simulator has no more Attempts");
+            if (failNext) {
+                failNext = false;
+                throw new IllegalStateException("the scripted simulator was told to fail");
             }
-            return script.removeFirst();
+            int call = requests.size();
+            requests.add(request);
+            Ending ending = script.isEmpty() ? Ending.AT_REST : script.poll();
+            int dice = request.dice().size();
+            float[] poses = new float[SAMPLES * dice * 7];
+            for (int die = 0; die < dice; die++) {
+                DieKind kind = ((DieKindBody) request.dice().get(die)).kind();
+                Vector3 from = new Vector3(3 * die - 6, 8, -5);
+                Vector3 to = new Vector3(call, (float) kind.inradius() / 10, die);
+                Quaterniond end = flat(kind, (call * 7 + die * 3) % kind.faceCount(), call + die);
+                for (int s = 0; s < SAMPLES; s++) {
+                    double u = s / (double) (SAMPLES - 1);
+                    Quaterniond q = new Quaterniond().nlerp(end, u);
+                    int at = (s * dice + die) * 7;
+                    poses[at] = (float) (from.x() + (to.x() - from.x()) * u);
+                    poses[at + 1] = (float) (from.y() + (to.y() - from.y()) * u);
+                    poses[at + 2] = (float) (from.z() + (to.z() - from.z()) * u);
+                    poses[at + 3] = (float) q.x;
+                    poses[at + 4] = (float) q.y;
+                    poses[at + 5] = (float) q.z;
+                    poses[at + 6] = (float) q.w;
+                }
+            }
+            // At rest on the last sample. 50/120 s doesn't survive the float round trip exactly, as a real
+            // Recording's length often doesn't, so reading the pose "at the duration" lands just short of it.
+            Recording recording = new Recording(dice, poses, (SAMPLES - 1) / (float) Recording.SAMPLE_RATE_HZ,
+                    List.of());
+            return new Attempt(ending, recording, ending == Ending.COCKED ? Set.of(0) : Set.of());
+        }
+
+        /** Lying flat on {@code face}, turned about the vertical; a d4 lies on the face it reads. */
+        private static Quaterniond flat(DieKind kind, int face, double yaw) {
+            Vector3dc normal = kind.solid().faces().get(face).normal();
+            Vector3d target = new Vector3d(0, kind == DieKind.D4 ? -1 : 1, 0);
+            Quaterniond q = new Quaterniond().rotationY(yaw).mul(new Quaterniond().rotationTo(normal, target));
+            // The short way from the Release's identity, so the fall turns the least.
+            return q.w < 0 ? new Quaterniond(-q.x, -q.y, -q.z, -q.w) : q;
         }
     }
 
     /** A physics worker that holds each job until the test lets it run, as if pre-simulating took a while. */
     private static final class HeldPhysics implements RollController.PhysicsJobs {
         private final Simulator simulator;
-        Function<Simulator, Optional<ThrowPlayback>> held;
-        private CompletableFuture<Optional<ThrowPlayback>> result;
+        Function<Simulator, RollPlan> held;
+        private CompletableFuture<RollPlan> result;
 
         HeldPhysics(Simulator simulator) {
             this.simulator = simulator;
         }
 
         @Override
-        public CompletableFuture<Optional<ThrowPlayback>> submit(
-                Function<Simulator, Optional<ThrowPlayback>> job) {
+        public CompletableFuture<RollPlan> submit(Function<Simulator, RollPlan> job) {
             held = job;
             result = new CompletableFuture<>();
             return result;
@@ -307,8 +408,8 @@ class RollControllerTest {
 
         /** Runs the held job, as the worker would, and completes its future. */
         void finish() {
-            Function<Simulator, Optional<ThrowPlayback>> job = held;
-            CompletableFuture<Optional<ThrowPlayback>> future = result;
+            Function<Simulator, RollPlan> job = held;
+            CompletableFuture<RollPlan> future = result;
             held = null;
             try {
                 future.complete(job.apply(simulator));
@@ -320,14 +421,12 @@ class RollControllerTest {
 
     /** A Tray that remembers what it was asked to show. */
     private static final class RecordingTray implements RollController.TrayView {
-        final List<Recording> shown = new ArrayList<>();
-        final List<ThrowPlayback> playbacks = new ArrayList<>();
+        final List<ChainPlayback> chains = new ArrayList<>();
         final List<Double> times = new ArrayList<>();
 
         @Override
-        public void show(ThrowPlayback playback) {
-            shown.add(playback.recording());
-            playbacks.add(playback);
+        public void show(ChainPlayback chain) {
+            chains.add(chain);
             times.clear();
             times.add(0.0);
         }
