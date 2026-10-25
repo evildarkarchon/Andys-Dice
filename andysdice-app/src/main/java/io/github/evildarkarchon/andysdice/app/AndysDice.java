@@ -102,7 +102,9 @@ public final class AndysDice extends Application {
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
         // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
         // time zone as it was at start-up.
-        HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
+        HistoryTab history = HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
+        // The Saved Rolls (#56); History's menu gains Save as a Saved Roll….
+        SavedTab.install(skeleton.session(), persistence, history);
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.

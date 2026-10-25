@@ -87,7 +87,16 @@ final class Palette {
             graphic("the selected History row's marker (#55)", ACCENT, RAISED),
             graphic("the focused History row's ring (#55)", FOCUS, RAISED),
             text("a context menu's items, on Modena's inner background (#55)", TEXT, FIELD),
-            text("a context menu's focused item (#55)", ON_ACCENT, ACCENT));
+            text("a context menu's focused item (#55)", ON_ACCENT, ACCENT),
+            text("a Saved Roll's name and warning message (#56)", TEXT, SURFACE),
+            text("a Saved Roll's expression and the empty state (#56)", TEXT_MUTED, SURFACE),
+            text("a selected or hovered Saved Roll's name and warning message (#56)", TEXT, RAISED),
+            text("a selected or hovered Saved Roll's expression (#56)", TEXT_MUTED, RAISED),
+            graphic("the warning mark on a Saved Roll (#56)", NOTICE, SURFACE),
+            graphic("the warning mark on a selected or hovered Saved Roll (#56)", NOTICE, RAISED),
+            graphic("the warning mark in the New Saved Roll dialog (#56)", NOTICE, BACKGROUND),
+            text("a refusal's message in the New Saved Roll dialog (#56)", TEXT, BACKGROUND),
+            graphic("a Saved Roll's icon buttons on a selected or hovered row (#56)", ICON, RAISED));
 
     private Palette() {}
 
