@@ -19,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import javafx.scene.AccessibleAttribute;
+import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -244,8 +245,9 @@ class ClatterTest extends HeadlessUiTest {
     void theSettingsTabHasMuteAndVolumeUnmutedAtSeventyPercentByDefault() throws Exception {
         startSound();
 
-        assertThat(fromFx(() -> ui().settingsTab().getContent().lookupAll("*").contains(controls.mute())))
-                .isTrue();
+        assertThat(fromFx(() -> SettingsPane.of(ui()).getChildren())).contains(controls.node());
+        assertThat(fromFx(() -> controls.node().getChildren())).contains(controls.mute());
+        assertThat(fromFx(() -> ((Label) controls.node().getChildren().getFirst()).getText())).isEqualTo("Sound");
         assertThat(fromFx(() -> controls.mute().isSelected())).isFalse();
         assertThat(fromFx(() -> controls.volume().getValue())).isEqualTo(70);
         assertThat(fromFx(() -> controls.volumeText().getText())).isEqualTo("70%");

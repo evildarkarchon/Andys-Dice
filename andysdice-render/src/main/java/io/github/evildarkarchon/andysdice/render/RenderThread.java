@@ -12,6 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.DoubleConsumer;
 
 /**
  * The one render thread (ADR-0002): it owns the app's only GL context and its one render surface, makes every
@@ -50,10 +51,13 @@ public final class RenderThread implements AutoCloseable {
     private final CompletableFuture<Void> stopped = new CompletableFuture<>();
     private Thread thread;
     private GlDriver driver;
+    // Told each measured frame's GPU time; null measures nothing.
+    private volatile DoubleConsumer gpuTimeListener;
 
     // Render thread only.
     private GlContext context;
     private RenderTarget target;
+    private GpuTimer gpuTimer;
     private boolean transportOpen;
     private boolean rendererReady;
     private int width;
@@ -164,6 +168,21 @@ public final class RenderThread implements AutoCloseable {
     }
 
     /**
+     * Sets who is told how much GPU time each frame took to draw (ADR-0014), measured with GL timer queries around
+     * the {@link FrameRenderer}'s {@code render} (the readback to the transport isn't included). Each frame drawn
+     * while a listener is set is measured, and its time reported on the render thread, in frame order, usually a
+     * frame or two after it was drawn: the thread collects results without ever waiting for the GPU, and a frame
+     * that would have to wait is left unmeasured. The slow-GPU Notice and {@code --bench} listen here. Any thread.
+     *
+     * @param listener told each measured frame's GPU time in milliseconds, on the render thread; it must not block.
+     *     {@code null} stops measuring, and results still to come for earlier frames are dropped. It replaces any
+     *     earlier listener.
+     */
+    public void setOnGpuTime(DoubleConsumer listener) {
+        gpuTimeListener = listener;
+    }
+
+    /**
      * Tells when the render thread has ended, and why. v1 is crash-only (spec §3.2 "Runtime failure"): a render
      * thread that ends without {@link #close()} is a dead one, and the app shows its failure panel. Nothing is
      * recovered, since no second render thread can be started in this JVM (ADR-0002).
@@ -207,6 +226,7 @@ public final class RenderThread implements AutoCloseable {
             // The floor, unless a dev or test run raises it to force the fail-fast (GlVersion.REQUIRE_PROPERTY).
             context = GlContext.create(GlVersion.required(System.getProperty(GlVersion.REQUIRE_PROPERTY)));
             target = new RenderTarget();
+            gpuTimer = new GpuTimer();
             transport.open(this::wakeUp);
             transportOpen = true;
             renderer.init();
@@ -281,6 +301,8 @@ public final class RenderThread implements AutoCloseable {
                 drawFrame();
                 wanted = false;
             }
+            // GPU times of frames the GPU has finished; never waits on one it hasn't.
+            gpuTimer.poll(gpuTimeListener);
             // Still wanting a frame the transport can't take yet: poll again soon rather than sleep.
             busy = transport.pump() || wanted;
         }
@@ -303,7 +325,14 @@ public final class RenderThread implements AutoCloseable {
     private void drawFrame() {
         target.bind();
         glViewport(0, 0, width, height);
+        boolean timed = gpuTimeListener != null;
+        if (timed) {
+            gpuTimer.begin();
+        }
         renderer.render(width, height);
+        if (timed) {
+            gpuTimer.end();
+        }
         target.bindForReading();
         transport.submit(width, height);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -317,6 +346,9 @@ public final class RenderThread implements AutoCloseable {
             }
             if (transportOpen) {
                 transport.close();
+            }
+            if (gpuTimer != null) {
+                gpuTimer.delete();
             }
             if (target != null) {
                 target.delete();

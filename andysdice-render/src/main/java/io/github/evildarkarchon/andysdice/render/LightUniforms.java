@@ -37,6 +37,7 @@ final class LightUniforms {
     private final int lightNearFar;
     private final int lightSize;
     private final int uvPerMm;
+    private final int shadowTaps;
 
     /**
      * Looks up a program's light uniforms and points its two shadow samplers at their units.
@@ -60,6 +61,7 @@ final class LightUniforms {
         lightNearFar = glGetUniformLocation(program, "uLightNearFar");
         lightSize = glGetUniformLocation(program, "uLightSize");
         uvPerMm = glGetUniformLocation(program, "uUvPerMm");
+        shadowTaps = glGetUniformLocation(program, "uShadowTaps");
         glUniform1i(glGetUniformLocation(program, "uShadow"), shadowUnit);
         glUniform1i(glGetUniformLocation(program, "uShadowRaw"), rawShadowUnit);
     }
@@ -69,8 +71,10 @@ final class LightUniforms {
      *
      * @param rig the Light Rig
      * @param view the key light's view the shadow map was drawn from this frame
+     * @param shadowTaps the PCSS taps per loop, the Quality Preset's (1 to 16)
      */
-    void apply(LightRig rig, LightView view) {
+    void apply(LightRig rig, LightView view, int shadowTaps) {
+        glUniform1i(this.shadowTaps, shadowTaps);
         Vector3dc key = rig.keyPosition();
         glUniform4f(keyPosition, (float) key.x(), (float) key.y(), (float) key.z(), rig.spot() ? 1 : 0);
         vector(keyColour, rig.keyColour());

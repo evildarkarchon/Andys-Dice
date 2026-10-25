@@ -71,6 +71,18 @@ class TrayCameraTest {
     }
 
     @Test
+    void anotherTraysFramingTakesOverAtOnce() {
+        // A Player Tray with 10 cm walls over the same footprint (#57).
+        Framing tall = Framing.of(TrayGeometry.rectangle(15, 10, 10));
+
+        camera.setFraming(tall);
+
+        assertSamePose(camera.pose(), tall.wholeTray(ASPECT));
+        assertThat(camera.pose().distance()).isGreaterThan(tray().distance());
+        assertThat(camera.moving()).isFalse();
+    }
+
+    @Test
     void theCameraFramesTheTrayWhileTheDiceTumbleThenEasesInOnThemAtRest() {
         camera.play(oneThrow());
 

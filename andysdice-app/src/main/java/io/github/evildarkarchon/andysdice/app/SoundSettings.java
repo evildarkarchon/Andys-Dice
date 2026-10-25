@@ -2,14 +2,12 @@ package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.sound.SoundOutput;
 import java.util.Objects;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 /**
@@ -31,9 +29,7 @@ final class SoundSettings {
     private final Slider volume = new Slider(0, 100, Clatter.VOLUME.fallback());
     private final Label volumeText = new Label();
 
-    private SoundSettings(SettingsStore settings, SoundOutput output) {
-        Label heading = new Label("Sound");
-        heading.setStyle("-fx-font-weight: bold;");
+    private SoundSettings(SettingsPane pane, SettingsStore settings, SoundOutput output) {
         Label volumeLabel = new Label("Volume");
         volumeLabel.setLabelFor(volume);
         volume.setAccessibleText("Volume");
@@ -44,8 +40,7 @@ final class SoundSettings {
         volumeText.setMinWidth(38);
         HBox volumeRow = new HBox(8, volumeLabel, volume, volumeText);
         volumeRow.setAlignment(Pos.CENTER_LEFT);
-        node = new VBox(10, heading, mute, volumeRow);
-        node.setPadding(new Insets(14));
+        node = pane.addSection("Sound", mute, volumeRow);
         node.getStyleClass().add("sound-settings");
 
         // The saved values first, then the listeners, so loading them writes nothing back.
@@ -79,13 +74,9 @@ final class SoundSettings {
      * @return the section
      */
     static SoundSettings attach(RollUi ui, SettingsStore settings, SoundOutput output) {
-        SoundSettings section = new SoundSettings(Objects.requireNonNull(settings, "settings"),
+        // The tab's one column of sections (#60's SettingsPane); Sound goes after whatever is there already.
+        return new SoundSettings(SettingsPane.of(ui), Objects.requireNonNull(settings, "settings"),
                 Objects.requireNonNull(output, "output"));
-        // The tab starts as an empty StackPane (RollUi); the section sits at its top.
-        StackPane content = (StackPane) ui.settingsTab().getContent();
-        StackPane.setAlignment(section.node, Pos.TOP_LEFT);
-        content.getChildren().add(section.node);
-        return section;
     }
 
     private void showVolume(int percent) {

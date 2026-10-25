@@ -76,7 +76,7 @@ final class RollController {
     private final Executor fxThread;
     private final FaceValueGenerator faceValues;
     private final RandomGenerator releases;
-    private final Tray throwInto;
+    private Tray throwInto;
     private final TrayView tray;
 
     private Consumer<RollStatus> onStatusChanged = status -> {};
@@ -124,6 +124,25 @@ final class RollController {
      */
     void setOnStatusChanged(Consumer<RollStatus> listener) {
         onStatusChanged = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Returns the Tray Rolls are thrown into.
+     *
+     * @return the chosen Tray
+     */
+    Tray tray() {
+        return throwInto;
+    }
+
+    /**
+     * Changes the Tray the next Roll is thrown into, as the Look tab does (#57). A Roll already pre-simulating or
+     * playing keeps the Tray it was planned in: its Throws were simulated there.
+     *
+     * @param tray the chosen Tray
+     */
+    void setTray(Tray tray) {
+        throwInto = Objects.requireNonNull(tray, "tray");
     }
 
     /**

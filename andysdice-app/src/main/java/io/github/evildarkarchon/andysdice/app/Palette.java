@@ -80,7 +80,22 @@ final class Palette {
             graphic("the box's outline on its field", OUTLINE, FIELD),
             graphic("the Roll button on the toolbar", ACCENT, SURFACE),
             graphic("the selected tab's marker", ACCENT, SURFACE),
-            graphic("the unread bell on the sidebar", NOTICE, SURFACE));
+            graphic("the unread bell on the sidebar", NOTICE, SURFACE),
+            text("the History's day headers, times, Saved Roll names and foot (#55)", TEXT_MUTED, SURFACE),
+            text("a selected or hovered History row's expression and total (#55)", TEXT, RAISED),
+            text("a selected or hovered History row's time and Saved Roll name (#55)", TEXT_MUTED, RAISED),
+            graphic("the selected History row's marker (#55)", ACCENT, RAISED),
+            graphic("the focused History row's ring (#55)", FOCUS, RAISED),
+            text("a context menu's items, on Modena's inner background (#55)", TEXT, FIELD),
+            text("a context menu's focused item (#55)", ON_ACCENT, ACCENT),
+            text("a swatch's name in the Look tab (#57)", TEXT, SURFACE),
+            text("the \"yours\" mark on a swatch, or under the mouse (#57)", TEXT_MUTED, SURFACE),
+            text("the \"yours\" mark on a Tray row (#57)", TEXT_MUTED, RAISED),
+            text("a skipped Player File and its reason (#57)", TEXT_MUTED, SURFACE),
+            graphic("a skipped Player File's warning icon (#57)", ICON, SURFACE),
+            graphic("the chosen swatch's ring (#57)", ACCENT, SURFACE),
+            graphic("the chosen Tray or Light Rig row's bar on the row (#57)", ACCENT, RAISED),
+            graphic("a swatch's disc outline (#57)", OUTLINE, SURFACE));
 
     private Palette() {}
 

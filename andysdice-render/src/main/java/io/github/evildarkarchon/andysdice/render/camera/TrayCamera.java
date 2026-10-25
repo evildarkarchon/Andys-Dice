@@ -66,7 +66,7 @@ public final class TrayCamera {
     }
 
     private final PlaybackClock clock;
-    private final Framing framing;
+    private Framing framing;
     private final BooleanSupplier reducedMotion;
     private double aspect = DEFAULT_ASPECT;
 
@@ -106,6 +106,16 @@ public final class TrayCamera {
             throw new IllegalArgumentException("A view's aspect ratio must be positive: " + widthOverHeight);
         }
         aspect = widthOverHeight;
+    }
+
+    /**
+     * Sets the Tray every shot frames, as when the Player picks another Tray (its walls may stand taller). Like
+     * {@link #setAspect}, the camera is reframed at once, without an ease.
+     *
+     * @param tray the new Tray's framing
+     */
+    public void setFraming(Framing tray) {
+        framing = Objects.requireNonNull(tray, "tray");
     }
 
     /**

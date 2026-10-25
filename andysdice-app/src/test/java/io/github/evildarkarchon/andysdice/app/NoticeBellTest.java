@@ -66,8 +66,8 @@ class NoticeBellTest extends HeadlessUiTest {
         assertThat(fromFx(() -> notices().unread())).isEqualTo(2);
         assertThat(fromFx(() -> highlighted())).isTrue();
         assertThat(fromFx(() -> background(ui().bell()))).isEqualTo(Palette.NOTICE);
-        assertThat(fromFx(() -> ui().bell().getTextFill())).isEqualTo(Palette.ON_ACCENT);
-        assertThat(fromFx(() -> ((SVGPath) ui().bell().getGraphic()).getFill())).isEqualTo(Palette.ON_ACCENT);
+        assertThat(fromFx(() -> textFill())).isEqualTo(Palette.ON_ACCENT);
+        assertThat(fromFx(() -> iconFill())).isEqualTo(Palette.ON_ACCENT);
 
         // Seen in the list, they are read: the count stays until they are dismissed, the highlight goes.
         onFx(() -> ui().bell().fire());
@@ -76,7 +76,7 @@ class NoticeBellTest extends HeadlessUiTest {
         assertThat(fromFx(() -> ui().bell().getText())).isEqualTo("2");
         assertThat(fromFx(() -> notices().unread())).isZero();
         assertThat(fromFx(() -> highlighted())).isFalse();
-        assertThat(fromFx(() -> ((SVGPath) ui().bell().getGraphic()).getFill())).isEqualTo(Palette.ICON);
+        assertThat(fromFx(() -> iconFill())).isEqualTo(Palette.ICON);
 
         onFx(() -> notices().post("No audio device", "The app will run silently."));
         assertThat(fromFx(() -> ui().bell().getText())).isEqualTo("3");
@@ -292,6 +292,22 @@ class NoticeBellTest extends HeadlessUiTest {
         region.applyCss();
         Background background = region.getBackground();
         return background == null || background.isEmpty() ? null : background.getFills().getFirst().getFill();
+    }
+
+    /**
+     * The bell's text fill after CSS. The unread look is a pseudo-class rule, and a pseudo-class change only reaches
+     * the node's properties on the next pulse's CSS pass; a {@code fromFx} round trip can land before that pulse
+     * (it did, under a loaded full build), so the read applies CSS itself, as {@link #background} does.
+     */
+    private Paint textFill() {
+        ui().bell().applyCss();
+        return ui().bell().getTextFill();
+    }
+
+    /** The bell icon's fill after CSS ({@code :unread .icon}), for the same reason as {@link #textFill}. */
+    private Paint iconFill() {
+        ui().bell().applyCss();
+        return ((SVGPath) ui().bell().getGraphic()).getFill();
     }
 
     private Notices notices() {

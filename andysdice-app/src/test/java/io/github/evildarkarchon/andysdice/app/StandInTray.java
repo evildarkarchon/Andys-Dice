@@ -42,6 +42,7 @@ final class StandInTray extends Region implements TraySurface {
 
     private final PlaybackClock clock;
     private final List<Report> reports = new ArrayList<>();
+    private final List<Look> looks = new ArrayList<>();
     private ChainPlayback showing;
     private double shownTime;
     private int shows;
@@ -72,6 +73,29 @@ final class StandInTray extends Region implements TraySurface {
     @Override
     public void showTime(double seconds) {
         draw(seconds);
+    }
+
+    @Override
+    public void showLook(Look look) {
+        looks.add(Objects.requireNonNull(look, "look"));
+    }
+
+    /**
+     * Returns the look the Tray is drawn in, as the Look tab last showed it (#57).
+     *
+     * @return the latest look, or {@code null} if none has been shown
+     */
+    Look look() {
+        return looks.isEmpty() ? null : looks.getLast();
+    }
+
+    /**
+     * Returns every look the Tray has been shown, oldest first.
+     *
+     * @return a copy of the looks
+     */
+    List<Look> looks() {
+        return List.copyOf(looks);
     }
 
     /**

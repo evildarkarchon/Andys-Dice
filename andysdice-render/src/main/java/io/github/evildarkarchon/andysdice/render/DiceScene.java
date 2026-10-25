@@ -14,6 +14,7 @@ import static org.lwjgl.opengl.GL20C.glDeleteProgram;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
+import static org.lwjgl.opengl.GL20C.glUniform2f;
 import static org.lwjgl.opengl.GL20C.glUniform3f;
 import static org.lwjgl.opengl.GL20C.glUniform4fv;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
@@ -68,9 +69,13 @@ import org.joml.Vector3dc;
  * <p>World space is y-up and in mm. A Die's orientation turns its z-up model frame (the face tables') into the
  * world, as {@code core}'s poses do.
  *
- * <p>{@link #setDice}, {@link #setCamera}, {@link #setDiceSet}, {@link #setVolumeSteps}, {@link #setTray} and
- * {@link #setLightRig} may be called from any thread and take effect at the next frame; everything else runs on the
- * render thread, as a {@link FrameRenderer}.
+ * <p>How finely all of this is drawn is the {@linkplain #setQualityPreset Quality Preset}'s (ticket #60, ADR-0014):
+ * it sets the render scale and MSAA, the shadow map's size and taps, and the engraving's and the volume march's
+ * sample counts in one message.
+ *
+ * <p>{@link #setDice}, {@link #setCamera}, {@link #setDiceSet}, {@link #setVolumeSteps}, {@link #setTray},
+ * {@link #setLightRig} and {@link #setQualityPreset} may be called from any thread and take effect at the next frame;
+ * everything else runs on the render thread, as a {@link FrameRenderer}.
  */
 public final class DiceScene implements FrameRenderer {
 
@@ -172,6 +177,9 @@ public final class DiceScene implements FrameRenderer {
     private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
     private volatile LightRig lightRig = LightRig.DEFAULT;
     private volatile int volumeSteps = DEFAULT_VOLUME_STEPS;
+    // Full quality until told otherwise, as the scene drew before presets: the gallery's stills and the gl tests.
+    // The app hands it the Player's preset (Medium by default) before its first Roll.
+    private volatile QualityPreset qualityPreset = QualityPreset.HIGH;
     private volatile int clearColour = BACKGROUND_ARGB;
     // Null until a Tray is chosen: the gallery's stills and the Dice-only tests draw no Tray.
     private volatile Tray tray;
@@ -195,7 +203,10 @@ public final class DiceScene implements FrameRenderer {
     private int facesUniform;
     private int faceCountUniform;
     private int volumeStepsUniform;
+    private int parallaxSamplesUniform;
+    private int parallaxShadowSamplesUniform;
     private int glowUniform;
+    private SceneFrame frame;
 
     // The texture units the engraving's atlas, the swirl volume and the opaque pass's copy are bound to. Each
     // sampler has a unit of its own: two samplers of different types on one unit make a draw fail.
@@ -285,6 +296,24 @@ public final class DiceScene implements FrameRenderer {
     }
 
     /**
+     * Sets every quality lever at once to a Quality Preset's (ADR-0014): the render scale and MSAA samples the scene
+     * is drawn with, the shadow map's size and PCSS tap count, the engraving's parallax sample counts and the
+     * translucent march's samples (this replaces any {@link #setVolumeSteps} count). The render-target cap below
+     * High is not the scene's: whoever sizes the render target applies it ({@link QualityPreset#capsRenderTarget()}).
+     * Takes effect at the next frame; any thread. Until this is called it is {@link QualityPreset#HIGH}, full
+     * quality.
+     *
+     * <p>A frame drawn at a render scale below 1 or with MSAA goes through a framebuffer of the scene's own, which a
+     * change of preset (or of size) reallocates on the render thread.
+     *
+     * @param preset the Quality Preset
+     */
+    public void setQualityPreset(QualityPreset preset) {
+        this.qualityPreset = Objects.requireNonNull(preset, "preset");
+        this.volumeSteps = preset.volumeSteps();
+    }
+
+    /**
      * Sets the colour the frame is cleared to, which is what shows wherever nothing is drawn, including through a
      * translucent Die when no Tray is under it. For tests: they put a recognisable colour behind the Dice. Any
      * thread.
@@ -327,6 +356,8 @@ public final class DiceScene implements FrameRenderer {
         facesUniform = glGetUniformLocation(program, "uFaces");
         faceCountUniform = glGetUniformLocation(program, "uFaceCount");
         volumeStepsUniform = glGetUniformLocation(program, "uVolumeSteps");
+        parallaxSamplesUniform = glGetUniformLocation(program, "uParallaxSamples");
+        parallaxShadowSamplesUniform = glGetUniformLocation(program, "uParallaxShadowSamples");
         glowUniform = glGetUniformLocation(program, "uGlow");
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "uMask"), MASK_UNIT);
@@ -338,6 +369,7 @@ public final class DiceScene implements FrameRenderer {
         glUseProgram(0);
         swirls = new SwirlVolumes();
         shadowMap = new ShadowMap();
+        frame = new SceneFrame();
         // One upload per Die Kind: the d10 and d% share a solid but not their Numerals, so not their UVs either.
         // Each atlas is rasterised, uploaded and dropped in turn, so only one is ever held in memory.
         for (DieKind kind : DieKind.values()) {
@@ -349,7 +381,20 @@ public final class DiceScene implements FrameRenderer {
     }
 
     @Override
-    public void render(int width, int height) {
+    public void render(int targetWidth, int targetHeight) {
+        QualityPreset quality = qualityPreset;
+        // At the preset's render scale and MSAA: into the scene's own framebuffer, resolved and scaled up into the
+        // render target at the end, or straight into the target at full scale without MSAA.
+        frame.begin(targetWidth, targetHeight, quality);
+        try {
+            draw(frame.width(), frame.height(), quality);
+        } finally {
+            frame.end();
+        }
+    }
+
+    /** Draws the frame into the bound framebuffer, whose size this is, under a Quality Preset's levers. */
+    private void draw(int width, int height, QualityPreset quality) {
         int clear = clearColour;
         glClearColor(((clear >> 16) & 0xff) / 255f, ((clear >> 8) & 0xff) / 255f, (clear & 0xff) / 255f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -364,7 +409,7 @@ public final class DiceScene implements FrameRenderer {
 
         // The key light's shadow map first, into its own framebuffer: every Die, and the Tray's walls.
         LightView lightView = LightView.of(rig, view);
-        shadowMap.begin(lightView);
+        shadowMap.begin(lightView, quality.shadowMapPx());
         for (Die die : drawn) {
             shadowMap.model(columns(new Matrix4d().translation(die.position()).rotate(die.orientation())));
             meshes.get(die.kind()).draw();
@@ -381,6 +426,8 @@ public final class DiceScene implements FrameRenderer {
         // bakes its volume here, with a full-screen triangle into a framebuffer of its own.
         diceSetUniforms.apply(set, swirls);
         glUniform1i(volumeStepsUniform, volumeSteps);
+        glUniform2f(parallaxSamplesUniform, quality.parallaxMinSamples(), quality.parallaxMaxSamples());
+        glUniform1i(parallaxShadowSamplesUniform, quality.parallaxShadowSamples());
         double distance = view.eye().distance(view.target());
         // Near and far bracket everything within a metre of the target, which holds any Tray and its Dice.
         double near = Math.max(1, distance - 1000);
@@ -392,7 +439,7 @@ public final class DiceScene implements FrameRenderer {
         glEnable(GL_DEPTH_TEST);
         if (shown != null) {
             // The Tray before the Dice, and with no culling: its walls are seen from both sides.
-            trayRenderer.draw(shown, viewProjectionColumns, view.eye(), rig, lightView, drawn);
+            trayRenderer.draw(shown, viewProjectionColumns, view.eye(), rig, lightView, drawn, quality.shadowTaps());
         }
         if (set.translucent() && !drawn.isEmpty()) {
             // Everything opaque is drawn by now (the Tray), so this is what the translucent Dice refract. Every Die
@@ -408,7 +455,7 @@ public final class DiceScene implements FrameRenderer {
 
         glUniformMatrix4fv(viewProjectionUniform, false, viewProjectionColumns);
         glUniform3f(eyeUniform, (float) view.eye().x(), (float) view.eye().y(), (float) view.eye().z());
-        lightUniforms.apply(rig, lightView);
+        lightUniforms.apply(rig, lightView, quality.shadowTaps());
         for (int slot = 0; slot < drawn.size(); slot++) {
             Die die = drawn.get(slot);
             diceSetUniforms.seed(slot);
@@ -440,6 +487,7 @@ public final class DiceScene implements FrameRenderer {
         swirls.delete();
         shadowMap.delete();
         opaquePass.delete();
+        frame.delete();
         glDeleteProgram(program);
         trayRenderer.dispose();
     }

@@ -3,6 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
@@ -27,7 +29,11 @@ final class RollSession {
     private final RollQueue queue;
     private final RollEntry entry;
     private final FastForward fastForward;
+    /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
+    private final TraySurface tray;
     private Consumer<RollStatus> onStatusChanged = status -> {};
+    /** The app's own pieces that follow the Roll's status (the Roll History, #55), told after the strip. */
+    private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
     private ChainShown onChainShown = (chain, start) -> {};
 
     /** Told each time a Roll's chain of Throws starts to play on the Tray. */
@@ -76,7 +82,7 @@ final class RollSession {
         this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
-        Objects.requireNonNull(tray, "tray");
+        this.tray = Objects.requireNonNull(tray, "tray");
         controller = new RollController(clock, physics, fxThread, new FaceValueGenerator(generators.faceValues()),
                 generators.releases(), throwInto, new RollController.TrayView() {
                     @Override
@@ -112,6 +118,9 @@ final class RollSession {
                 pulses.stop();
             }
             onStatusChanged.accept(status);
+            for (Consumer<RollStatus> listener : statusListeners) {
+                listener.accept(status);
+            }
         });
         // After the controller's own listener: once the Roll is over, the Tray may still be moving on the clock
         // (the camera's settle-in after the last Throw), so the pulse stops only when that is done too, and no
@@ -182,6 +191,23 @@ final class RollSession {
     }
 
     /**
+     * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
+     * through the Tray seam and becomes the Tray the next Roll is thrown into.
+     *
+     * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
+     * @param settings the live settings holding the choices
+     * @return the tab's content, already in the Look tab
+     */
+    LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
+        LookTab look = new LookTab(catalogue, settings, chosen -> {
+            tray.showLook(chosen);
+            controller.setTray(chosen.tray());
+        });
+        ui.lookTab().setContent(look.node());
+        return look;
+    }
+
+    /**
      * Sets who else is told each time the Roll's status changes, after the result strip has shown it.
      *
      * @param listener the listener; it replaces any earlier one
@@ -198,5 +224,17 @@ final class RollSession {
      */
     void setOnChainShown(ChainShown listener) {
         onChainShown = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Adds a listener told each time the Roll's status changes, after the result strip and the
+     * {@link #setOnStatusChanged one replaceable listener}. Unlike that one, listeners added here are never replaced,
+     * so the app's own pieces (the Roll History joining a revealed Roll, #55) and the smoke test don't displace each
+     * other.
+     *
+     * @param listener told every status, in the order added
+     */
+    void addStatusListener(Consumer<RollStatus> listener) {
+        statusListeners.add(Objects.requireNonNull(listener, "listener"));
     }
 }
