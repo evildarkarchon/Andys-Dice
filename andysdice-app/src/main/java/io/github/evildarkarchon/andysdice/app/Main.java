@@ -1,0 +1,72 @@
+package io.github.evildarkarchon.andysdice.app;
+
+import java.io.IOException;
+import java.lang.System.Logger.Level;
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * The launcher's main class: it sets up the process around the JavaFX application, then launches it.
+ *
+ * <p>It chooses the data folder once (spec §3.6), sends the log there (spec §6), and records both, before
+ * JavaFX starts. That order is why it is a separate class: the Java launcher starts a main class that extends
+ * {@code Application} through JavaFX's own launcher, which brings the toolkit and Prism up before any of our
+ * code runs, too late for the smoke test's {@code prism.verbose} and for logging the toolkit's start-up.
+ *
+ * <p>The process exits with the status {@link AndysDice#launch} returns: 0 after a normal quit or a passed smoke
+ * test, non-zero after a start-up failure or a failed smoke test.
+ */
+public final class Main {
+
+    private static final System.Logger LOG = System.getLogger(Main.class.getName());
+
+    private Main() {}
+
+    /**
+     * Starts Andy's Dice.
+     *
+     * @param args {@value SmokeTest#FLAG} runs the hidden smoke test (ADR-0005); anything else is ignored
+     */
+    public static void main(String[] args) {
+        // The process's own start, launcher included, so "launch to window" covers what the user waits for.
+        Instant launched = ProcessHandle.current().info().startInstant().orElseGet(Instant::now);
+        boolean smoke = List.of(args).contains(SmokeTest.FLAG);
+
+        DataFolder data = DataFolder.choose();
+        AppLog log = null;
+        try {
+            log = AppLog.install(data.folder());
+        } catch (IOException e) {
+            // Running without a log file beats not running; the console, where there is one, still gets it all.
+            System.err.println("Andy's Dice can't write its log in " + data.folder() + ": " + e);
+        }
+        LOG.log(Level.INFO, "Andy's Dice " + version() + " starting on Java " + Runtime.version() + ", "
+                + System.getProperty("os.name") + " " + System.getProperty("os.arch")
+                + (smoke ? ", in smoke-test mode" : ""));
+        LOG.log(Level.INFO, "Data folder: " + data.folder() + " (" + data.reason() + ")");
+        if (log != null) {
+            LOG.log(Level.INFO, "Log file: " + log.file());
+        }
+        // v1 is crash-only (spec §3): whatever escapes a thread is at least on record before the session ends.
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) ->
+                LOG.log(Level.ERROR, "Uncaught exception on thread " + thread.getName(), error));
+        if (smoke) {
+            SmokeTest.prepare();
+        }
+
+        int status = AndysDice.launch(launched, args);
+
+        LOG.log(status == 0 ? Level.INFO : Level.ERROR, "Andy's Dice exiting with status " + status);
+        if (log != null) {
+            log.close();
+        }
+        // Explicitly, so the status reaches the launcher and no stray non-daemon thread keeps the JVM alive.
+        System.exit(status);
+    }
+
+    /** The app's version, as the module was built with it, or "(unversioned)" in an exploded dev build. */
+    private static String version() {
+        return Main.class.getModule().getDescriptor() == null ? "(unversioned)"
+                : Main.class.getModule().getDescriptor().rawVersion().orElse("(unversioned)");
+    }
+}
