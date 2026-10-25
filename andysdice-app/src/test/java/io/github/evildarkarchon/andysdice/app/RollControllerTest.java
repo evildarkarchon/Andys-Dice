@@ -20,6 +20,8 @@ import io.github.evildarkarchon.andysdice.core.simulation.Release;
 import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
+import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -204,6 +206,45 @@ class RollControllerTest {
         assertThat(rested.result().total()).isEqualTo(13);
         assertThat(rested.text()).isEqualTo("4d6rr1kh3 = 13");
         assertThat(statuses).filteredOn(RollStatus.Rested.class::isInstance).hasSize(1);
+    }
+
+    @Test
+    void theCameraFramesTheTrayWhileEachThrowTumblesSettlesInAtRestAndEasesOutBeforeTheNext() {
+        // 4d6rr1: the first roll shows a 1, so one Reroll Throw of that Die follows the first Throw.
+        RollController controller = controller(1, 4, 5, 6, 3);
+        controller.roll("4d6rr1kh3");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+        double firstRest = chain.plan().throwChain().getFirst().recording().restTime();
+
+        // Between the first Throw at rest and the Reroll Throw's Release: the settle-in, the ease back out, and
+        // only then the reroll pickup (spec §3.2: "the camera eases out, the Cocked Dice glow and lift").
+        assertThat(chain.throwStart(1) - firstRest).isCloseTo(
+                TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS + ChainPlayback.HOLD_SECONDS, within(1e-9));
+        // Within that gap the first Throw's Dice lie where it left them; after the chain, where the last one did.
+        List<DiceScene.Die> afterFirst = chain.diceAt(chain.throwStart(1) - 0.01);
+        List<DiceScene.Die> afterLast = chain.diceAt(chain.restTime() + 1);
+        CameraScript script = chain.cameraScript();
+        assertThat(script.throwStarts()).containsExactly(0.0, chain.throwStart(1));
+        assertThat(script.cues()).containsExactly(
+                new CameraScript.Cue(0, new CameraScript.Shot.WholeTray(), TrayCamera.EASE_OUT_SECONDS),
+                new CameraScript.Cue(firstRest, new CameraScript.Shot.Resting(afterFirst), TrayCamera.SETTLE_SECONDS),
+                new CameraScript.Cue(firstRest + TrayCamera.SETTLE_SECONDS, new CameraScript.Shot.WholeTray(),
+                        TrayCamera.EASE_OUT_SECONDS),
+                new CameraScript.Cue(chain.restTime(), new CameraScript.Shot.Resting(afterLast),
+                        TrayCamera.SETTLE_SECONDS));
+    }
+
+    @Test
+    void aRollOfOneThrowSettlesInOnceItsDiceRest() {
+        RollController controller = controller(4);
+        controller.roll("1d6");
+        physics.finish();
+        ChainPlayback chain = tray.chains.getLast();
+
+        assertThat(chain.cameraScript().throwStarts()).containsExactly(0.0);
+        assertThat(chain.cameraScript().cues()).extracting(CameraScript.Cue::time).containsExactly(0.0,
+                chain.restTime());
     }
 
     @Test

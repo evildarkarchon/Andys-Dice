@@ -5,6 +5,8 @@ import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
 import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
+import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
+import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -18,16 +20,22 @@ import java.util.Objects;
  * that moved it left it, turned by that Throw's Numbering Rotation, so a Frozen Die never moves on screen, struck
  * or not (ADR-0006: the simulator holds it static too).
  *
- * <p>Each Throw starts {@value #HOLD_SECONDS} s after the one before it came to rest, so the Dice are seen at
- * rest before the next Throw takes some of them up. That hold is a stand-in: #47's glow and lift fill the gap
- * between Throws. The Roll is at rest at {@link #restTime()}, when the last Throw's Dice are.
+ * <p>Between one Throw at rest and the next Throw's Release, the camera settles in on the Dice at rest
+ * ({@link TrayCamera#SETTLE_SECONDS}), eases back out to the whole Tray ({@link TrayCamera#EASE_OUT_SECONDS}),
+ * and then the Dice going back are picked up (spec §3.2: "the camera eases out, the Cocked Dice glow and lift").
+ * The pickup is a {@value #HOLD_SECONDS} s hold for now: #47's glow and lift replace it. The Roll is at rest at
+ * {@link #restTime()}, when the last Throw's Dice are; {@link #cameraScript()} is the camera's part in all this.
  *
  * <p>Immutable and safe on any thread.
  */
 final class ChainPlayback {
 
-    /** The pause between one Throw at rest and the next Throw's Release, until #47's reroll pickup replaces it. */
+    /** The pause for the reroll pickup before the next Throw's Release, until #47's glow and lift replace it. */
     static final double HOLD_SECONDS = 0.3;
+
+    /** From one Throw at rest to the next Throw's Release: the camera's settle-in and ease out, then the pickup. */
+    private static final double GAP_SECONDS = TrayCamera.SETTLE_SECONDS + TrayCamera.EASE_OUT_SECONDS
+            + HOLD_SECONDS;
 
     private final RollPlan.Planned plan;
     private final List<ThrowPlayback> throwPlaybacks;
@@ -36,6 +44,7 @@ final class ChainPlayback {
     /** Where every Die lies as each Throw starts; null for a Die no Throw has moved yet. */
     private final List<List<DiceScene.Die>> lyingAtStart;
     private final double restTime;
+    private final CameraScript cameraScript;
 
     /**
      * Lays out a planned Roll's chain.
@@ -50,6 +59,9 @@ final class ChainPlayback {
         starts = new double[chain.size()];
         DiceScene.Die[] now = new DiceScene.Die[plan.dice().size()];
         double start = 0;
+        // Out to the whole Tray as the first Throw starts, from wherever the last Roll left the camera.
+        List<CameraScript.Cue> cues = new ArrayList<>();
+        cues.add(new CameraScript.Cue(0, new CameraScript.Shot.WholeTray(), TrayCamera.EASE_OUT_SECONDS));
         for (int k = 0; k < chain.size(); k++) {
             PlannedThrow planned = chain.get(k);
             ThrowPlayback playback = new ThrowPlayback(planned.recording(),
@@ -66,13 +78,30 @@ final class ChainPlayback {
             for (int slot = 0; slot < ended.size(); slot++) {
                 now[planned.thrown().get(slot)] = ended.get(slot);
             }
+            // Every Die has been thrown once the first Throw has, so none of these is null.
+            double rest = start + planned.recording().restTime();
+            cues.add(new CameraScript.Cue(rest, new CameraScript.Shot.Resting(List.of(now)),
+                    TrayCamera.SETTLE_SECONDS));
             if (k < chain.size() - 1) {
-                start += planned.recording().restTime() + HOLD_SECONDS;
+                cues.add(new CameraScript.Cue(rest + TrayCamera.SETTLE_SECONDS, new CameraScript.Shot.WholeTray(),
+                        TrayCamera.EASE_OUT_SECONDS));
+                start += planned.recording().restTime() + GAP_SECONDS;
             }
         }
         throwPlaybacks = List.copyOf(playbacks);
         lyingAtStart = List.copyOf(lying);
         restTime = starts[chain.size() - 1] + chain.getLast().recording().restTime();
+        cameraScript = new CameraScript(cues, Arrays.stream(starts).boxed().toList());
+    }
+
+    /**
+     * Returns what the settle-in camera does over the chain: out to the whole Tray as the first Throw starts,
+     * in on the Dice as each Throw comes to rest, and back out before each Reroll Throw or Cocked Rethrow.
+     *
+     * @return the camera's script, on this chain's timeline
+     */
+    CameraScript cameraScript() {
+        return cameraScript;
     }
 
     /**
