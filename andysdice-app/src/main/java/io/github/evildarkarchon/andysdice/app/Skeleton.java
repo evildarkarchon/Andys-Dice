@@ -8,6 +8,7 @@ import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import io.github.evildarkarchon.andysdice.render.GlDriver;
 import io.github.evildarkarchon.andysdice.render.LightRig;
+import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
@@ -58,17 +59,29 @@ final class Skeleton implements AutoCloseable {
     private final TrayCamera camera;
     private final RollSession session;
     private final Generators generators;
+    private final RenderTargetCap.Capping capping;
+    private final SlowGpuWatch slowGpu;
+    // Read by the slow-GPU watch when it judges a Throw; set on the JavaFX thread.
+    private volatile QualityPreset quality = QualityPreset.DEFAULT;
     private ChainPlayback showing;
 
+    /** The Throw of a chain in motion at a frame, as the slow-GPU watch tells Throws apart (by chain identity). */
+    private record ThrowInMotion(ChainPlayback chain, int throwIndex) {}
+
     private Skeleton(PhysicsWorker worker, RenderThread renderer, DiceScene scene, FrameView view,
-            TrayCamera camera, PlaybackClock clock, Pulses pulses, Generators generators, FailureGuard failures,
-            Notices notices) {
+            TrayCamera camera, RenderTargetCap.Capping capping, PlaybackClock clock, Pulses pulses,
+            Generators generators, FailureGuard failures, Notices notices) {
         this.worker = worker;
         this.renderer = renderer;
         this.scene = scene;
         this.view = view;
         this.camera = camera;
+        this.capping = capping;
         this.generators = generators;
+        // Every frame's GPU time, measured on the render thread, judged per Throw (ADR-0014). It never changes the
+        // preset; it only reads it to suggest the one below.
+        this.slowGpu = new SlowGpuWatch(notices::post, () -> quality);
+        renderer.setOnGpuTime(slowGpu::frame);
         // The GL Tray behind the Tray seam: the frame view, fed by the render thread through the transport. A
         // pre-simulation job that throws ends the session (spec §3.2 "Runtime failure"), so the worker reports it.
         this.session = new RollSession(clock, pulses, failures.reporting(worker::submit), Platform::runLater,
@@ -166,6 +179,8 @@ final class Skeleton implements AutoCloseable {
         // Physics and rendering both use the chosen Tray: the controller throws into it, the scene draws it.
         scene.setTray(TRAY);
         scene.setLightRig(LIGHT_RIG);
+        // The default until the Settings tab applies the Player's saved preset (#60).
+        scene.setQualityPreset(QualityPreset.DEFAULT);
         // Reduced motion follows the system (spec §3.2), read as each pose is worked out, so a change applies at once.
         TrayCamera camera = new TrayCamera(clock, Framing.of(TRAY.geometry()), REDUCED_MOTION);
         scene.setCamera(camera.camera());
@@ -181,10 +196,26 @@ final class Skeleton implements AutoCloseable {
         failures.watch(FailureGuard.RENDER_THREAD, renderer.stopped());
         // The view reports its physical size (and again after a move to a monitor with another scale); the render
         // target follows it under the cap below High (ADR-0014), and JavaFX scales a capped frame up.
-        view.setOnTargetSizeChanged(RenderTargetCap.capping(renderer::resize));
+        RenderTargetCap.Capping capping = RenderTargetCap.capping(renderer::resize, QualityPreset.DEFAULT);
+        view.setOnTargetSizeChanged(capping);
         // The first-run Tray is empty; draw it once so the view isn't blank until the first Roll.
         renderer.requestFrame();
-        return new Skeleton(worker, renderer, scene, view, camera, clock, pulses, generators, failures, notices);
+        return new Skeleton(worker, renderer, scene, view, camera, capping, clock, pulses, generators, failures,
+                notices);
+    }
+
+    /**
+     * Applies a Quality Preset (ADR-0014): every renderer lever, in one message to the scene, and the render-target
+     * cap, which High lifts (the target is resized from the view's last size). The Settings tab calls this at
+     * start-up with the saved preset and whenever the Player picks another; nothing else does.
+     *
+     * @param preset the Quality Preset
+     */
+    void setQualityPreset(QualityPreset preset) {
+        quality = Objects.requireNonNull(preset, "preset");
+        scene.setQualityPreset(preset);
+        capping.setPreset(preset);
+        renderer.requestFrame();
     }
 
     /**
@@ -283,6 +314,9 @@ final class Skeleton implements AutoCloseable {
      * pickup's glow and lift included, as reduced motion has them now.
      */
     private void draw(ChainPlayback chain, double seconds) {
+        // The frames measured from here on count toward the Throw in motion now, if any (the slow-GPU Notice).
+        int moving = chain.throwInMotion(seconds);
+        slowGpu.showing(moving < 0 ? null : new ThrowInMotion(chain, moving));
         scene.setDice(chain.diceAt(seconds, REDUCED_MOTION.getAsBoolean()));
         // The same frame's camera, so the Dice and the camera never reach the render thread a frame apart.
         scene.setCamera(camera.camera());

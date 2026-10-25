@@ -158,6 +158,23 @@ final class ChainPlayback {
     }
 
     /**
+     * Returns which Throw is in motion at a moment: from its Release until its Dice come to rest, and none in the
+     * gaps between Throws (the camera's settle-in, its ease out, the pickup), before the first Release or once the
+     * Roll is at rest. The slow-GPU Notice judges the frames of each Throw in motion (#60).
+     *
+     * @param time seconds since the first Throw's Release
+     * @return an index into the plan's Throw chain, or -1 when no Throw is in motion
+     */
+    int throwInMotion(double time) {
+        if (time < 0) {
+            return -1;
+        }
+        int k = throwAt(time);
+        double rest = starts[k] + plan.throwChain().get(k).recording().restTime();
+        return time < rest ? k : -1;
+    }
+
+    /**
      * Returns every Die of the Roll as it is drawn at a moment of the chain, with reduced motion off.
      *
      * @param time seconds since the first Throw's Release

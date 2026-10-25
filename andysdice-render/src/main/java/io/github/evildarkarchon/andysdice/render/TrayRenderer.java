@@ -156,9 +156,10 @@ final class TrayRenderer {
      * @param rig the Light Rig
      * @param lightView the key light's view the shadow map was drawn from
      * @param dice the Dice on it, which darken the floor beneath them; past {@value #MAX_DICE}, the rest don't
+     * @param shadowTaps the PCSS taps the Quality Preset filters the shadow with
      */
     void draw(Tray next, float[] viewProjection, Vector3dc eye, LightRig rig, LightView lightView,
-            List<DiceScene.Die> dice) {
+            List<DiceScene.Die> dice, int shadowTaps) {
         RenderThread.checkRenderThread();
         if (!next.equals(tray)) {
             rebuild(next);
@@ -166,7 +167,7 @@ final class TrayRenderer {
         glUseProgram(program);
         glUniformMatrix4fv(viewProjectionUniform, false, viewProjection);
         vector(eyeUniform, eye);
-        lightUniforms.apply(rig, lightView);
+        lightUniforms.apply(rig, lightView, shadowTaps);
         int count = Math.min(dice.size(), MAX_DICE);
         float[] spheres = new float[4 * MAX_DICE];
         for (int i = 0; i < count; i++) {

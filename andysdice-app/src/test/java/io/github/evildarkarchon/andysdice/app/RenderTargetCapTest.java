@@ -3,9 +3,12 @@ package io.github.evildarkarchon.andysdice.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.render.FrameView;
+import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * The render-target cap below High (ADR-0014, spec §4): the Tray's render target follows its physical pixels up
@@ -52,5 +55,37 @@ class RenderTargetCapTest {
         listener.sizeChanged(3840, 2160);
 
         assertThat(told).containsExactly("800x600", "1920x1080");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = QualityPreset.class, names = {"LOW", "MEDIUM"})
+    void belowHighTheCapApplies(QualityPreset preset) {
+        assertThat(RenderTargetCap.fit(3840, 2160, preset)).isEqualTo(new RenderTargetCap.Size(1920, 1080));
+        assertThat(RenderTargetCap.fit(940, 682, preset)).isEqualTo(new RenderTargetCap.Size(940, 682));
+    }
+
+    @Test
+    void highLiftsTheCap() {
+        assertThat(RenderTargetCap.fit(3840, 2160, QualityPreset.HIGH)).isEqualTo(new RenderTargetCap.Size(3840, 2160));
+        assertThat(RenderTargetCap.fit(3330, 1380, QualityPreset.HIGH)).isEqualTo(new RenderTargetCap.Size(3330, 1380));
+    }
+
+    @Test
+    void aNewPresetResizesTheTargetFromTheLastSizeTheViewReported() {
+        List<String> told = new ArrayList<>();
+        RenderTargetCap.Capping capping = RenderTargetCap.capping((w, h) -> told.add(w + "x" + h),
+                QualityPreset.MEDIUM);
+
+        capping.setPreset(QualityPreset.HIGH);
+        assertThat(told).as("nothing to resize before the view has reported a size").isEmpty();
+
+        capping.sizeChanged(3840, 2160);
+        capping.setPreset(QualityPreset.MEDIUM);
+        capping.setPreset(QualityPreset.LOW);
+        capping.setPreset(QualityPreset.HIGH);
+        capping.sizeChanged(800, 600);
+
+        assertThat(told).containsExactly("3840x2160", "1920x1080", "1920x1080", "3840x2160", "800x600");
+        assertThat(capping.preset()).isEqualTo(QualityPreset.HIGH);
     }
 }

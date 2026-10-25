@@ -100,6 +100,9 @@ public final class AndysDice extends Application {
             return;
         }
         LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        // The Settings tab's Quality Preset (#60): the saved one (Medium at first run) goes to the renderer now, and
+        // a new choice is saved and applied at once.
+        QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
         // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
         // time zone as it was at start-up.
         HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
