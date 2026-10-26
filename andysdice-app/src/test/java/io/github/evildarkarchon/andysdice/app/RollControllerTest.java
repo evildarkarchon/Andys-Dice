@@ -4,6 +4,8 @@ import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSet;
+import io.github.evildarkarchon.andysdice.core.diceset.DiceSetCatalogue;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValues;
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
@@ -21,6 +23,7 @@ import io.github.evildarkarchon.andysdice.core.simulation.Vector3;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
+import io.github.evildarkarchon.andysdice.render.LightRig;
 import io.github.evildarkarchon.andysdice.render.Pickup;
 import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
@@ -34,12 +37,12 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A Roll's whole lifecycle, driven only through the roll controller's interface (roll, cancel the Queued Roll,
- * abandon, and advancing the playback clock) over a scripted simulator, scripted Face Values and a clock advanced by
- * hand: the whole chain of Throws is planned on the physics worker before anything moves, the Throws then play in
- * order with the other Dice lying still, and the Roll Result appears only once the last Throw is at rest. A Roll
- * asked for meanwhile waits as the Queued Roll and starts a beat after the reveal (or the failure), and JavaFX's
- * pulse is asked for exactly while something needs the clock. No GL, no Jolt, no JavaFX, and no test sleeps
- * (ADR-0011). It asserts only on the Roll's state snapshots the controller publishes and on what the Tray and the
+ * abandon, set the Look, and advancing the playback clock) over a scripted simulator, scripted Face Values and a
+ * clock advanced by hand: the whole chain of Throws is planned on the physics worker before anything moves, the
+ * Throws then play in order with the other Dice lying still, and the Roll Result appears only once the last Throw is
+ * at rest. A Roll asked for meanwhile waits as the Queued Roll and starts a beat after the reveal (or the failure),
+ * and JavaFX's pulse is asked for exactly while something needs the clock. A Tray picked while Dice move is drawn
+ * once they rest. No GL, no Jolt, no JavaFX, and no test sleeps (ADR-0011). It asserts only on the Roll's state snapshots the controller publishes and on what the Tray and the
  * pulse were told.
  */
 class RollControllerTest {
@@ -1062,6 +1065,169 @@ class RollControllerTest {
         assertThat(pulses.starts).hasValue(0);
     }
 
+    // The mid-Roll Look rule (spec §3.2 "Look tab"): a Tray picked while Dice move appears once they rest.
+
+    private static final Tray FELT = BuiltInTrays.defaultTray();
+    private static final Tray HEXAGON = BuiltInTrays.find("02-leather-hexagon").orElseThrow();
+    private static final Tray WALNUT = BuiltInTrays.find("03-walnut-board").orElseThrow();
+    private static final DiceSet ONYX = DiceSetCatalogue.builtIn().find("01-onyx").orElseThrow();
+    private static final DiceSet RUBY = DiceSetCatalogue.builtIn().find("12-ruby").orElseThrow();
+
+    @Test
+    void aLookPickedWithNoRollUnderWayIsShownWholeAtOnceAndTheNextRollIsThrownIntoItsTray() {
+        RollController controller = controller(4);
+
+        controller.setLook(new Look(RUBY, HEXAGON, LightRig.LAMP));
+
+        assertThat(tray.looks).containsExactly(new Look(RUBY, HEXAGON, LightRig.LAMP));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        assertThat(simulator.requests).isNotEmpty()
+                .allSatisfy(request -> assertThat(request.tray()).isEqualTo(HEXAGON.geometry()));
+        assertThat(tray.chains.getFirst().tray()).isEqualTo(HEXAGON);
+    }
+
+    @Test
+    void aTrayPickedWhileTheRollPlaysIsShownOnceItRests() {
+        RollController controller = controller(4);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+
+        controller.setLook(new Look(ONYX, WALNUT, LightRig.STUDIO));
+
+        // The Roll in motion stays in the Tray it was thrown into.
+        assertThat(tray.looks.getLast().tray()).isEqualTo(FELT);
+        while (underWay()) {
+            assertThat(tray.looks.getLast().tray()).as("at %.3f s", clock.time()).isEqualTo(FELT);
+            clock.advance(FRAME);
+        }
+        // Shown by the time the Roll Result is.
+        assertThat(status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(ONYX, WALNUT, LightRig.STUDIO));
+    }
+
+    @Test
+    void aDiceSetOrLightRigPickedWhileTheRollPlaysIsShownAtOnce() {
+        RollController controller = controller(4);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+
+        controller.setLook(new Look(RUBY, FELT, LightRig.STUDIO));
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(RUBY, FELT, LightRig.STUDIO));
+        controller.setLook(new Look(RUBY, FELT, LightRig.WINDOW));
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(RUBY, FELT, LightRig.WINDOW));
+
+        // Picked with a Tray, they still show at once; only the Tray waits for the Dice to rest.
+        controller.setLook(new Look(ONYX, HEXAGON, LightRig.LAMP));
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(ONYX, FELT, LightRig.LAMP));
+        assertThat(status()).isInstanceOf(RollStatus.Playing.class);
+    }
+
+    @Test
+    void aTrayPickedWhileTheRollPreSimulatesWaitsForThatRollToRestToo() {
+        RollController controller = controller(4);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+
+        controller.setLook(new Look(ONYX, HEXAGON, LightRig.STUDIO));
+
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
+        assertThat(tray.looks.getLast().tray()).isEqualTo(FELT);
+        physics.finish();
+        // It was simulated in the felt Tray, and is drawn and heard in it.
+        assertThat(simulator.requests).allSatisfy(request -> assertThat(request.tray()).isEqualTo(FELT.geometry()));
+        assertThat(tray.chains.getFirst().tray()).isEqualTo(FELT);
+        assertThat(tray.looks.getLast().tray()).isEqualTo(FELT);
+        playToRest(controller);
+        assertThat(tray.looks.getLast().tray()).isEqualTo(HEXAGON);
+    }
+
+    @Test
+    void ofTwoTraysPickedInTurnWhileTheDiceMoveTheLastIsShownAtRestAndTheNextRollIsThrownIntoIt() {
+        RollController controller = controller(4, 2);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+
+        controller.setLook(new Look(ONYX, WALNUT, LightRig.STUDIO));
+        frames(3);
+        controller.setLook(new Look(ONYX, HEXAGON, LightRig.STUDIO));
+        playToRest(controller);
+
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(ONYX, HEXAGON, LightRig.STUDIO));
+        assertThat(tray.looks).extracting(Look::tray).doesNotContain(WALNUT);
+        simulator.requests.clear();
+        controller.roll(valid("1d6"));
+        physics.finish();
+        assertThat(simulator.requests).isNotEmpty()
+                .allSatisfy(request -> assertThat(request.tray()).isEqualTo(HEXAGON.geometry()));
+        assertThat(tray.chains.getLast().tray()).isEqualTo(HEXAGON);
+    }
+
+    @Test
+    void aQueuedRollIsThrownIntoTheTrayPickedWhileTheRollAheadOfItPlayed() {
+        RollController controller = controller(4, 2);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        controller.roll(valid("1d4"));
+        controller.setLook(new Look(ONYX, WALNUT, LightRig.STUDIO));
+        playToRest(controller);
+        simulator.requests.clear();
+
+        frames(54);
+        physics.finish();
+
+        assertThat(simulator.requests).isNotEmpty()
+                .allSatisfy(request -> assertThat(request.tray()).isEqualTo(WALNUT.geometry()));
+        assertThat(tray.chains.getLast().tray()).isEqualTo(WALNUT);
+        assertThat(tray.looks.getLast().tray()).isEqualTo(WALNUT);
+    }
+
+    @Test
+    void aTrayPickedWhileTheRollFailsIsShownOnceTheFailedRollsMessageShows() {
+        RollController controller = controller(4, 2);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        // Every Attempt of the Roll's first Throw times out.
+        simulator.then(24, Ending.TIMED_OUT);
+        controller.roll(valid("2d6"));
+        // Told the Tray at once, the moment the Failed Roll's message is published.
+        List<Tray> drawnAsItFailed = new ArrayList<>();
+        controller.addStateListener(RollState.statusChanges(status -> {
+            if (status instanceof RollStatus.Failed) {
+                drawnAsItFailed.add(tray.looks.getLast().tray());
+            }
+        }));
+
+        controller.setLook(new Look(ONYX, WALNUT, LightRig.STUDIO));
+        assertThat(tray.looks.getLast().tray()).isEqualTo(FELT);
+        physics.finish();
+
+        assertThat(status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(drawnAsItFailed).containsExactly(WALNUT);
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(ONYX, WALNUT, LightRig.STUDIO));
+    }
+
+    @Test
+    void aTrayPickedWhileTheRollPlaysIsShownWhenTheSessionIsAbandoned() {
+        RollController controller = controller(4);
+        controller.setLook(new Look(ONYX, FELT, LightRig.STUDIO));
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+        controller.setLook(new Look(ONYX, WALNUT, LightRig.STUDIO));
+        assertThat(tray.looks.getLast().tray()).isEqualTo(FELT);
+
+        controller.abandon();
+
+        assertThat(tray.looks.getLast()).isEqualTo(new Look(ONYX, WALNUT, LightRig.STUDIO));
+    }
+
     @Test
     void abandoningBeforeAnyRollLeavesTheTrayReadyAndNothingRollsAfter() {
         RollController controller = controller(4);
@@ -1142,6 +1308,8 @@ class RollControllerTest {
     private static final class RecordingTray implements RollController.TrayView {
         final List<ChainPlayback> chains = new ArrayList<>();
         final List<Double> times = new ArrayList<>();
+        /** Every look it was shown, oldest first. */
+        final List<Look> looks = new ArrayList<>();
         /** What {@link #moving()} reports: set it to stand in for the camera's settle-in. */
         boolean moving;
 
@@ -1160,6 +1328,11 @@ class RollControllerTest {
         @Override
         public boolean moving() {
             return moving;
+        }
+
+        @Override
+        public void showLook(Look look) {
+            looks.add(look);
         }
     }
 }

@@ -47,6 +47,11 @@ import java.util.random.RandomGenerator;
  * reveal it once the last Throw is at rest; start the Queued Roll once its beat is over; then decide whether the
  * pulse is still needed. No rule here depends on the order listeners were added to the clock.
  *
+ * <p>It holds the look the Look tab picked ({@link #setLook}) and draws it on the Tray under the mid-Roll Look rule
+ * (spec §3.2 "Look tab"): a Roll is drawn in the Tray it was thrown into to the end, so a Tray picked while one is
+ * under way shows once it rests, fails or is lost, while a Dice Set or Light Rig shows at once. The next Roll is
+ * always thrown into the Tray picked last.
+ *
  * <p>What it tells the rest of the app is one immutable {@link RollState} snapshot (the status, the Queued Roll and
  * whether the app has settled), published on every change, a {@code settled} flip on a clock tick included, to
  * listeners that are only ever added and are told in the order they were added ({@link #addStateListener}).
@@ -99,6 +104,15 @@ final class RollController {
          * @return {@code true} while something on the Tray is still moving on the clock
          */
         boolean moving();
+
+        /**
+         * Draws the Tray in a look (#57): the Dice Set, the Tray itself and the Light Rig. The Dice already on the
+         * Tray stay where they are. The controller decides which Tray that is ({@link RollController#setLook}):
+         * while a Roll is under way, the one it was thrown into.
+         *
+         * @param look the look to draw from now on
+         */
+        void showLook(Look look);
     }
 
     /**
@@ -136,6 +150,12 @@ final class RollController {
     private boolean pulsing;
     /** Set once the session has failed ({@link #abandon}); never cleared. */
     private boolean abandoned;
+    /** The Tray the Roll under way was thrown into; meaningful only while one is. */
+    private Tray rollingIn;
+    /** The look the Tray was last told to draw, or {@code null} before any. */
+    private Look shownLook;
+    /** The look picked while a Roll was under way, shown once it ends; {@code null} when none waits. */
+    private Look waitingLook;
 
     /**
      * Creates a controller and starts it listening to the clock.
@@ -146,8 +166,8 @@ final class RollController {
      * @param fxThread runs the pre-simulation's result on this controller's thread ({@code Platform::runLater})
      * @param faceValues the Face Value generator (ADR-0001); used only on the physics worker, one Roll at a time
      * @param releases the Release generator (ADR-0003); used only on the physics worker, one Roll at a time
-     * @param throwInto the chosen Tray (ADR-0010), whose shape and physics materials every Throw is simulated in;
-     *     the view draws the same Tray
+     * @param throwInto the chosen Tray (ADR-0010), whose shape and physics materials every Throw is simulated in
+     *     until a look is set ({@link #setLook}); the view draws the same Tray
      * @param tray where the Roll is drawn
      */
     RollController(PlaybackClock clock, Pulses pulses, PhysicsJobs physics, Executor fxThread,
@@ -185,22 +205,46 @@ final class RollController {
     }
 
     /**
-     * Returns the Tray Rolls are thrown into.
+     * Sets the look the Look tab picked (#57), under the mid-Roll Look rule (spec §3.2 "Look tab"). Its Tray is the
+     * one the next Roll is thrown into, always. With no Roll under way the whole look shows at once. While a Roll
+     * is under way (pre-simulating or playing) its Dice Set and Light Rig show at once, but the Tray keeps showing
+     * the Tray that Roll was thrown into, and the picked one shows once the Roll rests, fails or is lost; a later
+     * pick in the meantime replaces it.
      *
-     * @return the chosen Tray
+     * @param look the Dice Set, Tray and Light Rig picked
      */
-    Tray tray() {
-        return throwInto;
+    void setLook(Look look) {
+        Objects.requireNonNull(look, "look");
+        throwInto = look.tray();
+        if (underWay) {
+            // Its Throws were simulated in the Tray it was thrown into, so it is drawn there to the end: other
+            // walls and another floor would have it bounce off walls that aren't there.
+            waitingLook = look;
+            drawLook(new Look(look.diceSet(), rollingIn, look.lightRig()));
+        } else {
+            waitingLook = null;
+            drawLook(look);
+        }
+    }
+
+    /** Draws the Tray in a look, unless it is already drawn in it. */
+    private void drawLook(Look look) {
+        if (!look.equals(shownLook)) {
+            shownLook = look;
+            tray.showLook(look);
+        }
     }
 
     /**
-     * Changes the Tray the next Roll is thrown into, as the Look tab does (#57). A Roll already pre-simulating or
-     * playing keeps the Tray it was planned in: its Throws were simulated there.
-     *
-     * @param tray the chosen Tray
+     * The Roll under way has rested, failed or been lost: shows the look picked while it was under way, if any, so
+     * the Tray the Player picked last is the one now drawn.
      */
-    void setTray(Tray tray) {
-        throwInto = Objects.requireNonNull(tray, "tray");
+    private void showWaitingLook() {
+        if (waitingLook != null) {
+            Look picked = waitingLook;
+            waitingLook = null;
+            drawLook(picked);
+        }
     }
 
     /**
@@ -260,6 +304,8 @@ final class RollController {
         // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
         // chain carries this one (#67), so the Roll is heard in the Tray it was simulated in.
         Tray plannedIn = throwInto;
+        // And drawn in it to the end: a Tray picked meanwhile waits for this Roll (setLook).
+        rollingIn = plannedIn;
         CompletableFuture<RollPlan> planned;
         try {
             // Choose and pre-simulate the whole chain on the worker before anything plays (ADR-0001, ADR-0014).
@@ -292,6 +338,8 @@ final class RollController {
         abandoned = true;
         playing = null;
         underWay = false;
+        // The Roll is lost, so a Tray picked while it was under way is drawn now: the pick is never stranded.
+        showWaitingLook();
         if (queued != null) {
             clearQueued();
         }
@@ -347,6 +395,8 @@ final class RollController {
                 + failed.message(), error);
         // A Queued Roll waits out the beat from the failure, with the Failed Roll's message shown through it.
         ended();
+        // Nothing of this Roll was drawn, so a Tray picked while it pre-simulated is drawn with its message.
+        showWaitingLook();
         setStatus(failed);
         // A Roll that failed in pre-simulation never started the pulse, but a Queued Roll's beat needs it.
         updatePulse();
@@ -378,6 +428,8 @@ final class RollController {
         playing = null;
         underWay = false;
         ended();
+        // The Dice are at rest, so a Tray picked while they moved is drawn now, with the Roll Result.
+        showWaitingLook();
         // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
         // carries its name (#56), which the result strip shows and the Roll History records.
         setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
