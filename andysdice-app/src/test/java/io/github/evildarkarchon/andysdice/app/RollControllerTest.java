@@ -42,8 +42,8 @@ import org.junit.jupiter.api.Test;
  * Throws then play in order with the other Dice lying still, and the Roll Result appears only once the last Throw is
  * at rest. A Roll asked for meanwhile waits as the Queued Roll and starts a beat after the reveal (or the failure),
  * and JavaFX's pulse is asked for exactly while something needs the clock. A Tray picked while Dice move is drawn
- * once they rest. No GL, no Jolt, no JavaFX, and no test sleeps (ADR-0011). It asserts only on the Roll's state snapshots the controller publishes and on what the Tray and the
- * pulse were told.
+ * once they rest. No GL, no Jolt, no JavaFX, and no test sleeps (ADR-0011). It asserts only on the Roll's state
+ * snapshots the controller publishes and on what the Tray and the pulse were told.
  */
 class RollControllerTest {
 

@@ -56,7 +56,7 @@ class FailurePanelTest extends HeadlessUiTest {
 
     /**
      * What the app's failure guard callback does ({@code AndysDice.start}): the failure panel first, then the
-     * session's Rolling ends, in the roll controller.
+     * session's rolling ends, in the roll controller.
      */
     private void endSession(Failure failure) {
         FailureScreen.show(ui(), failure, () -> quits.add(() -> {}));

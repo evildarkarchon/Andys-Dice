@@ -323,7 +323,7 @@ final class RollController {
     }
 
     /**
-     * Ends the session's Rolling for good, once a runtime failure has ended the session (spec §3.2 "Runtime
+     * Ends the session's rolling for good, once a runtime failure has ended the session (spec §3.2 "Runtime
      * failure"; the failure guard's callback calls it, after the failure panel is shown). A Roll in motion stops
      * where it is and is never revealed, and one still pre-simulating never plays: either becomes a
      * {@link RollStatus.Lost Lost Roll}, which never joins the Roll History (ADR-0007: a Roll interrupted before it

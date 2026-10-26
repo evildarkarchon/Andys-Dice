@@ -7,8 +7,8 @@ import java.util.function.Consumer;
 /**
  * One immutable snapshot of where the Roll stands, as the roll controller publishes it on every change: the status
  * the result strip shows, the Queued Roll waiting behind it, and whether the app has settled. Everything that follows
- * a Roll (the result strip, entry's "next: …" chip, the Roll History, the dice sound, the smoke test, the bench) learns about it
- * from these, through {@link RollController#addStateListener}.
+ * a Roll (the result strip, entry's "next: …" chip, the Roll History, the dice sound, the smoke test, the bench)
+ * learns about it from these, through {@link RollController#addStateListener}.
  *
  * @param status where the current Roll stands
  * @param queued the Queued Roll, if one waits (spec §3.2 "Entry"): what was asked for while a Roll was under way
