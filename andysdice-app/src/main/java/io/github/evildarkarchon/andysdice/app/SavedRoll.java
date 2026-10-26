@@ -56,10 +56,8 @@ record SavedRoll(String name, String expression) {
      * @return the parsed expression, or empty for a Saved Roll that {@linkplain #problem no longer parses}
      */
     Optional<RollExpression> parsed() {
-        return switch (RollExpressionParser.parse(expression)) {
-            case ParseResult.Invalid invalid -> Optional.empty();
-            case ParseResult.Valid valid -> Optional.of(valid.expression());
-        };
+        // Known to parse once problem() found nothing; parsing it again is cheap (one short expression, on a click).
+        return rolls() ? Optional.of(RollExpressions.valid(expression)) : Optional.empty();
     }
 
     /**
