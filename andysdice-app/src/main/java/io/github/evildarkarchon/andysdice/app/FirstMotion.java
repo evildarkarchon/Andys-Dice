@@ -66,6 +66,8 @@ final class FirstMotion {
                 return;
             }
             if (status instanceof RollStatus.Playing) {
+                // Only as a signal: Playing.start() is a playback clock time, and the presented-frame callback
+                // carries no clock time to compare it with, so the timing runs on System.nanoTime() alone.
                 playing[0] = true;
             } else if (status instanceof RollStatus.Failed failed) {
                 timed.completeExceptionally(new IllegalStateException("the Roll of " + expression + " failed: "
