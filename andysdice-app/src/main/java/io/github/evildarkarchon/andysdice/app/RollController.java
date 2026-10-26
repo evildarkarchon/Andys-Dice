@@ -475,7 +475,7 @@ final class RollController {
                 pulsing = true;
                 pulses.start();
             }
-        } else if (!underWay && queued == null && !tray.moving()) {
+        } else if (settled()) {
             if (pulsing) {
                 pulsing = false;
                 pulses.stop();
@@ -491,7 +491,15 @@ final class RollController {
 
     /** The Roll's state as it stands now; settled once nothing is under way or queued and the Tray is still. */
     private RollState snapshot() {
-        return new RollState(status, Optional.ofNullable(queued), !underWay && queued == null && !tray.moving());
+        return new RollState(status, Optional.ofNullable(queued), settled());
+    }
+
+    /**
+     * Tells whether the app has settled: no Roll under way, no Queued Roll waiting and the Tray no longer moving.
+     * The pulse is let go, and the snapshot says {@code settled}, on exactly this.
+     */
+    private boolean settled() {
+        return !underWay && queued == null && !tray.moving();
     }
 
     /**
