@@ -233,7 +233,7 @@ class ResultStripTest extends HeadlessUiTest {
         faces.then(3);
         roll("1d8+1");
         playToRest();
-        RollStatus.Rested rested = (RollStatus.Rested) fromFx(() -> controller().status());
+        RollStatus.Rested rested = (RollStatus.Rested) fromFx(() -> rollState().status());
 
         onFx(() -> ui().showStatus(new RollStatus.Rested(rested.expression(), rested.result(), rested.throwCount(),
                 Optional.of("Fireball"))));

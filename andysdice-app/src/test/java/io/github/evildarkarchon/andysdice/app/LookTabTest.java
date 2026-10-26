@@ -170,7 +170,10 @@ class LookTabTest extends HeadlessUiTest {
         assertThat(fromFx(() -> picked(look.diceSetButtons().getLast()))).isTrue();
         assertThat(fromFx(() -> picked(look.diceSetButtons().getFirst()))).isFalse();
         assertThat(fromFx(() -> picked(named(look.lightRigButtons(), "Light Rig Lamp")))).isTrue();
-        assertThat(fromFx(() -> controller().tray().name())).isEqualTo("My oval");
+        // And the next Roll is thrown into it.
+        roll("1d6");
+        assertThat(simulator.requests).isNotEmpty()
+                .allSatisfy(request -> assertThat(request.tray()).isEqualTo(shown.tray().geometry()));
     }
 
     @Test
@@ -186,7 +189,10 @@ class LookTabTest extends HeadlessUiTest {
         assertThat(shown.tray().identity()).isEqualTo(BuiltInTrays.DEFAULT_IDENTITY);
         assertThat(shown.lightRig()).isEqualTo(LightRig.STUDIO);
         assertThat(fromFx(() -> picked(look.diceSetButtons().getFirst()))).isTrue();
-        assertThat(fromFx(() -> controller().tray().identity())).isEqualTo(BuiltInTrays.DEFAULT_IDENTITY);
+        // And the next Roll is thrown into the default Tray.
+        roll("1d6");
+        assertThat(simulator.requests).isNotEmpty().allSatisfy(request -> assertThat(request.tray())
+                .isEqualTo(BuiltInTrays.find(BuiltInTrays.DEFAULT_IDENTITY).orElseThrow().geometry()));
         // The stored choice stays, so mending the file brings it back next run.
         assertThat(savedSettings()).contains("look.diceSet=mine", "look.tray=deleted-tray");
     }

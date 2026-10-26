@@ -64,7 +64,7 @@ final class SmokeTest {
                 exit.accept(status);
             }
         };
-        skeleton.session().addStatusListener(status -> {
+        skeleton.controller().addStateListener(RollState.statusChanges(status -> {
             switch (status) {
                 case RollStatus.Rested rested -> {
                     LOG.log(Level.INFO, "Smoke test rolled " + rested.text());
@@ -79,9 +79,10 @@ final class SmokeTest {
                     finish.accept(FAILED);
                 }
                 case RollStatus.Ready ready -> { }
-                case RollStatus.Rolling rolling -> { }
+                case RollStatus.PreSimulating preSimulating -> { }
+                case RollStatus.Playing playing -> { }
             }
-        });
+        }));
         CompletableFuture.delayedExecutor(TIMEOUT_SECONDS, TimeUnit.SECONDS).execute(() -> Platform.runLater(() -> {
             if (!done[0]) {
                 LOG.log(Level.ERROR, "Smoke test's Roll didn't finish within " + TIMEOUT_SECONDS + " s");

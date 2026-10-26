@@ -79,7 +79,7 @@ class WalkingSkeletonTest {
             List<String> strips = new ArrayList<>();
             List<List<DiceScene.Die>> drawn = new ArrayList<>();
             HeadlessUiTest.onFx(() -> {
-                while (!(skeleton.controller().status() instanceof RollStatus.Rested) && clock.time() < 30) {
+                while (!(skeleton.controller().state().status() instanceof RollStatus.Rested) && clock.time() < 30) {
                     clock.advance(FRAME);
                     times.add(clock.time());
                     strips.add(skeleton.pane().resultStrip().text());

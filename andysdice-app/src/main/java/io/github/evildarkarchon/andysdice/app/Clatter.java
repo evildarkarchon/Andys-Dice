@@ -102,16 +102,21 @@ final class Clatter {
     }
 
     /**
-     * Feeds a Roll session's Throws to the sound output: each chain as it starts to play, every Throw at the clock
-     * time its Release plays, in the sound of the Tray the Roll was thrown into (#67), whatever Tray has been
-     * picked since.
+     * Feeds a Roll session's Throws to the sound output: each chain as its Roll's status becomes Playing, every
+     * Throw at the clock time its Release plays, in the sound of the Tray the Roll was thrown into (#67), whatever
+     * Tray has been picked since.
      *
      * @param session the Roll session
      * @param output the sound output
      */
     static void attach(RollSession session, SoundOutput output) {
         Objects.requireNonNull(output, "output");
-        session.setOnChainShown((chain, start) -> output.play(throwsOf(chain, start)));
+        // Once per Playing: later snapshots while it plays (a Roll queued behind it) must not queue its sound again.
+        session.controller().addStateListener(RollState.statusChanges(status -> {
+            if (status instanceof RollStatus.Playing playing) {
+                output.play(throwsOf(playing.chain(), playing.start()));
+            }
+        }));
     }
 
     /**

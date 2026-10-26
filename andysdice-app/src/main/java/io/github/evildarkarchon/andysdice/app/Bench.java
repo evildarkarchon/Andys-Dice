@@ -244,7 +244,7 @@ final class Bench {
         long[] quietSince = {-1};
         Runnable[] check = new Runnable[1];
         check[0] = () -> {
-            boolean quiet = !skeleton.controller().underWay() && !skeleton.camera().moving();
+            boolean quiet = !skeleton.controller().state().underWay() && !skeleton.camera().moving();
             long now = System.nanoTime();
             if (!quiet) {
                 quietSince[0] = -1;

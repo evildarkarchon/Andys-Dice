@@ -120,7 +120,7 @@ class FastForwardTest extends HeadlessUiTest {
         assertThat(chain.plan().throwChain()).hasSize(2);
         int frames = fromFx(() -> {
             int n = 0;
-            while (controller().underWay()) {
+            while (rollState().underWay()) {
                 clock.advance(FRAME);
                 n++;
             }

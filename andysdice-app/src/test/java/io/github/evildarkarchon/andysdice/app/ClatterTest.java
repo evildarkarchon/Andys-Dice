@@ -154,7 +154,7 @@ class ClatterTest extends HeadlessUiTest {
      */
     private void playToRestHeard() throws Exception {
         assertThat(await(this::lineOpen, Duration.ofSeconds(10))).as("a line opened for the Roll").isTrue();
-        for (int frame = 0; fromFx(() -> controller().underWay()); frame++) {
+        for (int frame = 0; fromFx(() -> rollState().underWay()); frame++) {
             assertThat(frame).as("frames played").isLessThan(10_000);
             int written = blocksWritten();
             advance(FRAME);
@@ -169,8 +169,12 @@ class ClatterTest extends HeadlessUiTest {
         simulator.clatter = true;
         List<SoundThrow> queued = new CopyOnWriteArrayList<>();
         onFx(() -> clock.advance(2.5));
-        onFx(() -> session.setOnChainShown((chain, start) ->
-                queued.addAll(Clatter.throwsOf(chain, start))));
+        // As Clatter.attach does: each chain once, as its Roll's status becomes Playing.
+        onFx(() -> addRollStateListener(RollState.statusChanges(status -> {
+            if (status instanceof RollStatus.Playing playing) {
+                queued.addAll(Clatter.throwsOf(playing.chain(), playing.start()));
+            }
+        })));
 
         roll("1d6rr1+1d8");
         playToRest();
@@ -259,7 +263,7 @@ class ClatterTest extends HeadlessUiTest {
         onFx(() -> ui().tabs().getSelectionModel().select(ui().settingsTab()));
         onFx(() -> controls.mute().fire());
 
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Rested.class);
         assertThat(opener.attempts.get()).as("only the start-up try of the device").isEqualTo(1);
     }
 

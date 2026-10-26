@@ -3,12 +3,9 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
-import java.util.function.Consumer;
 
 /**
  * The Roll UI wired to the roll controller: Layout C ({@link RollUi}) around a Tray, with Enter and the Roll button
@@ -16,7 +13,8 @@ import java.util.function.Consumer;
  * headless UI tests run for real; {@link Skeleton} builds one over the physics worker and the GL Tray, and
  * {@code HeadlessUiTest} over the fake simulator and the stand-in tray.
  *
- * <p>The controller itself asks for JavaFX's pulse, and holds the Queued Roll; this class only wires the view to it.
+ * <p>The controller itself asks for JavaFX's pulse, and holds the Queued Roll; this class only wires the view to it:
+ * the Roll UI and its result strip, the Notice bell, entry, the keyboard map and Fast-forward.
  *
  * <p>Thread contract: made and used on the JavaFX Application Thread.
  */
@@ -29,24 +27,6 @@ final class RollSession {
     private final FastForward fastForward;
     /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
     private final TraySurface tray;
-    /**
-     * Everything else that follows the Roll's status (the Roll History, #55; the smoke test; the bench's first-motion
-     * timer), told after the strip.
-     */
-    private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
-    private ChainShown onChainShown = (chain, start) -> {};
-
-    /** Told each time a Roll's chain of Throws starts to play on the Tray. */
-    @FunctionalInterface
-    interface ChainShown {
-        /**
-         * A chain has been put on the Tray and plays from now.
-         *
-         * @param chain the chain of Throws
-         * @param start the playback clock's time at its first Release
-         */
-        void shown(ChainPlayback chain, double start);
-    }
 
     /**
      * Wires a Roll UI and its controller.
@@ -83,27 +63,13 @@ final class RollSession {
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
         this.tray = Objects.requireNonNull(tray, "tray");
+        // The controller talks to the Tray directly; what follows a Roll hears of it from its state snapshots.
         controller = new RollController(clock, pulses, physics, fxThread,
-                new FaceValueGenerator(generators.faceValues()), generators.releases(), throwInto,
-                new RollController.TrayView() {
-                    @Override
-                    public void show(ChainPlayback chain) {
-                        tray.show(chain);
-                        // The controller starts the chain at the clock's time now (#59: its sound is placed there).
-                        onChainShown.shown(chain, clock.time());
-                    }
-
-                    @Override
-                    public void showTime(double seconds) {
-                        tray.showTime(seconds);
-                    }
-
-                    @Override
-                    public boolean moving() {
-                        return tray.moving();
-                    }
-                });
+                new FaceValueGenerator(generators.faceValues()), generators.releases(), throwInto, tray);
         ui = new RollUi(tray.node());
+        // The strip is the first to hear of each status; the Roll History, the dice sound and the rest follow it.
+        ui.showStatus(controller.state().status());
+        controller.addStateListener(RollState.statusChanges(ui::showStatus));
         NoticeBell.attach(ui.bell(), notices);
         // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
         entry = new RollEntry(ui, controller);
@@ -113,13 +79,6 @@ final class RollSession {
         ui.addFailureListener(controller::abandon);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
-        ui.showStatus(controller.status());
-        controller.setOnStatusChanged(status -> {
-            ui.showStatus(status);
-            for (Consumer<RollStatus> listener : statusListeners) {
-                listener.accept(status);
-            }
-        });
         // Shift held alone speeds the clock up (#51); everything that plays follows the clock.
         fastForward = new FastForward(clock);
         fastForward.install(ui);
@@ -137,7 +96,8 @@ final class RollSession {
     /**
      * Returns the roll controller.
      *
-     * @return the controller Enter and the Roll button roll through
+     * @return the controller Enter and the Roll button roll through, whose {@link RollState} snapshots everything
+     *     that follows a Roll listens to ({@link RollController#addStateListener})
      */
     RollController controller() {
         return controller;
@@ -206,26 +166,5 @@ final class RollSession {
         });
         ui.lookTab().setContent(look.node());
         return look;
-    }
-
-    /**
-     * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
-     * (#59, {@link Clatter}).
-     *
-     * @param listener the listener; it replaces any earlier one
-     */
-    void setOnChainShown(ChainShown listener) {
-        onChainShown = Objects.requireNonNull(listener, "listener");
-    }
-
-    /**
-     * Adds a listener told each time the Roll's status changes, after the result strip has shown it. Listeners are
-     * never replaced, so the app's own pieces (the Roll History joining a revealed Roll, #55) and the smoke test
-     * don't displace each other.
-     *
-     * @param listener told every status, in the order added
-     */
-    void addStatusListener(Consumer<RollStatus> listener) {
-        statusListeners.add(Objects.requireNonNull(listener, "listener"));
     }
 }
