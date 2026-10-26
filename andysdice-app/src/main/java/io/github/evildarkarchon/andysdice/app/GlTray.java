@@ -169,7 +169,8 @@ final class GlTray implements TraySurface, AutoCloseable {
     /**
      * Applies a Quality Preset (ADR-0014): every renderer lever, in one message to the scene, the render-target cap,
      * which High lifts (the target is resized from the view's last size), and the preset the slow-GPU watch suggests
-     * the one below of.
+     * the one below of. The Settings tab calls this at start-up with the saved preset and whenever the Player picks
+     * another; nothing else does.
      *
      * @param preset the Quality Preset
      */
