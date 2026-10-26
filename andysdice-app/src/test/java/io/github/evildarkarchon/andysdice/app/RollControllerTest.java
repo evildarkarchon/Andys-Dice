@@ -974,6 +974,98 @@ class RollControllerTest {
         assertThat(pulses.running).isFalse();
     }
 
+    // The Tray hears of every clock advance, once the controller has done that advance's work (#76).
+
+    @Test
+    void theTrayHearsOfEveryAdvanceAfterThatAdvancesDraw() {
+        RollController controller = controller(4);
+        // Nothing rolled yet: still told of each advance.
+        frames(2);
+        assertThat(tray.log).containsExactly("advanced", "advanced");
+        tray.log.clear();
+
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+
+        assertThat(tray.log).containsExactly("show", "showTime", "advanced", "showTime", "advanced", "showTime",
+                "advanced");
+    }
+
+    /** Logs each new status the controller publishes into the Tray's log, so it falls among the Tray's calls. */
+    private void logStatuses(RollController controller) {
+        controller.addStateListener(RollState.statusChanges(status -> tray.log.add(status.getClass().getSimpleName())));
+    }
+
+    @Test
+    void theTrayHearsOfTheAdvanceThatRevealsTheRollAfterTheReveal() {
+        RollController controller = controller(4);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        logStatuses(controller);
+        tray.log.clear();
+
+        playToRest(controller);
+
+        // The last advance draws the Dice at rest, reveals the Roll Result, and only then tells the Tray.
+        assertThat(tray.log).endsWith("showTime", "Rested", "advanced");
+        assertThat(tray.log).containsOnlyOnce("Rested");
+    }
+
+    @Test
+    void theTrayHearsOfTheAdvanceThatStartsTheQueuedRollAfterItStarts() {
+        RollController controller = controller(4, 6);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        controller.roll(valid("1d6+1"));
+        playToRest(controller);
+        frames(53);
+        // The worker answers at once, so the Queued Roll's chain arrives inside the advance that starts it.
+        physics.setHolding(false);
+        logStatuses(controller);
+        tray.log.clear();
+
+        frames(1);
+
+        // The beat is over: the Queued Roll starts, its chain is shown at its first Release, and then the Tray hears.
+        assertThat(tray.log).containsExactly("PreSimulating", "show", "Playing", "advanced");
+    }
+
+    @Test
+    void whileOnlyTheCameraSettlesTheTrayHearsOfEachAdvanceBeforeThePulseIsLetGo() {
+        Pulses logged = new Pulses() {
+            @Override
+            public void start() {
+                tray.log.add("pulse start");
+            }
+
+            @Override
+            public void stop() {
+                tray.log.add("pulse stop");
+            }
+        };
+        RollController controller = new RollController(clock, logged, physics, Runnable::run,
+                new FaceValueGenerator(new ScriptedRandom(4)), new SplittableRandom(1), BuiltInTrays.defaultTray(),
+                tray);
+        controller.addStateListener(published::add);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        // The camera's settle-in on the Dice at rest outlasts the last Throw.
+        tray.moving = true;
+        playToRest(controller);
+        tray.log.clear();
+
+        // Nothing is under way and nothing is drawn, but the Tray still hears of every advance.
+        frames(3);
+        assertThat(tray.log).containsExactly("advanced", "advanced", "advanced");
+
+        tray.moving = false;
+        frames(1);
+
+        // The Tray hears of the advance before the pulse is decided, so it is let go only after.
+        assertThat(tray.log).containsExactly("advanced", "advanced", "advanced", "advanced", "pulse stop");
+    }
+
     // Abandon: the session has failed (spec §3.2 "Runtime failure"). A Roll it cuts off is a Lost Roll (ADR-0007).
 
     @Test
@@ -1310,6 +1402,11 @@ class RollControllerTest {
         final List<Double> times = new ArrayList<>();
         /** Every look it was shown, oldest first. */
         final List<Look> looks = new ArrayList<>();
+        /**
+         * What the Tray was told, in order: {@code show}, {@code showTime} and {@code advanced}. A test may add what
+         * else it hears (a published status, the pulse) to the same log, to see where the Tray's calls fall.
+         */
+        final List<String> log = new ArrayList<>();
         /** What {@link #moving()} reports: set it to stand in for the camera's settle-in. */
         boolean moving;
 
@@ -1318,11 +1415,18 @@ class RollControllerTest {
             chains.add(chain);
             times.clear();
             times.add(0.0);
+            log.add("show");
         }
 
         @Override
         public void showTime(double seconds) {
             times.add(seconds);
+            log.add("showTime");
+        }
+
+        @Override
+        public void advanced() {
+            log.add("advanced");
         }
 
         @Override

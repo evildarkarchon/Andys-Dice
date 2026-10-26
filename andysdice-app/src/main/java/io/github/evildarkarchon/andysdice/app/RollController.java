@@ -44,8 +44,9 @@ import java.util.random.RandomGenerator;
  * refresh rate.
  *
  * <p>It listens to the clock once, and handles each advance in a fixed order: draw the playing Roll at its new time;
- * reveal it once the last Throw is at rest; start the Queued Roll once its beat is over; then decide whether the
- * pulse is still needed. No rule here depends on the order listeners were added to the clock.
+ * reveal it once the last Throw is at rest; start the Queued Roll once its beat is over; tell the Tray of the advance;
+ * then decide whether the pulse is still needed. No rule here depends on the order listeners were added to the clock,
+ * and the Tray needs no clock listener of its own.
  *
  * <p>It holds the look the Look tab picked ({@link #setLook}) and draws it on the Tray under the mid-Roll Look rule
  * (spec §3.2 "Look tab"): a Roll is drawn in the Tray it was thrown into to the end, so a Tray picked while one is
@@ -96,6 +97,19 @@ final class RollController {
          * @param seconds playback time since the first Throw's Release
          */
         void showTime(double seconds);
+
+        /**
+         * Tells the Tray the playback clock has advanced, on every advance, whether or not a Roll is under way. It is
+         * called once the controller has done that advance's work: drawn the playing chain at its new time
+         * ({@link #showTime}), revealed the Roll if its last Throw is now at rest, and started a Queued Roll whose
+         * beat is over (so a chain that arrived at once has already been {@linkplain #show shown}). It comes before
+         * the controller decides whether the pulse is still needed, so what the Tray does here (the GL Tray's camera
+         * settling in, #46) is in place when {@link #moving} is asked.
+         *
+         * <p>Anything the Tray draws on the clock beyond the chain belongs here, not in a clock listener of its own:
+         * this order is the controller's to keep, so no construction order can draw it ahead of this advance's Dice.
+         */
+        void advanced();
 
         /**
          * Tells whether the Tray still needs the playback clock after the Roll is over, so the pulse keeps running:
@@ -403,9 +417,11 @@ final class RollController {
     /**
      * The clock moved on. In this order, which is the one rule here about ordering: draw the playing chain at its
      * new time; reveal the Roll once its last Throw is at rest; start the Queued Roll once its beat is over (so a
-     * chain it shows this advance is drawn from its first Release, not redrawn); and only then decide whether the
-     * pulse is still needed, with everything this advance changed already in place. Last, the snapshot is published
-     * if the advance changed nothing else but {@code settled} (the Tray stopped moving: the camera has settled in).
+     * chain it shows this advance is drawn from its first Release, not redrawn); then tell the Tray of the advance
+     * ({@link TrayView#advanced}), so it draws the rest of its frame after this advance's Dice; and only then decide
+     * whether the pulse is still needed, with everything this advance changed already in place. Last, the snapshot is
+     * published if the advance changed nothing else but {@code settled} (the Tray stopped moving: the camera has
+     * settled in).
      */
     private void advanced() {
         RollInMotion now = inMotion;
@@ -417,6 +433,7 @@ final class RollController {
             }
         }
         startQueuedIfDue();
+        tray.advanced();
         updatePulse();
         publish();
     }

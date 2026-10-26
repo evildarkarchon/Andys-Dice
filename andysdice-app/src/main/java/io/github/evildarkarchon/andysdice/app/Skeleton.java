@@ -118,15 +118,21 @@ final class Skeleton implements AutoCloseable {
                     }
 
                     @Override
+                    public void advanced() {
+                        // The controller tells of each advance after drawing its Dice, so the camera never reaches
+                        // the render thread ahead of them. Once the last Throw is at rest the controller draws
+                        // nothing more, but the camera may still be easing. Redrawn even when draw has just handed
+                        // over this camera with the Dice: coming second, it can't tear, and it keeps no bookkeeping.
+                        showCamera();
+                    }
+
+                    @Override
                     public boolean moving() {
                         // Once the last Throw is at rest the camera is still settling in on the Dice (and while
                         // the next Roll pre-simulates, the last one's settle-in may still be easing).
                         return camera.moving();
                     }
                 }, notices);
-        // Added after the controller's own listener, so on each advance the Dice are drawn first. Once the last
-        // Throw is at rest the controller draws nothing more, but the camera may still be easing.
-        clock.addListener(c -> showCamera());
         // Every framing fits the view's shape.
         view.widthProperty().addListener((property, was, now) -> fitAspect());
         view.heightProperty().addListener((property, was, now) -> fitAspect());
