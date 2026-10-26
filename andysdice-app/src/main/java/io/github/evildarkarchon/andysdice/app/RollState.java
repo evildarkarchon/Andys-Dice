@@ -41,13 +41,13 @@ record RollState(RollStatus status, Optional<QueuedRoll> queued, boolean settled
     }
 
     /**
-     * Tells whether a Roll is under way: its status is Pre-simulating or Playing. Camera gestures are blocked exactly
-     * while it is.
+     * Tells whether a Roll is under way: its status is Pre-simulating or Playing ({@link RollStatus.UnderWay}).
+     * Camera gestures are blocked exactly while it is.
      *
      * @return {@code true} from the Roll's start until it is at rest or has failed
      */
     boolean underWay() {
-        return status instanceof RollStatus.PreSimulating || status instanceof RollStatus.Playing;
+        return status instanceof RollStatus.UnderWay;
     }
 
     /**

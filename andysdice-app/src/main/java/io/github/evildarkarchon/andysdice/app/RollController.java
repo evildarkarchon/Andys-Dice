@@ -140,7 +140,6 @@ final class RollController {
     private RollStatus status = new RollStatus.Ready();
     /** The snapshot published last, or the first one, made with the controller. */
     private RollState state;
-    private boolean underWay;
     private InPlay playing;
     /** The Queued Roll, or {@code null}. */
     private RollState.QueuedRoll queued;
@@ -216,7 +215,7 @@ final class RollController {
     void setLook(Look look) {
         Objects.requireNonNull(look, "look");
         throwInto = look.tray();
-        if (underWay) {
+        if (underWay()) {
             // Its Throws were simulated in the Tray it was thrown into, so it is drawn there to the end: other
             // walls and another floor would have it bounce off walls that aren't there.
             waitingLook = look;
@@ -273,7 +272,7 @@ final class RollController {
             // The session has failed (abandon): nothing rolls or queues behind the failure panel.
             return;
         }
-        if (underWay || queued != null) {
+        if (underWay() || queued != null) {
             queued = new RollState.QueuedRoll(expression, savedRollName);
             publish();
             return;
@@ -299,7 +298,7 @@ final class RollController {
 
     /** Starts a Roll now: pre-simulates its whole chain on the physics worker. */
     private void start(RollExpression expression, Optional<String> savedRollName) {
-        underWay = true;
+        // The Roll is under way from here: the status says so (underWay()).
         setStatus(new RollStatus.PreSimulating(expression));
         // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
         // chain carries this one (#67), so the Roll is heard in the Tray it was simulated in.
@@ -337,19 +336,17 @@ final class RollController {
         }
         abandoned = true;
         playing = null;
-        underWay = false;
         // The Roll is lost, so a Tray picked while it was under way is drawn now: the pick is never stranded.
         showWaitingLook();
         if (queued != null) {
             clearQueued();
         }
-        updatePulse();
         // Set without publishing: one snapshot carries the Lost Roll, the Queued Roll gone and settled together.
-        switch (status) {
-            case RollStatus.PreSimulating preSimulating -> status = new RollStatus.Lost(preSimulating.expression());
-            case RollStatus.Playing cutOff -> status = new RollStatus.Lost(cutOff.expression());
-            default -> { }
+        // And set before the pulse is decided, since a Lost Roll is no longer under way and the pulse can go.
+        if (status instanceof RollStatus.UnderWay cutOff) {
+            status = new RollStatus.Lost(cutOff.expression());
         }
+        updatePulse();
         publish();
     }
 
@@ -390,7 +387,6 @@ final class RollController {
 
     /** Ends the Roll as failed: nothing was drawn, so the Tray still holds the previous Roll's Dice. */
     private void fail(RollStatus.Failed failed, Throwable error) {
-        underWay = false;
         LOG.log(System.Logger.Level.WARNING, "Roll of " + failed.expression().canonical() + " failed: "
                 + failed.message(), error);
         // A Queued Roll waits out the beat from the failure, with the Failed Roll's message shown through it.
@@ -426,7 +422,6 @@ final class RollController {
     /** The last Throw is at rest: show the Roll Result, and start a Queued Roll's beat. */
     private void reveal(InPlay now) {
         playing = null;
-        underWay = false;
         ended();
         // The Dice are at rest, so a Tray picked while they moved is drawn now, with the Roll Result.
         showWaitingLook();
@@ -446,7 +441,7 @@ final class RollController {
     /** Starts the Queued Roll if its beat is over. */
     private void startQueuedIfDue() {
         // A hair of slack: 54 frames of 1/60 s add up to a shade under 0.9 s in floating point.
-        if (queued == null || underWay || Double.isNaN(queuedStartsAt)
+        if (queued == null || underWay() || Double.isNaN(queuedStartsAt)
                 || clock.time() < queuedStartsAt - 1e-9) {
             return;
         }
@@ -470,7 +465,7 @@ final class RollController {
      * as it is: nothing moves yet, but the last Roll's settle-in may still be easing.
      */
     private void updatePulse() {
-        if (playing != null || (queued != null && !underWay)) {
+        if (playing != null || (queued != null && !underWay())) {
             if (!pulsing) {
                 pulsing = true;
                 pulses.start();
@@ -499,7 +494,15 @@ final class RollController {
      * The pulse is let go, and the snapshot says {@code settled}, on exactly this.
      */
     private boolean settled() {
-        return !underWay && queued == null && !tray.moving();
+        return !underWay() && queued == null && !tray.moving();
+    }
+
+    /**
+     * Tells whether a Roll is under way, read off the current status ({@link RollStatus.UnderWay}) rather than kept
+     * beside it, so the two can't disagree. The status may be ahead of the last published snapshot.
+     */
+    private boolean underWay() {
+        return status instanceof RollStatus.UnderWay;
     }
 
     /**
