@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import javafx.application.Platform;
 
@@ -66,9 +67,11 @@ final class Bench {
     /** Exit status when the bench couldn't finish (a Roll failed, a frame never came back). */
     static final int FAILED = 6;
 
-    /** How long the Tray must stay idle before the next Roll is timed: no frame of the last one still in flight. */
+    /**
+     * How long the app must stay settled before the next Roll is timed: no frame of the last one still in flight.
+     * {@code settled} says the camera has stopped, not that its last frame has reached the screen.
+     */
     private static final long QUIET_MILLIS = 300;
-    private static final long IDLE_POLL_MILLIS = 50;
 
     private static final System.Logger LOG = System.getLogger(Bench.class.getName());
 
@@ -181,6 +184,62 @@ final class Bench {
         }
     }
 
+    /**
+     * Waits for the Roll's state snapshot to say the app has settled (no Roll under way, no Queued Roll waiting, the
+     * camera's settle-in over), as one snapshot listener for the whole bench run: listeners can't be removed, so the
+     * bench adds one, not one per wait.
+     *
+     * <p>Thread contract: the controller's thread (the JavaFX Application Thread), which tells it every snapshot.
+     */
+    static final class Settling implements Consumer<RollState> {
+
+        private RollState latest;
+        /** The wait not yet over, or {@code null}. */
+        private CompletableFuture<Void> waiting;
+
+        /**
+         * Starts from the snapshot as it stands; add it to the controller as a state listener before any change.
+         *
+         * @param current the controller's current snapshot ({@link RollController#state})
+         */
+        Settling(RollState current) {
+            latest = Objects.requireNonNull(current, "current");
+        }
+
+        /**
+         * Returns a wait for the app to settle.
+         *
+         * @return completed already if the latest snapshot says settled, else completed by the first snapshot told
+         *     from now on that does; a wait still pending is returned again
+         */
+        CompletableFuture<Void> next() {
+            if (waiting != null) {
+                return waiting;
+            }
+            if (latest.settled()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            waiting = new CompletableFuture<>();
+            return waiting;
+        }
+
+        /** @return whether the latest snapshot says the app has settled */
+        boolean settled() {
+            return latest.settled();
+        }
+
+        @Override
+        public void accept(RollState state) {
+            latest = Objects.requireNonNull(state, "state");
+            if (state.settled() && waiting != null) {
+                CompletableFuture<Void> over = waiting;
+                // Cleared before completing: what runs on completion may wait again, for a later settle.
+                waiting = null;
+                over.complete(null);
+            }
+        }
+    }
+
     private Bench() {}
 
     /**
@@ -196,8 +255,10 @@ final class Bench {
         Objects.requireNonNull(exit, "exit");
         Executor fx = Platform::runLater;
         LOG.log(Level.INFO, "Bench: timing Enter to first motion of " + EXPRESSION + " over " + ROLLS + " Rolls");
-        roll(skeleton, new ArrayList<>(), fx)
-                .thenCompose(motions -> whenIdle(skeleton).thenApply(idle -> motions))
+        Settling settling = new Settling(skeleton.controller().state());
+        skeleton.controller().addStateListener(settling);
+        roll(skeleton, settling, new ArrayList<>(), fx)
+                .thenCompose(motions -> whenIdle(settling, fx).thenApply(idle -> motions))
                 .thenCompose(motions -> {
                     LOG.log(Level.INFO, "Bench: timing the GPU on " + skeleton.driver());
                     // Off the JavaFX thread, which must keep presenting the frames the GPU bench draws.
@@ -220,45 +281,35 @@ final class Bench {
                 }, fx);
     }
 
-    /** Times the next Roll once the Tray is idle, until {@value #ROLLS} have been timed. */
-    private static CompletableFuture<FirstMotions> roll(Skeleton skeleton, List<Duration> timed, Executor fx) {
+    /** Times the next Roll once the app is idle, until {@value #ROLLS} have been timed. */
+    private static CompletableFuture<FirstMotions> roll(Skeleton skeleton, Settling settling, List<Duration> timed,
+            Executor fx) {
         if (timed.size() == ROLLS) {
             return CompletableFuture.completedFuture(new FirstMotions(timed));
         }
-        return whenIdle(skeleton)
+        return whenIdle(settling, fx)
                 .thenComposeAsync(idle -> FirstMotion.time(skeleton, RollExpressions.valid(EXPRESSION)), fx)
                 .thenComposeAsync(firstMotion -> {
                     LOG.log(Level.INFO, "Bench: Roll " + (timed.size() + 1) + " reached the screen "
                             + String.format(Locale.ROOT, "%.1f", firstMotion.toNanos() / 1e6) + " ms after Enter");
                     timed.add(firstMotion);
-                    return roll(skeleton, timed, fx);
+                    return roll(skeleton, settling, timed, fx);
                 }, fx);
     }
 
     /**
-     * Completes, on the JavaFX thread, once no Roll is under way and the camera has stopped, and has stayed so for
-     * {@value #QUIET_MILLIS} ms, long enough for the last frame drawn to have reached the screen.
+     * Completes, on the JavaFX thread, once the Roll's state snapshot says the app has settled and it is still
+     * settled {@value #QUIET_MILLIS} ms later, long enough for the last frame drawn to have reached the screen. If it
+     * has stopped being settled by then, it waits for the next settle.
+     *
+     * <p>Call it on the JavaFX thread, which tells {@code settling} its snapshots.
      */
-    private static CompletableFuture<Void> whenIdle(Skeleton skeleton) {
-        CompletableFuture<Void> idle = new CompletableFuture<>();
-        long[] quietSince = {-1};
-        Runnable[] check = new Runnable[1];
-        check[0] = () -> {
-            boolean quiet = !skeleton.controller().state().underWay() && !skeleton.camera().moving();
-            long now = System.nanoTime();
-            if (!quiet) {
-                quietSince[0] = -1;
-            } else if (quietSince[0] < 0) {
-                quietSince[0] = now;
-            }
-            if (quietSince[0] >= 0 && now - quietSince[0] >= TimeUnit.MILLISECONDS.toNanos(QUIET_MILLIS)) {
-                idle.complete(null);
-            } else {
-                CompletableFuture.delayedExecutor(IDLE_POLL_MILLIS, TimeUnit.MILLISECONDS)
-                        .execute(() -> Platform.runLater(check[0]));
-            }
-        };
-        Platform.runLater(check[0]);
-        return idle;
+    private static CompletableFuture<Void> whenIdle(Settling settling, Executor fx) {
+        // One timer, not a poll: the quiet wait ends on the JavaFX thread, where the snapshot is read again.
+        Executor afterQuiet = CompletableFuture.delayedExecutor(QUIET_MILLIS, TimeUnit.MILLISECONDS, fx);
+        return settling.next()
+                .thenCompose(settled -> CompletableFuture.runAsync(() -> {}, afterQuiet))
+                .thenCompose(quiet -> settling.settled() ? CompletableFuture.<Void>completedFuture(null)
+                        : whenIdle(settling, fx));
     }
 }
