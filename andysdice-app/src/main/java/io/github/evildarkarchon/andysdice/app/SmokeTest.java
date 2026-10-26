@@ -57,6 +57,7 @@ final class SmokeTest {
      */
     static void run(Skeleton skeleton, IntConsumer exit) {
         Objects.requireNonNull(exit, "exit");
+        RollController controller = skeleton.session().controller();
         boolean[] done = {false};
         IntConsumer finish = status -> {
             if (!done[0]) {
@@ -64,7 +65,7 @@ final class SmokeTest {
                 exit.accept(status);
             }
         };
-        skeleton.controller().addStateListener(RollState.statusChanges(status -> {
+        controller.addStateListener(RollState.statusChanges(status -> {
             switch (status) {
                 case RollStatus.Rested rested -> {
                     LOG.log(Level.INFO, "Smoke test rolled " + rested.text());
@@ -90,6 +91,6 @@ final class SmokeTest {
         }));
         LOG.log(Level.INFO, "Smoke test rolling " + EXPRESSION + " at x" + SPEED);
         // The controller's normal Roll, the one Enter goes through once entry has parsed the box.
-        skeleton.controller().roll(RollExpressions.valid(EXPRESSION));
+        controller.roll(RollExpressions.valid(EXPRESSION));
     }
 }
