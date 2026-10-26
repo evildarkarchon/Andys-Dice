@@ -8,8 +8,9 @@ import java.util.Optional;
 
 /**
  * Where the current Roll stands, as the result strip shows it (spec §3.2): nothing rolled yet, pre-simulating,
- * playing, at rest with its Roll Result, refused before anything moved, or failed. The strip reads "Rolling…" both
- * while a Roll pre-simulates and while it plays.
+ * playing, at rest with its Roll Result, or failed. The strip reads "Rolling…" both while a Roll pre-simulates and
+ * while it plays. A Roll Expression that doesn't parse never gets this far: entry in the box shows its error and
+ * rolls nothing.
  */
 sealed interface RollStatus {
 
@@ -96,26 +97,6 @@ sealed interface RollStatus {
         @Override
         public String text() {
             return expression.canonical() + " = " + result.total();
-        }
-    }
-
-    /**
-     * The input wasn't rolled at all: nothing moved and the Tray keeps its Dice.
-     *
-     * @param input what was typed
-     * @param message why it wasn't rolled
-     */
-    record Refused(String input, String message) implements RollStatus {
-
-        /** Checks both parts are present. */
-        public Refused {
-            Objects.requireNonNull(input, "input");
-            Objects.requireNonNull(message, "message");
-        }
-
-        @Override
-        public String text() {
-            return message;
         }
     }
 

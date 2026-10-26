@@ -1,7 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
-import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -35,18 +34,13 @@ final class FirstMotion {
      * screen. It uses the frame view's presented-frame listener until then.
      *
      * @param skeleton the started app, idle
-     * @param expression a Roll Expression that parses
-     * @return the time from Enter to the first motion; completed exceptionally if the expression doesn't parse, a
-     *     Roll is already under way, the Roll fails, or it takes longer than {@link #TIMEOUT}
+     * @param parsed the Roll Expression, parsed, so Enter on its text rolls it rather than showing an error
+     * @return the time from Enter to the first motion; completed exceptionally if a Roll is already under way, the
+     *     Roll fails, or it takes longer than {@link #TIMEOUT}
      */
-    static CompletableFuture<Duration> time(Skeleton skeleton, String expression) {
+    static CompletableFuture<Duration> time(Skeleton skeleton, RollExpression parsed) {
         CompletableFuture<Duration> timed = new CompletableFuture<>();
-        if (RollExpressionParser.parse(expression) instanceof ParseResult.Invalid invalid) {
-            // Enter would only show the error popup, and nothing would ever move.
-            timed.completeExceptionally(new IllegalArgumentException("can't time " + expression + ": "
-                    + invalid.error().message()));
-            return timed;
-        }
+        String expression = parsed.source();
         if (skeleton.controller().state().underWay()) {
             // Enter would make it the Queued Roll, which waits for the one under way.
             timed.completeExceptionally(new IllegalStateException("can't time " + expression

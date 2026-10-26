@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
@@ -84,7 +85,7 @@ class RollControllerTest {
 
     /** The Queued Roll's text in the snapshot published last. */
     private Optional<String> queued() {
-        return latest().queued().map(RollState.QueuedRoll::input);
+        return latest().queued().map(queuedRoll -> queuedRoll.expression().source());
     }
 
     /** Each status published, once each, in order. */
@@ -99,7 +100,7 @@ class RollControllerTest {
         List<Optional<String>> changes = new ArrayList<>();
         Optional<String> last = Optional.empty();
         for (RollState state : published) {
-            Optional<String> now = state.queued().map(RollState.QueuedRoll::input);
+            Optional<String> now = state.queued().map(queuedRoll -> queuedRoll.expression().source());
             if (!now.equals(last)) {
                 changes.add(now);
                 last = now;
@@ -127,7 +128,7 @@ class RollControllerTest {
         Tray hexagon = BuiltInTrays.find("02-leather-hexagon").orElseThrow();
         RollController intoWalnut = controller(new ScriptedRandom(4), walnut);
 
-        intoWalnut.roll("1d6");
+        intoWalnut.roll(valid("1d6"));
         physics.finish();
 
         assertThat(simulator.requests).isNotEmpty().allSatisfy(request -> {
@@ -138,7 +139,7 @@ class RollControllerTest {
         simulator.requests.clear();
         playToRest(intoWalnut);
         RollController intoHexagon = controller(new ScriptedRandom(2), hexagon);
-        intoHexagon.roll("1d6");
+        intoHexagon.roll(valid("1d6"));
         physics.finish();
 
         assertThat(simulator.requests).isNotEmpty().allSatisfy(request -> {
@@ -153,7 +154,7 @@ class RollControllerTest {
         simulator.then(2, Ending.ESCAPED);
         RollController controller = controller(3, 5);
 
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
         physics.finish();
 
         assertThat(simulator.requests).hasSize(3);
@@ -200,7 +201,7 @@ class RollControllerTest {
         // 4d6rr1: the first roll shows a 1, so one Reroll Throw of that Die follows the first Throw.
         RollController controller = controller(1, 4, 5, 6, 3);
 
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
 
         assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
         assertThat(physics.held).isNotNull();
@@ -226,7 +227,7 @@ class RollControllerTest {
     @Test
     void eachDieIsItsOwnDieKindTurnedSoTheChosenFaceIsUpAtRest() {
         RollController controller = controller(3, 5, 7, 9, 11, 19, 42);
-        controller.roll("1d4+1d6+1d8+1d10+1d12+1d20+1d%");
+        controller.roll(valid("1d4+1d6+1d8+1d10+1d12+1d20+1d%"));
         physics.finish();
 
         ChainPlayback chain = tray.chains.getLast();
@@ -250,7 +251,7 @@ class RollControllerTest {
     void eachThrowIsInMotionFromItsReleaseUntilItsDiceRest() {
         // 4d6rr1 with these faces plans three Throws (see the test below).
         RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
 
         ChainPlayback chain = tray.chains.getLast();
@@ -272,7 +273,7 @@ class RollControllerTest {
     void rerollThrowsPlayInOrderWithTheOtherDiceLyingStill() {
         // 4d6rr1: rolls 0 and 2 show 1, so round 1 rerolls both; roll 0 shows 1 again, so round 2 rerolls it alone.
         RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
 
         ChainPlayback chain = tray.chains.getLast();
@@ -315,7 +316,7 @@ class RollControllerTest {
     @Test
     void theRollResultAppearsOnlyAfterTheLastThrowIsAtRest() {
         RollController controller = controller(1, 4, 1, 6, 1, 3, 2);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
 
@@ -337,7 +338,7 @@ class RollControllerTest {
     void theCameraFramesTheTrayWhileEachThrowTumblesSettlesInAtRestAndEasesOutBeforeTheNext() {
         // 4d6rr1: the first roll shows a 1, so one Reroll Throw of that Die follows the first Throw.
         RollController controller = controller(1, 4, 5, 6, 3);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
         double firstRest = chain.plan().throwChain().getFirst().recording().restTime();
@@ -365,7 +366,7 @@ class RollControllerTest {
     void onceTheCameraHasEasedOutOnlyTheDiceGoingBackGlowAndLiftToTheirRelease() {
         // 4d6rr1: the first roll shows a 1, so Die 0 alone goes back for the Reroll Throw.
         RollController controller = controller(1, 4, 5, 6, 3);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
         double firstRest = chain.plan().throwChain().getFirst().recording().restTime();
@@ -403,7 +404,7 @@ class RollControllerTest {
     @Test
     void withReducedMotionThePickupGlowsSteadilyAndLiftsAtTwiceTheSpeedOnTheSameTimeline() {
         RollController controller = controller(1, 4, 5, 6, 3);
-        controller.roll("4d6rr1kh3");
+        controller.roll(valid("4d6rr1kh3"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
         double pickupStart = chain.throwStart(1) - Pickup.SECONDS;
@@ -424,7 +425,7 @@ class RollControllerTest {
         // Every Attempt of the first Throw cocks Die 0, so a Cocked Rethrow throws it alone again.
         simulator.then(24, Ending.COCKED);
         RollController controller = controller(4, 2);
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
         assertThat(chain.plan().throwChain()).extracting(PlannedThrow::kind)
@@ -446,7 +447,7 @@ class RollControllerTest {
     @Test
     void aRollOfOneThrowSettlesInOnceItsDiceRest() {
         RollController controller = controller(4);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         ChainPlayback chain = tray.chains.getLast();
 
@@ -459,7 +460,7 @@ class RollControllerTest {
     void theClockStartingLaterThanZeroStillPlaysFromTheRelease() {
         RollController controller = controller(4);
         clock.advance(12.5);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
 
         clock.advance(FRAME);
@@ -471,7 +472,7 @@ class RollControllerTest {
     @Test
     void theDiceStayOnTheTrayUntilTheNextRollIsReadyToPlay() {
         RollController controller = controller(4, 2);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         playToRest(controller);
         int drawn = tray.times.size();
@@ -479,7 +480,7 @@ class RollControllerTest {
         assertThat(status()).isInstanceOf(RollStatus.Rested.class);
         assertThat(tray.times).hasSize(drawn);
 
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         clock.advance(FRAME);
 
         // Still pre-simulating: the first Dice are left where they lie, and nothing is redrawn.
@@ -492,7 +493,7 @@ class RollControllerTest {
     @Test
     void aModifierIsAddedToTheResult() {
         RollController controller = controller(4);
-        controller.roll("1d6+5");
+        controller.roll(valid("1d6+5"));
         physics.finish();
         playToRest(controller);
 
@@ -500,28 +501,16 @@ class RollControllerTest {
     }
 
     @Test
-    void anInvalidRollExpressionRollsNothingAndSaysWhy() {
-        RollController controller = controller();
-
-        controller.roll("1d6+");
-
-        RollStatus.Refused refused = (RollStatus.Refused) status();
-        assertThat(refused.message()).isNotBlank();
-        assertThat(physics.held).isNull();
-        assertThat(tray.chains).isEmpty();
-    }
-
-    @Test
     void aFailedRollMovesNothingKeepsThePreviousDiceAndShowsItsReason() {
         RollController controller = controller(4, 2, 5);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         playToRest(controller);
         int drawn = tray.times.size();
 
         // Every Attempt of the next Roll's first Throw times out.
         simulator.then(24, Ending.TIMED_OUT);
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
         physics.finish();
         clock.advance(1);
 
@@ -536,7 +525,7 @@ class RollControllerTest {
     void aRollPastTheRerollBackstopFailsWithNothingSimulated() {
         RollController controller = controller(new ScriptedRandom().thenRepeat(101, 1));
 
-        controller.roll("1d6rr1");
+        controller.roll(valid("1d6rr1"));
         physics.finish();
 
         assertThat(status().text()).isEqualTo("Too many rerolls. Nothing was rolled.");
@@ -549,7 +538,7 @@ class RollControllerTest {
         RollController controller = controller(4);
         simulator.failNext();
 
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
 
         assertThat(status()).isInstanceOf(RollStatus.Failed.class);
@@ -565,7 +554,7 @@ class RollControllerTest {
         clock.advance(2.5);
         assertThat(controller.state().settled()).as("nothing rolled yet").isTrue();
 
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
 
         assertThat(published).hasSize(1);
         assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
@@ -610,11 +599,11 @@ class RollControllerTest {
     @Test
     void theSnapshotHoldsTheQueuedRollWithItsSavedRollsNameAndIsNeverSettledWhileItWaits() {
         RollController controller = controller(4, 1, 2, 3, 4, 5, 6, 1, 2);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
 
-        controller.roll("8d6", Optional.of("Fireball"));
+        controller.roll(valid("8d6"), Optional.of("Fireball"));
 
-        assertThat(latest().queued()).contains(new RollState.QueuedRoll("8d6", Optional.of("Fireball")));
+        assertThat(latest().queued()).contains(new RollState.QueuedRoll(valid("8d6"), Optional.of("Fireball")));
         assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
         physics.finish();
         playToRest(controller);
@@ -635,7 +624,7 @@ class RollControllerTest {
         controller.addStateListener(state -> told.add("second " + state.status().getClass().getSimpleName()));
         controller.addStateListener(state -> told.add("third " + state.status().getClass().getSimpleName()));
 
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
 
         assertThat(told).containsExactly("second PreSimulating", "third PreSimulating", "second Playing",
@@ -652,13 +641,13 @@ class RollControllerTest {
         // Rolls again the moment the first Roll rests, from inside that snapshot's notification.
         controller.addStateListener(RollState.statusChanges(status -> {
             if (status instanceof RollStatus.Rested && tray.chains.size() == 1) {
-                controller.roll("1d4");
+                controller.roll(valid("1d4"));
             }
         }));
         List<RollStatus> later = new ArrayList<>();
         controller.addStateListener(RollState.statusChanges(later::add));
 
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         frames((int) Math.ceil(tray.chains.getFirst().restTime() / FRAME) + 1);
 
@@ -672,10 +661,10 @@ class RollControllerTest {
     @Test
     void aRollAskedForWhileOneIsUnderWayWaitsAsTheQueuedRoll() {
         RollController controller = controller(4, 2);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
 
         // Still pre-simulating: it queues rather than starting a second Roll.
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
         assertThat(queued()).contains("2d6");
         assertThat(queuedChanges()).containsExactly(Optional.of("2d6"));
         physics.finish();
@@ -692,11 +681,11 @@ class RollControllerTest {
     @Test
     void aRollWithNothingUnderWayRollsAtOnce() {
         RollController controller = controller(4, 2);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         playToRest(controller);
 
-        controller.roll("1d8");
+        controller.roll(valid("1d8"));
 
         assertThat(queued()).isEmpty();
         assertThat(queuedChanges()).isEmpty();
@@ -708,9 +697,9 @@ class RollControllerTest {
     void theQueuedRollStartsABeatAfterTheRollResultIsRevealed() {
         assertThat(RollController.BEAT_SECONDS).as("spec §4: about 0.9 s").isEqualTo(0.9);
         RollController controller = controller(4, 6);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d6+1");
+        controller.roll(valid("1d6+1"));
         playToRest(controller);
         double revealed = clock.time();
         assertThat(status().text()).isEqualTo("1d6 = 4");
@@ -736,16 +725,16 @@ class RollControllerTest {
     @Test
     void aLaterRollReplacesTheQueuedRoll() {
         RollController controller = controller(2, 5);
-        controller.roll("1d6");
-        controller.roll("2d6");
-        controller.roll("1d20+3");
+        controller.roll(valid("1d6"));
+        controller.roll(valid("2d6"));
+        controller.roll(valid("1d20+3"));
         physics.finish();
 
         assertThat(queued()).contains("1d20+3");
         playToRest(controller);
         // Asked for during the beat, it replaces the Queued Roll rather than jumping ahead of it.
         frames(20);
-        controller.roll("1d12");
+        controller.roll(valid("1d12"));
         assertThat(queued()).contains("1d12");
         assertThat(physics.held).isNull();
         frames(34);
@@ -759,9 +748,9 @@ class RollControllerTest {
     @Test
     void cancellingTheQueuedRollDropsItAndSaysWhetherThereWasOne() {
         RollController controller = controller(4, 2);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         assertThat(controller.cancelQueued()).isFalse();
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
 
         assertThat(controller.cancelQueued()).isTrue();
 
@@ -782,8 +771,8 @@ class RollControllerTest {
     void aFailedRollStartsTheBeatFromItsFailureWithItsMessageShownThroughIt() {
         simulator.then(24, Ending.TIMED_OUT);
         RollController controller = controller(4, 3);
-        controller.roll("1d6");
-        controller.roll("1d4");
+        controller.roll(valid("1d6"));
+        controller.roll(valid("1d4"));
 
         // The first Roll fails in pre-simulation, before anything moved.
         physics.finish();
@@ -804,11 +793,11 @@ class RollControllerTest {
     @Test
     void aQueuedRollThatFailsShowsItsOwnFailedRollMessage() {
         RollController controller = controller(4, 2, 5);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         // The first Roll is already simulated; every Attempt of the Queued Roll's Throw times out.
         simulator.then(24, Ending.TIMED_OUT);
-        controller.roll("2d6");
+        controller.roll(valid("2d6"));
         playToRest(controller);
         frames(54);
         physics.finish();
@@ -823,8 +812,8 @@ class RollControllerTest {
     @Test
     void aQueuedRollFromASavedRollKeepsItsNameWhenItStarts() {
         RollController controller = controller(4, 1, 2, 3, 4, 5, 6, 1, 2);
-        controller.roll("1d6");
-        controller.roll("8d6", Optional.of("Fireball"));
+        controller.roll(valid("1d6"));
+        controller.roll(valid("8d6"), Optional.of("Fireball"));
         physics.finish();
         playToRest(controller);
         frames(54);
@@ -839,9 +828,9 @@ class RollControllerTest {
     @Test
     void aQueuedRollReplacedByATypedOneLosesTheSavedRollsName() {
         RollController controller = controller(4, 3);
-        controller.roll("1d6");
-        controller.roll("8d6", Optional.of("Fireball"));
-        controller.roll("1d4");
+        controller.roll(valid("1d6"));
+        controller.roll(valid("8d6"), Optional.of("Fireball"));
+        controller.roll(valid("1d4"));
         physics.finish();
         playToRest(controller);
         frames(54);
@@ -856,9 +845,9 @@ class RollControllerTest {
     @Test
     void fastForwardShortensTheBeatWithTheRestOfPlayback() {
         RollController controller = controller(4, 6);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d6+1");
+        controller.roll(valid("1d6+1"));
         playToRest(controller);
 
         // ×4: the 0.9 s beat passes in a quarter of the real time, 14 frames rather than 54.
@@ -874,9 +863,9 @@ class RollControllerTest {
     @Test
     void onTheAdvanceTheBeatEndsTheQueuedRollIsShownAtItsFirstReleaseAndTheClockKeepsRunning() {
         RollController controller = controller(4, 6);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d6+1");
+        controller.roll(valid("1d6+1"));
         playToRest(controller);
         frames(53);
         // The worker answers at once, so the Queued Roll's chain arrives inside the advance that starts it.
@@ -895,7 +884,7 @@ class RollControllerTest {
     @Test
     void thePulseStartsWhenTheChainStartsToPlayAndStopsOnceTheDiceRest() {
         RollController controller = controller(4);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         assertThat(pulses.running).as("pre-simulating: nothing moves yet").isFalse();
 
         physics.finish();
@@ -910,7 +899,7 @@ class RollControllerTest {
     @Test
     void thePulseRunsOnWhileTheTrayIsStillMovingAfterTheRollIsOverThenStops() {
         RollController controller = controller(4);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
         // The camera's settle-in on the Dice at rest outlasts the last Throw.
         tray.moving = true;
@@ -928,9 +917,9 @@ class RollControllerTest {
     @Test
     void thePulseRunsThroughTheBeatWithNothingMovingThenStopsOnceTheQueuedRollRests() {
         RollController controller = controller(4, 6);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d6+1");
+        controller.roll(valid("1d6+1"));
         playToRest(controller);
 
         for (int i = 0; i < 53; i++) {
@@ -949,7 +938,7 @@ class RollControllerTest {
     void aRollThatFailsBeforeAnythingMovedWithNothingQueuedNeverAsksForThePulse() {
         simulator.failNext();
         RollController controller = controller(4);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
 
         assertThat(status()).isInstanceOf(RollStatus.Failed.class);
@@ -960,8 +949,8 @@ class RollControllerTest {
     void aRollThatFailsWithARollQueuedAsksForThePulseForTheBeat() {
         simulator.then(24, Ending.TIMED_OUT);
         RollController controller = controller(4, 3);
-        controller.roll("1d6");
-        controller.roll("1d4");
+        controller.roll(valid("1d6"));
+        controller.roll(valid("1d4"));
         physics.finish();
 
         // Nothing has moved, so nothing else would advance the clock the beat is timed on.
@@ -971,9 +960,9 @@ class RollControllerTest {
     @Test
     void cancellingTheQueuedRollDuringTheBeatLetsThePulseStop() {
         RollController controller = controller(4, 6);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d6+1");
+        controller.roll(valid("1d6+1"));
         playToRest(controller);
         assertThat(pulses.running).isTrue();
 
@@ -987,9 +976,9 @@ class RollControllerTest {
     @Test
     void abandoningDropsTheQueuedRollAndNothingMoreRolls() {
         RollController controller = controller(4, 2, 3);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
         physics.finish();
-        controller.roll("1d8");
+        controller.roll(valid("1d8"));
         frames(3);
 
         controller.abandon();
@@ -1004,7 +993,7 @@ class RollControllerTest {
         assertThat(status()).isNotInstanceOf(RollStatus.Rested.class);
         assertThat(tray.chains).hasSize(1);
         // Nor can one be asked for, nor queued.
-        controller.roll("1d4");
+        controller.roll(valid("1d4"));
         assertThat(physics.held).isNull();
         assertThat(queued()).isEmpty();
         // Calling it again does nothing.
@@ -1017,7 +1006,7 @@ class RollControllerTest {
     @Test
     void aRollStillPreSimulatingWhenTheSessionIsAbandonedNeverPlays() {
         RollController controller = controller(4);
-        controller.roll("1d6");
+        controller.roll(valid("1d6"));
 
         controller.abandon();
         physics.finish();

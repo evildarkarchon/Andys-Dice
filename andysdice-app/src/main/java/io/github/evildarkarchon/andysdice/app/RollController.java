@@ -1,8 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
-import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.core.planner.ThrowPlanner;
@@ -24,8 +22,9 @@ import java.util.function.Function;
 import java.util.random.RandomGenerator;
 
 /**
- * Runs a Roll from Enter to rest (spec §3.1) for any Roll Expression: parse, then hand the Roll to
- * {@code core}'s {@link ThrowPlanner} on the physics worker, which chooses every Face Value and pre-simulates the
+ * Runs a Roll from Enter to rest (spec §3.1) for any Roll Expression, which arrives parsed (entry in the box is the
+ * one place a Player's input is parsed and refused): hand the Roll to {@code core}'s {@link ThrowPlanner} on the
+ * physics worker, which chooses every Face Value and pre-simulates the
  * whole chain of Throws (first Throw, Reroll Throws, Cocked Rethrows) before anything moves; then play that chain
  * back on the playback clock as a {@link ChainPlayback}, and show the Roll Result only once the last Throw is at
  * rest. The Dice then stay on the Tray until the next Roll is ready to play.
@@ -205,38 +204,37 @@ final class RollController {
     }
 
     /**
-     * Rolls what was typed, as Enter does: at once if nothing is under way, else as the Queued Roll in place of any
-     * earlier one. A request while a Queued Roll waits out its beat replaces it too, rather than jumping ahead of it.
-     * An invalid Roll Expression, once it comes to roll, rolls nothing and says why, without reaching the physics
-     * worker.
+     * Rolls a Roll Expression, as Enter does: at once if nothing is under way, else as the Queued Roll in place of
+     * any earlier one. A request while a Queued Roll waits out its beat replaces it too, rather than jumping ahead of
+     * it.
      *
-     * @param input the Roll Expression as typed
+     * @param expression the Roll Expression, already parsed
      */
-    void roll(String input) {
-        roll(input, Optional.empty());
+    void roll(RollExpression expression) {
+        roll(expression, Optional.empty());
     }
 
     /**
-     * Rolls a Roll Expression as {@link #roll(String)} does, recording the name of the Saved Roll it came from in
-     * the {@link RollStatus.Rested} it reveals (spec §3.2 "Saved tab": the Roll is recorded with that name), even
-     * when it waits as the Queued Roll first.
+     * Rolls a Roll Expression as {@link #roll(RollExpression)} does, recording the name of the Saved Roll it came
+     * from in the {@link RollStatus.Rested} it reveals (spec §3.2 "Saved tab": the Roll is recorded with that name),
+     * even when it waits as the Queued Roll first.
      *
-     * @param input the Roll Expression as written
+     * @param expression the Roll Expression, already parsed
      * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
      */
-    void roll(String input, Optional<String> savedRollName) {
-        Objects.requireNonNull(input, "input");
+    void roll(RollExpression expression, Optional<String> savedRollName) {
+        Objects.requireNonNull(expression, "expression");
         Objects.requireNonNull(savedRollName, "savedRollName");
         if (abandoned) {
             // The session has failed (abandon): nothing rolls or queues behind the failure panel.
             return;
         }
         if (underWay || queued != null) {
-            queued = new RollState.QueuedRoll(input, savedRollName);
+            queued = new RollState.QueuedRoll(expression, savedRollName);
             publish();
             return;
         }
-        start(input, savedRollName);
+        start(expression, savedRollName);
     }
 
     /**
@@ -255,17 +253,8 @@ final class RollController {
         return true;
     }
 
-    /** Starts a Roll now: parses it, then pre-simulates its whole chain on the physics worker. */
-    private void start(String input, Optional<String> savedRollName) {
-        RollExpression expression;
-        switch (RollExpressionParser.parse(input)) {
-            case ParseResult.Invalid invalid -> {
-                setStatus(new RollStatus.Refused(input, invalid.error().message()));
-                return;
-            }
-            case ParseResult.Valid valid -> expression = valid.expression();
-        }
-
+    /** Starts a Roll now: pre-simulates its whole chain on the physics worker. */
+    private void start(RollExpression expression, Optional<String> savedRollName) {
         underWay = true;
         setStatus(new RollStatus.PreSimulating(expression));
         // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
@@ -337,7 +326,7 @@ final class RollController {
                 setStatus(new RollStatus.Playing(expression, chain, start));
             }
             case RollPlan.Failed failed -> fail(RollStatus.Failed.of(expression, failed.reason()), null);
-            // The expression parsed here already, so the planner never sees an invalid one.
+            // The expression arrived parsed, so the planner never sees an invalid one.
             case RollPlan.Invalid invalid -> fail(RollStatus.Failed.broken(expression, invalid.error().message()),
                     null);
         }
@@ -405,7 +394,7 @@ final class RollController {
         // Not published on its own: start publishes the new status with the Queued Roll gone, in one snapshot, so
         // nothing sees the app settled for a moment between the Roll at rest and the one taking over from it.
         clearQueued();
-        start(next.input(), next.savedRollName());
+        start(next.expression(), next.savedRollName());
     }
 
     /** Drops the Queued Roll and its beat. It publishes nothing; the caller does, once its change is complete. */

@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Objects;
@@ -169,10 +170,11 @@ final class SavedTab {
     void roll(int index) {
         SavedRoll roll = rolls.rolls().get(index);
         copy(index);
-        if (!roll.rolls()) {
+        Optional<RollExpression> expression = roll.parsed();
+        if (expression.isEmpty()) {
             return;
         }
-        session.roll(roll.expression(), roll.name());
+        session.roll(expression.get(), roll.name());
         ui.focusBox();
         ui.expressionBox().selectAll();
     }

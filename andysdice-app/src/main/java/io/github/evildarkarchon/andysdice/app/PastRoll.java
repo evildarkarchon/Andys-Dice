@@ -3,9 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.expression.DiceGroup;
 import io.github.evildarkarchon.andysdice.core.expression.DieResult;
 import io.github.evildarkarchon.andysdice.core.expression.FaceValueChain;
-import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
 import io.github.evildarkarchon.andysdice.core.expression.RollEvaluator;
-import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollResult;
 import io.github.evildarkarchon.andysdice.core.expression.TermResult;
 import java.time.Instant;
@@ -79,11 +78,17 @@ record PastRoll(Instant at, String expression, Optional<String> savedRollName, L
         return result().total();
     }
 
+    /**
+     * Returns the Roll Expression parsed, to roll it again: it always parses (checked when this was made).
+     *
+     * @return the parsed expression, whose source is {@link #expression()}
+     */
+    RollExpression parsed() {
+        return RollExpressions.valid(expression);
+    }
+
+    /** Evaluates the chains under the expression; throws IllegalArgumentException if it doesn't parse. */
     private static RollResult evaluate(String expression, List<FaceValueChain> chains) {
-        return switch (RollExpressionParser.parse(expression)) {
-            case ParseResult.Invalid invalid -> throw new IllegalArgumentException(
-                    "`" + expression + "` doesn't parse: " + invalid.error().message());
-            case ParseResult.Valid valid -> RollEvaluator.evaluate(valid.expression(), chains);
-        };
+        return RollEvaluator.evaluate(RollExpressions.valid(expression), chains);
     }
 }

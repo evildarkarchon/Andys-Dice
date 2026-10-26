@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -27,14 +28,14 @@ record RollState(RollStatus status, Optional<QueuedRoll> queued, boolean settled
      * The Queued Roll (spec §3.2 "Entry"): what was asked for while a Roll was under way, and the Saved Roll it came
      * from, if any (#56).
      *
-     * @param input the Roll Expression as asked for
+     * @param expression the Roll Expression asked for, already parsed
      * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
      */
-    record QueuedRoll(String input, Optional<String> savedRollName) {
+    record QueuedRoll(RollExpression expression, Optional<String> savedRollName) {
 
         /** Checks the parts are present. */
         QueuedRoll {
-            Objects.requireNonNull(input, "input");
+            Objects.requireNonNull(expression, "expression");
             Objects.requireNonNull(savedRollName, "savedRollName");
         }
     }

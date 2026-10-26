@@ -1,13 +1,12 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import java.time.Duration;
 import java.util.SplittableRandom;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
@@ -61,7 +60,7 @@ class FirstMotionTest {
         long start = System.nanoTime();
 
         CompletableFuture<Duration> timed = HeadlessUiTest.fromFx(() -> FirstMotion.time(skeleton,
-                Bench.EXPRESSION));
+                valid(Bench.EXPRESSION)));
         Duration firstMotion = timed.get(WAIT.toSeconds(), TimeUnit.SECONDS);
         long elapsed = System.nanoTime() - start;
 
@@ -75,13 +74,5 @@ class FirstMotionTest {
         assertThat(skeleton.view().framesPresented()).isGreaterThan(framesBefore);
         assertThat(HeadlessUiTest.fromFx(() -> skeleton.pane().expressionBox().getText()))
                 .isEqualTo(Bench.EXPRESSION);
-    }
-
-    @Test
-    void aRollThatIsRefusedFailsTheTiming() throws Exception {
-        CompletableFuture<Duration> timed = HeadlessUiTest.fromFx(() -> FirstMotion.time(skeleton, "21d6"));
-
-        assertThatThrownBy(() -> timed.get(WAIT.toSeconds(), TimeUnit.SECONDS))
-                .isInstanceOf(ExecutionException.class).hasMessageContaining("21d6");
     }
 }
