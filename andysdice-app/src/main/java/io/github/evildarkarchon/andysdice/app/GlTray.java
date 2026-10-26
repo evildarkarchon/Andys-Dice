@@ -244,35 +244,6 @@ final class GlTray implements TraySurface, AutoCloseable {
         return camera;
     }
 
-    /**
-     * Returns the view the Tray is rendered into, for the skeleton's getter until its callers move to the hooks
-     * (#78).
-     *
-     * @return the frame view
-     */
-    FrameView view() {
-        return view;
-    }
-
-    /**
-     * Returns the render thread, for the skeleton's getter until its callers move to the hooks (#78).
-     *
-     * @return the app's one render thread
-     */
-    RenderThread renderer() {
-        return renderer;
-    }
-
-    /**
-     * Returns the scene the render thread draws, for the skeleton's getter until its callers move to the hooks
-     * (#78).
-     *
-     * @return the Dice scene
-     */
-    DiceScene scene() {
-        return scene;
-    }
-
     /** Stops the render thread. */
     @Override
     public void close() {

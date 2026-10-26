@@ -280,14 +280,16 @@ final class Bench {
         Objects.requireNonNull(exit, "exit");
         Executor fx = Platform::runLater;
         LOG.log(Level.INFO, "Bench: timing Enter to first motion of " + EXPRESSION + " over " + ROLLS + " Rolls");
-        Settling settling = new Settling(skeleton.controller().state());
-        skeleton.controller().addStateListener(settling);
+        RollController controller = skeleton.session().controller();
+        GlTray tray = skeleton.glTray();
+        Settling settling = new Settling(controller.state());
+        controller.addStateListener(settling);
         roll(skeleton, settling, new ArrayList<>(), fx)
                 .thenCompose(motions -> whenIdle(settling, fx).thenApply(idle -> motions))
                 .thenCompose(motions -> {
-                    LOG.log(Level.INFO, "Bench: timing the GPU on " + skeleton.driver());
+                    LOG.log(Level.INFO, "Bench: timing the GPU on " + tray.driver());
                     // Off the JavaFX thread, which must keep presenting the frames the GPU bench draws.
-                    return CompletableFuture.supplyAsync(() -> GpuBench.run(skeleton.renderer(), skeleton.scene()),
+                    return CompletableFuture.supplyAsync(tray::gpuBench,
                             command -> Thread.ofPlatform().name("andysdice-bench").daemon(true).start(command))
                             .thenApply(gpu -> new Result(launchToWindow, motions, gpu));
                 })
