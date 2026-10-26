@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import javafx.geometry.Bounds;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -115,9 +116,11 @@ class WalkingSkeletonTest {
                     .isLessThan(rest + TrayCamera.SETTLE_SECONDS + 2 * FRAME);
             // The Tray's node is the view the camera fits; a Region's layout bounds are its laid-out width and height.
             assertThat(HeadlessUiTest.fromFx(() -> glTray.camera().camera())).isEqualTo(
-                    HeadlessUiTest.fromFx(() -> Framing.of(Skeleton.TRAY.geometry()).resting(chain.diceAt(rest + 1),
-                            glTray.node().getLayoutBounds().getWidth() / glTray.node().getLayoutBounds().getHeight())
-                            .camera()));
+                    HeadlessUiTest.fromFx(() -> {
+                        Bounds laidOut = glTray.node().getLayoutBounds();
+                        return Framing.of(Skeleton.TRAY.geometry())
+                                .resting(chain.diceAt(rest + 1), laidOut.getWidth() / laidOut.getHeight()).camera();
+                    }));
 
             // While a Throw plays, every Die it doesn't throw stays exactly where it lay.
             for (int i = 1; i < times.size(); i++) {

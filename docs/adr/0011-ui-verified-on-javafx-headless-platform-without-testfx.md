@@ -31,8 +31,9 @@ and selected span included
   the popup's anchor. A UI test then checks that a bad Roll Expression leaves the box's selection on exactly the
   #7 span, shows the one message in the popup, and starts no Roll.
 - **No GL in UI tests.** UI tests mount a stand-in tray at the Tray seam, above the Dice scene and ADR-0002's
-  frame transport. It reports Throw phases and rest on an injectable playback clock. Tests advance that clock and never sleep. The 3D pixels stay
-  with ADR-0005's `gl` tests, gallery and checklist. Because they need no GL, UI tests run in the Windows push job
-  and are meant for the no-GL `ubuntu-latest` job too. Only Windows was tried in the prototype.
+  frame transport. It reports Throw phases and rest on an injectable playback clock. Tests advance that clock and
+  never sleep. The 3D pixels stay with ADR-0005's `gl` tests, gallery and checklist. Because they need no GL, UI
+  tests run in the Windows push job and are meant for the no-GL `ubuntu-latest` job too. Only Windows was tried in
+  the prototype.
 - **Still by eye.** Layout, legibility and feel stay on the release checklist. UI tests assert behaviour and
   state (what is enabled, what is queued, what the breakdown and history contain), never pixels.
