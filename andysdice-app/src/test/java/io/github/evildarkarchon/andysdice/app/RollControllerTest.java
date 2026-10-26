@@ -606,7 +606,7 @@ class RollControllerTest {
 
         controller.roll(valid("8d6"), Optional.of("Fireball"));
 
-        assertThat(latest().queued()).contains(new RollState.QueuedRoll(valid("8d6"), Optional.of("Fireball")));
+        assertThat(latest().queued()).contains(new RollRequest(valid("8d6"), Optional.of("Fireball")));
         assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
         physics.finish();
         playToRest(controller);

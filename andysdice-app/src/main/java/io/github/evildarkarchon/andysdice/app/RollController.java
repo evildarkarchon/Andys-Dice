@@ -116,11 +116,10 @@ final class RollController {
     }
 
     /**
-     * The chain now playing, with when it started on the clock, the expression it reveals at rest and the name of
-     * the Saved Roll it was rolled from, if any (#56).
+     * The chain now playing, with when it started on the clock, and the request it was rolled from: the expression
+     * it reveals at rest and the name of the Saved Roll it was rolled from, if any (#56).
      */
-    private record InPlay(RollExpression expression, Optional<String> savedRollName, ChainPlayback chain,
-            double start) {}
+    private record InPlay(RollRequest request, ChainPlayback chain, double start) {}
 
     private final PlaybackClock clock;
     private final Pulses pulses;
@@ -142,7 +141,7 @@ final class RollController {
     private RollState state;
     private InPlay playing;
     /** The Queued Roll, or {@code null}. */
-    private RollState.QueuedRoll queued;
+    private RollRequest queued;
     /** When on the clock the Queued Roll starts; NaN until the Roll ahead of it has ended. */
     private double queuedStartsAt = Double.NaN;
     /** Whether this controller has asked for the pulse and not yet let it go; it is the pulse's one user. */
@@ -266,18 +265,18 @@ final class RollController {
      * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
      */
     void roll(RollExpression expression, Optional<String> savedRollName) {
-        Objects.requireNonNull(expression, "expression");
-        Objects.requireNonNull(savedRollName, "savedRollName");
+        // Made first, so missing parts are refused even once the session has failed.
+        RollRequest request = new RollRequest(expression, savedRollName);
         if (abandoned) {
             // The session has failed (abandon): nothing rolls or queues behind the failure panel.
             return;
         }
         if (underWay() || queued != null) {
-            queued = new RollState.QueuedRoll(expression, savedRollName);
+            queued = request;
             publish();
             return;
         }
-        start(expression, savedRollName);
+        start(request);
     }
 
     /**
@@ -297,7 +296,8 @@ final class RollController {
     }
 
     /** Starts a Roll now: pre-simulates its whole chain on the physics worker. */
-    private void start(RollExpression expression, Optional<String> savedRollName) {
+    private void start(RollRequest request) {
+        RollExpression expression = request.expression();
         // The Roll is under way from here: the status says so (underWay()).
         setStatus(new RollStatus.PreSimulating(expression));
         // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
@@ -317,8 +317,7 @@ final class RollController {
             // A worker that has been closed rejects the job outright rather than through the future.
             planned = CompletableFuture.failedFuture(e);
         }
-        planned.whenCompleteAsync((plan, error) -> arrived(expression, savedRollName, plannedIn, plan, error),
-                fxThread);
+        planned.whenCompleteAsync((plan, error) -> arrived(request, plannedIn, plan, error), fxThread);
     }
 
     /**
@@ -353,10 +352,11 @@ final class RollController {
     /**
      * The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was.
      *
+     * @param request what was asked for, which the Roll reveals at rest
      * @param plannedIn the Tray the Roll was planned in, which its chain carries
      */
-    private void arrived(RollExpression expression, Optional<String> savedRollName, Tray plannedIn, RollPlan plan,
-            Throwable error) {
+    private void arrived(RollRequest request, Tray plannedIn, RollPlan plan, Throwable error) {
+        RollExpression expression = request.expression();
         if (abandoned) {
             // The session failed while this Roll pre-simulated: it was never shown, so it is simply lost.
             return;
@@ -371,7 +371,7 @@ final class RollController {
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
                 double start = clock.time();
-                playing = new InPlay(expression, savedRollName, chain, start);
+                playing = new InPlay(request, chain, start);
                 // Now something moves, the clock must run.
                 updatePulse();
                 // Published once the Tray has the chain, with the clock time of its first Release, which the dice
@@ -427,8 +427,8 @@ final class RollController {
         showWaitingLook();
         // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
         // carries its name (#56), which the result strip shows and the Roll History records.
-        setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
-                now.chain().throwCount(), now.savedRollName()));
+        setStatus(new RollStatus.Rested(now.request().expression(), now.chain().plan().result(),
+                now.chain().throwCount(), now.request().savedRollName()));
     }
 
     /** The Roll under way has ended, revealed or failed: a Queued Roll's beat starts now. */
@@ -445,11 +445,11 @@ final class RollController {
                 || clock.time() < queuedStartsAt - 1e-9) {
             return;
         }
-        RollState.QueuedRoll next = queued;
+        RollRequest next = queued;
         // Not published on its own: start publishes the new status with the Queued Roll gone, in one snapshot, so
         // nothing sees the app settled for a moment between the Roll at rest and the one taking over from it.
         clearQueued();
-        start(next.expression(), next.savedRollName());
+        start(next);
     }
 
     /** Drops the Queued Roll and its beat. It publishes nothing; the caller does, once its change is complete. */

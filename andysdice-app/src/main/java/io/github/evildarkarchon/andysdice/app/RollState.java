@@ -1,6 +1,5 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -12,32 +11,16 @@ import java.util.function.Consumer;
  * from these, through {@link RollController#addStateListener}.
  *
  * @param status where the current Roll stands
- * @param queued the Queued Roll, if one waits
+ * @param queued the Queued Roll, if one waits (spec §3.2 "Entry"): what was asked for while a Roll was under way
  * @param settled whether the app has settled: no Roll under way, no Queued Roll waiting, and the Tray no longer
  *     {@linkplain RollController.TrayView#moving moving} (the camera's settle-in over)
  */
-record RollState(RollStatus status, Optional<QueuedRoll> queued, boolean settled) {
+record RollState(RollStatus status, Optional<RollRequest> queued, boolean settled) {
 
     /** Checks the parts are present. */
     RollState {
         Objects.requireNonNull(status, "status");
         Objects.requireNonNull(queued, "queued");
-    }
-
-    /**
-     * The Queued Roll (spec §3.2 "Entry"): what was asked for while a Roll was under way, and the Saved Roll it came
-     * from, if any (#56).
-     *
-     * @param expression the Roll Expression asked for, already parsed
-     * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
-     */
-    record QueuedRoll(RollExpression expression, Optional<String> savedRollName) {
-
-        /** Checks the parts are present. */
-        QueuedRoll {
-            Objects.requireNonNull(expression, "expression");
-            Objects.requireNonNull(savedRollName, "savedRollName");
-        }
     }
 
     /**
