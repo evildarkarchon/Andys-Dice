@@ -16,9 +16,7 @@ import java.util.function.Consumer;
  * headless UI tests run for real; {@link Skeleton} builds one over the physics worker and the GL Tray, and
  * {@code HeadlessUiTest} over the fake simulator and the stand-in tray.
  *
- * <p>It also asks for JavaFX's pulse only while a Roll plays: from the moment the Tray is given a chain until the
- * status leaves {@link RollStatus.Rolling} and the Tray reports it has stopped {@link TraySurface#moving moving},
- * so an idle app doesn't pulse at the monitor's refresh rate.
+ * <p>The controller itself asks for JavaFX's pulse, and holds the Queued Roll; this class only wires the view to it.
  *
  * <p>Thread contract: made and used on the JavaFX Application Thread.
  */
@@ -27,7 +25,6 @@ final class RollSession {
     private final RollController controller;
     private final RollUi ui;
     private final Notices notices;
-    private final RollQueue queue;
     private final RollEntry entry;
     private final FastForward fastForward;
     /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
@@ -55,7 +52,7 @@ final class RollSession {
      * Wires a Roll UI and its controller.
      *
      * @param clock the playback clock, advanced by {@code pulses} in the app and by hand in tests
-     * @param pulses what advances the clock while a Roll plays
+     * @param pulses what advances the clock while a Roll plays; the controller starts and stops it
      * @param physics where pre-simulation runs
      * @param fxThread runs pre-simulation results on the JavaFX thread ({@code Platform::runLater})
      * @param generators the Face Value and Release generators (sound variation is for the mixer)
@@ -86,12 +83,12 @@ final class RollSession {
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
         this.tray = Objects.requireNonNull(tray, "tray");
-        controller = new RollController(clock, physics, fxThread, new FaceValueGenerator(generators.faceValues()),
-                generators.releases(), throwInto, new RollController.TrayView() {
+        controller = new RollController(clock, pulses, physics, fxThread,
+                new FaceValueGenerator(generators.faceValues()), generators.releases(), throwInto,
+                new RollController.TrayView() {
                     @Override
                     public void show(ChainPlayback chain) {
                         tray.show(chain);
-                        pulses.start();
                         // The controller starts the chain at the clock's time now (#59: its sound is placed there).
                         onChainShown.shown(chain, clock.time());
                     }
@@ -100,43 +97,27 @@ final class RollSession {
                     public void showTime(double seconds) {
                         tray.showTime(seconds);
                     }
+
+                    @Override
+                    public boolean moving() {
+                        return tray.moving();
+                    }
                 });
         ui = new RollUi(tray.node());
         NoticeBell.attach(ui.bell(), notices);
         // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
-        queue = new RollQueue(controller, clock);
-        entry = new RollEntry(ui, queue);
-        // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up.
-        ui.addFailureListener(queue::close);
-        // Nor may a Roll in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost
-        // rather than revealed or kept in the Roll History (ADR-0007).
+        entry = new RollEntry(ui, controller);
+        // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up, nor may a Roll
+        // in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost rather than
+        // revealed or kept in the Roll History (ADR-0007).
         ui.addFailureListener(controller::abandon);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
         ui.showStatus(controller.status());
         controller.setOnStatusChanged(status -> {
             ui.showStatus(status);
-            // Before the pulse check: a reveal (or failure) starts a Queued Roll's beat.
-            queue.statusChanged(status);
-            if (queue.waiting() && !controller.underWay()) {
-                // The beat is timed on the clock, so the pulse must run through it even with nothing moving (a
-                // Roll that failed in pre-simulation may never have started it).
-                pulses.start();
-            } else if (!(status instanceof RollStatus.Rolling) && !tray.moving()) {
-                // Only playback needs the pulse; once the Dice rest (or nothing will move) and the Tray has
-                // stopped moving (the camera settled in), let JavaFX idle.
-                pulses.stop();
-            }
             for (Consumer<RollStatus> listener : statusListeners) {
                 listener.accept(status);
-            }
-        });
-        // After the controller's own listener: once the Roll is over, the Tray may still be moving on the clock
-        // (the camera's settle-in after the last Throw), so the pulse stops only when that is done too, and no
-        // Queued Roll is waiting out its beat.
-        clock.addListener(c -> {
-            if (!controller.underWay() && !tray.moving() && !queue.waiting()) {
-                pulses.stop();
             }
         });
         // Shift held alone speeds the clock up (#51); everything that plays follows the clock.
@@ -196,7 +177,7 @@ final class RollSession {
      * @param expression the Roll Expression as written
      */
     void roll(String expression) {
-        queue.roll(expression);
+        controller.roll(expression);
     }
 
     /**
@@ -207,7 +188,7 @@ final class RollSession {
      * @param savedRollName the Saved Roll's name
      */
     void roll(String expression, String savedRollName) {
-        queue.roll(expression, Optional.of(savedRollName));
+        controller.roll(expression, Optional.of(savedRollName));
     }
 
     /**

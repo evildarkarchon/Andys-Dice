@@ -75,7 +75,7 @@ final class FirstMotion {
         TextField box = skeleton.pane().expressionBox();
         box.setText(expression);
         entered[0] = System.nanoTime();
-        // Enter, as a key press on the box: the path the Player's Enter takes (entry, queue, controller).
+        // Enter, as a key press on the box: the path the Player's Enter takes (entry, then the controller).
         box.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
         return timed.orTimeout(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
     }

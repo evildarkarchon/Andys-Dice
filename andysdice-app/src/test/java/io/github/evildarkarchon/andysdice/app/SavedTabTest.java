@@ -253,9 +253,9 @@ class SavedTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
 
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("8d6");
+        assertThat(queuedRoll()).contains("8d6");
         playToRest();
-        advance(RollQueue.BEAT_SECONDS + 0.1);
+        advance(RollController.BEAT_SECONDS + 0.1);
         onFx(() -> {});
         playToRest();
         List<PastRoll> rolls = fromFx(() -> List.copyOf(history.list().getItems()));
@@ -419,7 +419,7 @@ class SavedTabTest extends HeadlessUiTest {
 
         assertThat(fromFx(() -> saved.editingIndex())).isEqualTo(-1);
         assertThat(fromFx(() -> saved.saved().rolls().get(1).name())).isEqualTo("Dagger");
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
         assertThat(fromFx(() -> saved.list().isFocused())).isTrue();
     }
 
@@ -523,7 +523,7 @@ class SavedTabTest extends HeadlessUiTest {
         click(cell, 2);
         onFx(() -> {});
         assertThat(fromFx(() -> controller().underWay())).isFalse();
-        assertThat(fromFx(() -> session.entry().queue().queued())).isEmpty();
+        assertThat(queuedRoll()).isEmpty();
 
         onFx(() -> cell.editButton().fire());
         SavedCell editing = editingCell();

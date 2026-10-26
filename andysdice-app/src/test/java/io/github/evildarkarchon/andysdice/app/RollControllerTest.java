@@ -25,16 +25,20 @@ import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.SplittableRandom;
 import org.joml.Vector3d;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Enter on a Roll Expression, over a scripted simulator, scripted Face Values and a playback clock advanced by
+ * A Roll's whole lifecycle, driven only through the roll controller's interface (roll, cancel the Queued Roll,
+ * abandon, and advancing the playback clock) over a scripted simulator, scripted Face Values and a clock advanced by
  * hand: the whole chain of Throws is planned on the physics worker before anything moves, the Throws then play in
- * order with the other Dice lying still, and the Roll Result appears only once the last Throw is at rest. No GL,
- * no Jolt, no JavaFX, and no test sleeps (ADR-0011).
+ * order with the other Dice lying still, and the Roll Result appears only once the last Throw is at rest. A Roll
+ * asked for meanwhile waits as the Queued Roll and starts a beat after the reveal (or the failure), and JavaFX's
+ * pulse is asked for exactly while something needs the clock. No GL, no Jolt, no JavaFX, and no test sleeps
+ * (ADR-0011). It asserts only on what the controller reports and on what the Tray and the pulse were told.
  */
 class RollControllerTest {
 
@@ -48,7 +52,9 @@ class RollControllerTest {
     private ScriptedSimulator simulator;
     private HeldPhysics physics;
     private RecordingTray tray;
+    private HandPulses pulses;
     private List<RollStatus> statuses;
+    private List<Optional<String>> queuedChanges;
 
     @BeforeEach
     void setUp() {
@@ -56,7 +62,9 @@ class RollControllerTest {
         simulator = new ScriptedSimulator();
         physics = new HeldPhysics(simulator);
         tray = new RecordingTray();
+        pulses = new HandPulses();
         statuses = new ArrayList<>();
+        queuedChanges = new ArrayList<>();
     }
 
     /** A controller whose Face Value generator draws exactly these values, throwing into the default Tray. */
@@ -66,9 +74,10 @@ class RollControllerTest {
 
     /** A controller whose Face Value generator draws exactly these values, throwing into a given Tray. */
     private RollController controller(ScriptedRandom faces, Tray into) {
-        RollController controller = new RollController(clock, physics, Runnable::run, new FaceValueGenerator(faces),
-                new SplittableRandom(1), into, tray);
+        RollController controller = new RollController(clock, pulses, physics, Runnable::run,
+                new FaceValueGenerator(faces), new SplittableRandom(1), into, tray);
         controller.setOnStatusChanged(statuses::add);
+        controller.setOnQueuedChanged(queuedChanges::add);
         return controller;
     }
 
@@ -127,6 +136,13 @@ class RollControllerTest {
     /** Advances the clock a frame at a time until the Roll is no longer under way, or ten seconds pass. */
     private void playToRest(RollController controller) {
         for (int i = 0; controller.underWay() && i < 600; i++) {
+            clock.advance(FRAME);
+        }
+    }
+
+    /** Advances the clock by whole 60 Hz frames of real time. */
+    private void frames(int count) {
+        for (int i = 0; i < count; i++) {
             clock.advance(FRAME);
         }
     }
@@ -501,22 +517,370 @@ class RollControllerTest {
         assertThat(tray.chains).isEmpty();
     }
 
+    // The Queued Roll (spec §3.2 "Entry"; GLOSSARY).
+
     @Test
-    void enterWhileARollIsUnderWayStartsNoSecondRoll() {
-        RollController controller = controller(4, 2, 3);
+    void aRollAskedForWhileOneIsUnderWayWaitsAsTheQueuedRoll() {
+        RollController controller = controller(4, 2);
         controller.roll("1d6");
+
+        // Still pre-simulating: it queues rather than starting a second Roll.
+        controller.roll("2d6");
+        assertThat(controller.queued()).contains("2d6");
+        assertThat(queuedChanges).containsExactly(Optional.of("2d6"));
+        physics.finish();
+        assertThat(tray.chains).hasSize(1);
+
+        // And while the first Roll plays, too: it plays on untouched, and nothing more is simulated.
+        frames(3);
+        assertThat(controller.queued()).contains("2d6");
+        assertThat(physics.held).isNull();
+        assertThat(simulator.requests).hasSize(1);
+        assertThat(statuses).filteredOn(RollStatus.Rolling.class::isInstance).hasSize(1);
+    }
+
+    @Test
+    void aRollWithNothingUnderWayRollsAtOnce() {
+        RollController controller = controller(4, 2);
+        controller.roll("1d6");
+        physics.finish();
+        playToRest(controller);
+
+        controller.roll("1d8");
+
+        assertThat(controller.queued()).isEmpty();
+        assertThat(queuedChanges).isEmpty();
+        assertThat(controller.underWay()).isTrue();
+        assertThat(physics.held).isNotNull();
+    }
+
+    @Test
+    void theQueuedRollStartsABeatAfterTheRollResultIsRevealed() {
+        assertThat(RollController.BEAT_SECONDS).as("spec §4: about 0.9 s").isEqualTo(0.9);
+        RollController controller = controller(4, 6);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d6+1");
+        playToRest(controller);
+        double revealed = clock.time();
+        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+
+        // Through the beat the Roll Result stays up and the Queued Roll waits.
+        frames(51);
+        assertThat(controller.underWay()).isFalse();
+        assertThat(controller.queued()).contains("1d6+1");
+        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+        assertThat(physics.held).isNull();
+
+        frames(3);
+        assertThat(clock.time() - revealed).isBetween(0.89, 0.92);
+        assertThat(controller.underWay()).isTrue();
+        assertThat(controller.queued()).isEmpty();
+        assertThat(queuedChanges).containsExactly(Optional.of("1d6+1"), Optional.empty());
+        physics.finish();
+        playToRest(controller);
+        assertThat(controller.status().text()).isEqualTo("1d6+1 = 7");
+        assertThat(tray.chains).hasSize(2);
+    }
+
+    @Test
+    void aLaterRollReplacesTheQueuedRoll() {
+        RollController controller = controller(2, 5);
+        controller.roll("1d6");
+        controller.roll("2d6");
+        controller.roll("1d20+3");
+        physics.finish();
+
+        assertThat(controller.queued()).contains("1d20+3");
+        playToRest(controller);
+        // Asked for during the beat, it replaces the Queued Roll rather than jumping ahead of it.
+        frames(20);
+        controller.roll("1d12");
+        assertThat(controller.queued()).contains("1d12");
+        assertThat(physics.held).isNull();
+        frames(34);
+        physics.finish();
+        playToRest(controller);
+
+        assertThat(controller.status().text()).isEqualTo("1d12 = 5");
+        assertThat(tray.chains).hasSize(2);
+    }
+
+    @Test
+    void cancellingTheQueuedRollDropsItAndSaysWhetherThereWasOne() {
+        RollController controller = controller(4, 2);
+        controller.roll("1d6");
+        assertThat(controller.cancelQueued()).isFalse();
+        controller.roll("2d6");
+
+        assertThat(controller.cancelQueued()).isTrue();
+
+        assertThat(controller.queued()).isEmpty();
+        assertThat(queuedChanges).containsExactly(Optional.of("2d6"), Optional.empty());
+        assertThat(controller.cancelQueued()).isFalse();
+        // The Roll under way plays on, and nothing follows it.
+        assertThat(controller.underWay()).isTrue();
+        physics.finish();
+        playToRest(controller);
+        frames(120);
+        assertThat(tray.chains).hasSize(1);
+        assertThat(physics.held).isNull();
+        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+    }
+
+    @Test
+    void aFailedRollStartsTheBeatFromItsFailureWithItsMessageShownThroughIt() {
+        simulator.then(24, Ending.TIMED_OUT);
+        RollController controller = controller(4, 3);
+        controller.roll("1d6");
+        controller.roll("1d4");
+
+        // The first Roll fails in pre-simulation, before anything moved.
+        physics.finish();
+        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(controller.underWay()).isFalse();
+
+        frames(51);
+        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(controller.queued()).contains("1d4");
+        frames(3);
+        assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
+        assertThat(controller.queued()).isEmpty();
+        physics.finish();
+        playToRest(controller);
+        assertThat(controller.status().text()).isEqualTo("1d4 = 3");
+    }
+
+    @Test
+    void aQueuedRollThatFailsShowsItsOwnFailedRollMessage() {
+        RollController controller = controller(4, 2, 5);
+        controller.roll("1d6");
+        physics.finish();
+        // The first Roll is already simulated; every Attempt of the Queued Roll's Throw times out.
+        simulator.then(24, Ending.TIMED_OUT);
+        controller.roll("2d6");
+        playToRest(controller);
+        frames(54);
+        physics.finish();
+
+        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(controller.queued()).isEmpty();
+        assertThat(controller.underWay()).isFalse();
+        // Nothing moved: the Tray keeps the first Roll's Dice.
+        assertThat(tray.chains).hasSize(1);
+    }
+
+    @Test
+    void aQueuedRollFromASavedRollKeepsItsNameWhenItStarts() {
+        RollController controller = controller(4, 1, 2, 3, 4, 5, 6, 1, 2);
+        controller.roll("1d6");
+        controller.roll("8d6", Optional.of("Fireball"));
+        physics.finish();
+        playToRest(controller);
+        frames(54);
+        physics.finish();
+        playToRest(controller);
+
+        RollStatus.Rested rested = (RollStatus.Rested) controller.status();
+        assertThat(rested.text()).startsWith("8d6 = ");
+        assertThat(rested.savedRollName()).contains("Fireball");
+    }
+
+    @Test
+    void aQueuedRollReplacedByATypedOneLosesTheSavedRollsName() {
+        RollController controller = controller(4, 3);
+        controller.roll("1d6");
+        controller.roll("8d6", Optional.of("Fireball"));
+        controller.roll("1d4");
+        physics.finish();
+        playToRest(controller);
+        frames(54);
+        physics.finish();
+        playToRest(controller);
+
+        RollStatus.Rested rested = (RollStatus.Rested) controller.status();
+        assertThat(rested.text()).isEqualTo("1d4 = 3");
+        assertThat(rested.savedRollName()).isEmpty();
+    }
+
+    @Test
+    void fastForwardShortensTheBeatWithTheRestOfPlayback() {
+        RollController controller = controller(4, 6);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d6+1");
+        playToRest(controller);
+
+        // ×4: the 0.9 s beat passes in a quarter of the real time, 14 frames rather than 54.
+        clock.setFastForwardFactor(FastForward.SPEED);
+        frames(13);
+        assertThat(controller.underWay()).isFalse();
+        assertThat(controller.queued()).contains("1d6+1");
+        frames(1);
+        assertThat(controller.underWay()).isTrue();
+        assertThat(controller.queued()).isEmpty();
+    }
+
+    @Test
+    void onTheAdvanceTheBeatEndsTheQueuedRollIsShownAtItsFirstReleaseAndTheClockKeepsRunning() {
+        RollController controller = controller(4, 6);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d6+1");
+        playToRest(controller);
+        frames(53);
+        // The worker answers at once, so the Queued Roll's chain arrives inside the advance that starts it.
+        physics.setHolding(false);
+
+        frames(1);
+
+        assertThat(tray.chains).hasSize(2);
+        // Drawn first and started after: the new chain is shown at its first Release and not redrawn that advance.
+        assertThat(tray.times).containsExactly(0.0);
+        assertThat(pulses.running).isTrue();
+    }
+
+    // JavaFX's pulse: asked for only while something needs the clock (spec §3.2; #46).
+
+    @Test
+    void thePulseStartsWhenTheChainStartsToPlayAndStopsOnceTheDiceRest() {
+        RollController controller = controller(4);
+        controller.roll("1d6");
+        assertThat(pulses.running).as("pre-simulating: nothing moves yet").isFalse();
+
+        physics.finish();
+        assertThat(pulses.running).isTrue();
+        assertThat(pulses.starts).hasValue(1);
+
+        playToRest(controller);
+        assertThat(pulses.running).isFalse();
+        assertThat(pulses.starts).hasValue(1);
+    }
+
+    @Test
+    void thePulseRunsOnWhileTheTrayIsStillMovingAfterTheRollIsOverThenStops() {
+        RollController controller = controller(4);
+        controller.roll("1d6");
+        physics.finish();
+        // The camera's settle-in on the Dice at rest outlasts the last Throw.
+        tray.moving = true;
+        playToRest(controller);
+        assertThat(controller.status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(pulses.running).isTrue();
+
+        frames(10);
+        assertThat(pulses.running).isTrue();
+        tray.moving = false;
+        frames(1);
+        assertThat(pulses.running).isFalse();
+    }
+
+    @Test
+    void thePulseRunsThroughTheBeatWithNothingMovingThenStopsOnceTheQueuedRollRests() {
+        RollController controller = controller(4, 6);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d6+1");
+        playToRest(controller);
+
+        for (int i = 0; i < 53; i++) {
+            assertThat(pulses.running).as("frame %d of the beat", i).isTrue();
+            frames(1);
+        }
+        frames(1);
+        // The Queued Roll pre-simulates: the clock goes on running.
+        assertThat(pulses.running).isTrue();
+        physics.finish();
+        playToRest(controller);
+        assertThat(pulses.running).isFalse();
+    }
+
+    @Test
+    void aRollThatFailsBeforeAnythingMovedWithNothingQueuedNeverAsksForThePulse() {
+        simulator.failNext();
+        RollController controller = controller(4);
         controller.roll("1d6");
         physics.finish();
 
-        controller.roll("1d6");
-        assertThat(physics.held).isNull();
-        assertThat(simulator.requests).hasSize(1);
+        assertThat(controller.status()).isInstanceOf(RollStatus.Failed.class);
+        assertThat(pulses.starts).hasValue(0);
     }
 
-    /** A Tray that remembers what it was asked to show. */
+    @Test
+    void aRollThatFailsWithARollQueuedAsksForThePulseForTheBeat() {
+        simulator.then(24, Ending.TIMED_OUT);
+        RollController controller = controller(4, 3);
+        controller.roll("1d6");
+        controller.roll("1d4");
+        physics.finish();
+
+        // Nothing has moved, so nothing else would advance the clock the beat is timed on.
+        assertThat(pulses.running).isTrue();
+    }
+
+    @Test
+    void cancellingTheQueuedRollDuringTheBeatLetsThePulseStop() {
+        RollController controller = controller(4, 6);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d6+1");
+        playToRest(controller);
+        assertThat(pulses.running).isTrue();
+
+        controller.cancelQueued();
+
+        assertThat(pulses.running).isFalse();
+    }
+
+    // Abandon: the session has failed (spec §3.2 "Runtime failure").
+
+    @Test
+    void abandoningDropsTheQueuedRollAndNothingMoreRolls() {
+        RollController controller = controller(4, 2, 3);
+        controller.roll("1d6");
+        physics.finish();
+        controller.roll("1d8");
+        frames(3);
+
+        controller.abandon();
+
+        assertThat(controller.queued()).isEmpty();
+        assertThat(queuedChanges).containsExactly(Optional.of("1d8"), Optional.empty());
+        assertThat(controller.underWay()).isFalse();
+        assertThat(pulses.running).isFalse();
+        // Far past the chain's rest: nothing plays on, and nothing is revealed.
+        frames(1800);
+        assertThat(controller.status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(tray.chains).hasSize(1);
+        // Nor can one be asked for, nor queued.
+        controller.roll("1d4");
+        assertThat(physics.held).isNull();
+        assertThat(controller.queued()).isEmpty();
+        // Calling it again does nothing.
+        controller.abandon();
+        assertThat(queuedChanges).hasSize(2);
+    }
+
+    @Test
+    void aRollStillPreSimulatingWhenTheSessionIsAbandonedNeverPlays() {
+        RollController controller = controller(4);
+        controller.roll("1d6");
+
+        controller.abandon();
+        physics.finish();
+        frames(600);
+
+        assertThat(tray.chains).isEmpty();
+        assertThat(controller.status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(pulses.starts).hasValue(0);
+    }
+
+    /** A Tray that remembers what it was asked to show, and reports itself moving when told to. */
     private static final class RecordingTray implements RollController.TrayView {
         final List<ChainPlayback> chains = new ArrayList<>();
         final List<Double> times = new ArrayList<>();
+        /** What {@link #moving()} reports: set it to stand in for the camera's settle-in. */
+        boolean moving;
 
         @Override
         public void show(ChainPlayback chain) {
@@ -528,6 +892,11 @@ class RollControllerTest {
         @Override
         public void showTime(double seconds) {
             times.add(seconds);
+        }
+
+        @Override
+        public boolean moving() {
+            return moving;
         }
     }
 }

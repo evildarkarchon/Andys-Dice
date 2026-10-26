@@ -29,14 +29,33 @@ import java.util.random.RandomGenerator;
  * <p>A Failed Roll (the Dice wouldn't settle, or too many rerolls) is known before anything moves: the Tray
  * keeps the previous Roll's Dice and the status carries the spec's message. So does a pre-simulation that broke.
  *
+ * <p>It also holds the Queued Roll (spec §3.2 "Entry"): a Roll asked for while one is under way waits behind it and
+ * starts about {@value #BEAT_SECONDS} s after its Roll Result is revealed, or after it fails. There is at most one;
+ * a later request replaces it, and {@link #cancelQueued} (Esc) drops it. Rolling from the box, a Saved Roll or a Roll
+ * History entry all come through {@link #roll}, so they queue the same way. The beat is timed on the playback clock,
+ * so tests advance it by hand and Fast-forward shortens it with the rest of playback.
+ *
+ * <p>And it alone asks for JavaFX's pulse ({@link Pulses}): from the moment a chain starts to play, and through a
+ * Queued Roll's beat even with nothing moving, until no Roll is under way, no Queued Roll waits and the Tray has
+ * stopped {@linkplain TrayView#moving moving} (the camera settled in), so an idle app doesn't pulse at the monitor's
+ * refresh rate.
+ *
+ * <p>It listens to the clock once, and handles each advance in a fixed order: draw the playing Roll at its new time;
+ * reveal it once the last Throw is at rest; start the Queued Roll once its beat is over; then decide whether the
+ * pulse is still needed. No rule here depends on the order listeners were added to the clock.
+ *
  * <p>Thread contract: everything here runs on one thread, the one that advances the clock (the JavaFX
  * Application Thread in the app). Only the planning job runs on the physics worker, and its result is handed
  * back through the given executor. The Face Value and Release generators are drawn from only inside that job,
- * one Roll at a time (a second Enter while a Roll is under way is ignored), so the worker is their one user.
+ * one Roll at a time (a Roll asked for while one is under way waits as the Queued Roll), so the worker is their one
+ * user.
  */
 final class RollController {
 
     private static final System.Logger LOG = System.getLogger(RollController.class.getName());
+
+    /** The beat between a reveal and the Queued Roll's start, playback seconds (spec §4: a tunable, about 0.9 s). */
+    static final double BEAT_SECONDS = 0.9;
 
     /** Where pre-simulation runs: the physics worker, in the app. */
     @FunctionalInterface
@@ -65,6 +84,14 @@ final class RollController {
          * @param seconds playback time since the first Throw's Release
          */
         void showTime(double seconds);
+
+        /**
+         * Tells whether the Tray still needs the playback clock after the Roll is over, so the pulse keeps running:
+         * the GL Tray's camera settling in on the Dice at rest (#46), for one.
+         *
+         * @return {@code true} while something on the Tray is still moving on the clock
+         */
+        boolean moving();
     }
 
     /**
@@ -74,7 +101,11 @@ final class RollController {
     private record Playing(RollExpression expression, Optional<String> savedRollName, ChainPlayback chain,
             double start) {}
 
+    /** The Queued Roll: what was asked for, and the name of the Saved Roll it came from, if any (#56). */
+    private record Queued(String input, Optional<String> savedRollName) {}
+
     private final PlaybackClock clock;
+    private final Pulses pulses;
     private final PhysicsJobs physics;
     private final Executor fxThread;
     private final FaceValueGenerator faceValues;
@@ -83,9 +114,16 @@ final class RollController {
     private final TrayView tray;
 
     private Consumer<RollStatus> onStatusChanged = status -> {};
+    private Consumer<Optional<String>> onQueuedChanged = queued -> {};
     private RollStatus status = new RollStatus.Ready();
     private boolean underWay;
     private Playing playing;
+    /** The Queued Roll, or {@code null}. */
+    private Queued queued;
+    /** When on the clock the Queued Roll starts; NaN until the Roll ahead of it has ended. */
+    private double queuedStartsAt = Double.NaN;
+    /** Whether this controller has asked for the pulse and not yet let it go; it is the pulse's one user. */
+    private boolean pulsing;
     /** Set once the session has failed ({@link #abandon}); never cleared. */
     private boolean abandoned;
 
@@ -93,6 +131,7 @@ final class RollController {
      * Creates a controller and starts it listening to the clock.
      *
      * @param clock the playback clock, advanced on this controller's thread
+     * @param pulses what advances the clock in the app, stopped; this controller alone starts and stops it
      * @param physics where pre-simulation runs
      * @param fxThread runs the pre-simulation's result on this controller's thread ({@code Platform::runLater})
      * @param faceValues the Face Value generator (ADR-0001); used only on the physics worker, one Roll at a time
@@ -101,9 +140,10 @@ final class RollController {
      *     the view draws the same Tray
      * @param tray where the Roll is drawn
      */
-    RollController(PlaybackClock clock, PhysicsJobs physics, Executor fxThread, FaceValueGenerator faceValues,
-            RandomGenerator releases, Tray throwInto, TrayView tray) {
+    RollController(PlaybackClock clock, Pulses pulses, PhysicsJobs physics, Executor fxThread,
+            FaceValueGenerator faceValues, RandomGenerator releases, Tray throwInto, TrayView tray) {
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.pulses = Objects.requireNonNull(pulses, "pulses");
         this.physics = Objects.requireNonNull(physics, "physics");
         this.fxThread = Objects.requireNonNull(fxThread, "fxThread");
         this.faceValues = Objects.requireNonNull(faceValues, "faceValues");
@@ -160,8 +200,29 @@ final class RollController {
     }
 
     /**
-     * Rolls what was typed, as Enter does. An invalid Roll Expression rolls nothing and says why, without
-     * reaching the physics worker. While a Roll is under way this does nothing.
+     * Returns the Queued Roll.
+     *
+     * @return its text as asked for, or empty if none is queued
+     */
+    Optional<String> queued() {
+        return queued == null ? Optional.empty() : Optional.of(queued.input());
+    }
+
+    /**
+     * Sets who is told when the Queued Roll changes: queued, replaced, cancelled, started or dropped. A stop-gap
+     * for the "next: …" chip until the Roll's state snapshot replaces it.
+     *
+     * @param listener told the Queued Roll's text, or empty; it replaces any earlier one
+     */
+    void setOnQueuedChanged(Consumer<Optional<String>> listener) {
+        onQueuedChanged = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Rolls what was typed, as Enter does: at once if nothing is under way, else as the Queued Roll in place of any
+     * earlier one. A request while a Queued Roll waits out its beat replaces it too, rather than jumping ahead of it.
+     * An invalid Roll Expression, once it comes to roll, rolls nothing and says why, without reaching the physics
+     * worker.
      *
      * @param input the Roll Expression as typed
      */
@@ -171,22 +232,44 @@ final class RollController {
 
     /**
      * Rolls a Roll Expression as {@link #roll(String)} does, recording the name of the Saved Roll it came from in
-     * the {@link RollStatus.Rested} it reveals (spec §3.2 "Saved tab": the Roll is recorded with that name).
+     * the {@link RollStatus.Rested} it reveals (spec §3.2 "Saved tab": the Roll is recorded with that name), even
+     * when it waits as the Queued Roll first.
      *
      * @param input the Roll Expression as written
      * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
      */
     void roll(String input, Optional<String> savedRollName) {
+        Objects.requireNonNull(input, "input");
         Objects.requireNonNull(savedRollName, "savedRollName");
         if (abandoned) {
-            // The session has failed (abandon): nothing rolls behind the failure panel.
+            // The session has failed (abandon): nothing rolls or queues behind the failure panel.
             return;
         }
-        if (underWay) {
-            // A Roll asked for during another is queued in front of the controller (RollQueue, #50), so one that
-            // still reaches it here is ignored.
+        if (underWay || queued != null) {
+            queued = new Queued(input, savedRollName);
+            onQueuedChanged.accept(queued());
             return;
         }
+        start(input, savedRollName);
+    }
+
+    /**
+     * Drops the Queued Roll, as Esc does when nothing else takes it.
+     *
+     * @return whether there was one to drop
+     */
+    boolean cancelQueued() {
+        if (queued == null) {
+            return false;
+        }
+        clearQueued();
+        // With nothing left to wait for, a beat no longer needs the pulse.
+        updatePulse();
+        return true;
+    }
+
+    /** Starts a Roll now: parses it, then pre-simulates its whole chain on the physics worker. */
+    private void start(String input, Optional<String> savedRollName) {
         RollExpression expression;
         switch (RollExpressionParser.parse(input)) {
             case ParseResult.Invalid invalid -> {
@@ -216,13 +299,21 @@ final class RollController {
     /**
      * Ends the session's Rolling for good, as the failure panel does (spec §3.2 "Runtime failure"): a Roll in motion
      * stops where it is and is never revealed, so it never joins the Roll History (ADR-0007: a Roll interrupted
-     * before it rests is lost, because it was never shown), and one still pre-simulating never plays. Nothing is
-     * recovered in-process: every later {@link #roll} is ignored. Calling it again does nothing.
+     * before it rests is lost, because it was never shown), and one still pre-simulating never plays. The Queued
+     * Roll is dropped, so nothing starts behind the panel once its beat is up. Nothing is recovered in-process: every
+     * later {@link #roll} is ignored. Calling it again does nothing.
      */
     void abandon() {
+        if (abandoned) {
+            return;
+        }
         abandoned = true;
         playing = null;
         underWay = false;
+        if (queued != null) {
+            clearQueued();
+        }
+        updatePulse();
     }
 
     /** The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was. */
@@ -242,6 +333,8 @@ final class RollController {
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
                 playing = new Playing(expression, savedRollName, chain, clock.time());
+                // Now something moves, the clock must run.
+                updatePulse();
             }
             case RollPlan.Failed failed -> fail(RollStatus.Failed.of(expression, failed.reason()), null);
             // The expression parsed here already, so the planner never sees an invalid one.
@@ -255,24 +348,85 @@ final class RollController {
         underWay = false;
         LOG.log(System.Logger.Level.WARNING, "Roll of " + failed.expression().canonical() + " failed: "
                 + failed.message(), error);
+        // A Queued Roll waits out the beat from the failure, with the Failed Roll's message shown through it.
+        ended();
         setStatus(failed);
+        // A Roll that failed in pre-simulation never started the pulse, but a Queued Roll's beat needs it.
+        updatePulse();
     }
 
-    /** The clock moved on: draw the chain at its new time, and reveal the result once the last Throw rests. */
+    /**
+     * The clock moved on. In this order, which is the one rule here about ordering: draw the playing chain at its
+     * new time; reveal the Roll once its last Throw is at rest; start the Queued Roll once its beat is over (so a
+     * chain it shows this advance is drawn from its first Release, not redrawn); and only then decide whether the
+     * pulse is still needed, with everything this advance changed already in place.
+     */
     private void advanced() {
         Playing now = playing;
-        if (now == null) {
+        if (now != null) {
+            double elapsed = clock.time() - now.start();
+            tray.showTime(elapsed);
+            if (elapsed >= now.chain().restTime()) {
+                reveal(now);
+            }
+        }
+        startQueuedIfDue();
+        updatePulse();
+    }
+
+    /** The last Throw is at rest: show the Roll Result, and start a Queued Roll's beat. */
+    private void reveal(Playing now) {
+        playing = null;
+        underWay = false;
+        ended();
+        // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
+        // carries its name (#56), which the result strip shows and the Roll History records.
+        setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
+                now.chain().throwCount(), now.savedRollName()));
+    }
+
+    /** The Roll under way has ended, revealed or failed: a Queued Roll's beat starts now. */
+    private void ended() {
+        if (queued != null) {
+            queuedStartsAt = clock.time() + BEAT_SECONDS;
+        }
+    }
+
+    /** Starts the Queued Roll if its beat is over. */
+    private void startQueuedIfDue() {
+        // A hair of slack: 54 frames of 1/60 s add up to a shade under 0.9 s in floating point.
+        if (queued == null || underWay || Double.isNaN(queuedStartsAt)
+                || clock.time() < queuedStartsAt - 1e-9) {
             return;
         }
-        double elapsed = clock.time() - now.start();
-        tray.showTime(elapsed);
-        if (elapsed >= now.chain().restTime()) {
-            playing = null;
-            underWay = false;
-            // Every Throw of the chain counts, Cocked Rethrows included (spec §3.2). A Roll from a Saved Roll
-            // carries its name (#56), which the result strip shows and the Roll History records.
-            setStatus(new RollStatus.Rested(now.expression(), now.chain().plan().result(),
-                    now.chain().throwCount(), now.savedRollName()));
+        Queued next = queued;
+        clearQueued();
+        start(next.input(), next.savedRollName());
+    }
+
+    private void clearQueued() {
+        queued = null;
+        queuedStartsAt = Double.NaN;
+        onQueuedChanged.accept(Optional.empty());
+    }
+
+    /**
+     * Asks for the pulse, or lets it go: it is needed while a chain plays and while a Queued Roll waits out its beat
+     * (the beat is timed on the clock, even with nothing moving). It is let go once no Roll is under way, no Queued
+     * Roll waits and the Tray has stopped moving (the camera's settle-in). While a Roll only pre-simulates it is left
+     * as it is: nothing moves yet, but the last Roll's settle-in may still be easing.
+     */
+    private void updatePulse() {
+        if (playing != null || (queued != null && !underWay)) {
+            if (!pulsing) {
+                pulsing = true;
+                pulses.start();
+            }
+        } else if (!underWay && queued == null && !tray.moving()) {
+            if (pulsing) {
+                pulsing = false;
+                pulses.stop();
+            }
         }
     }
 

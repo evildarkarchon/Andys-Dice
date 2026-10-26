@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.SplittableRandom;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -236,6 +238,22 @@ abstract class HeadlessUiTest {
      */
     protected final RollController controller() {
         return session.controller();
+    }
+
+    /**
+     * Returns the Queued Roll as the Player sees it: the expression on the "next: …" chip at the end of the toolbar.
+     * Call it from the test thread.
+     *
+     * @return the Queued Roll's expression, stripped as the chip shows it, or empty while the chip is hidden
+     * @throws Exception if the JavaFX thread failed or timed out
+     */
+    protected final Optional<String> queuedRoll() throws Exception {
+        return fromFx(() -> {
+            Label chip = session.entry().nextChip();
+            return chip.isVisible()
+                    ? Optional.of(chip.getText().substring(RollEntry.NEXT_PREFIX.length()))
+                    : Optional.<String>empty();
+        });
     }
 
     /**
