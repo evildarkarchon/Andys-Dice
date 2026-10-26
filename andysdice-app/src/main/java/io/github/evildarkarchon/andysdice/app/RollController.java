@@ -116,10 +116,11 @@ final class RollController {
     }
 
     /**
-     * The chain now playing, with when it started on the clock, and the request it was rolled from: the expression
-     * it reveals at rest and the name of the Saved Roll it was rolled from, if any (#56).
+     * The Roll whose Dice are moving: the chain now playing, when it started on the clock, and the request it was
+     * rolled from (the expression it reveals at rest and the name of the Saved Roll it came from, if any, #56). There
+     * is none while a Roll pre-simulates: that Roll is under way, but nothing of it is on the Tray yet.
      */
-    private record InPlay(RollRequest request, ChainPlayback chain, double start) {}
+    private record RollInMotion(RollRequest request, ChainPlayback chain, double start) {}
 
     private final PlaybackClock clock;
     private final Pulses pulses;
@@ -139,7 +140,8 @@ final class RollController {
     private RollStatus status = new RollStatus.Ready();
     /** The snapshot published last, or the first one, made with the controller. */
     private RollState state;
-    private InPlay playing;
+    /** The Roll whose chain is playing, or {@code null}. */
+    private RollInMotion inMotion;
     /** The Queued Roll, or {@code null}. */
     private RollRequest queued;
     /** When on the clock the Queued Roll starts; NaN until the Roll ahead of it has ended. */
@@ -334,7 +336,7 @@ final class RollController {
             return;
         }
         abandoned = true;
-        playing = null;
+        inMotion = null;
         // The Roll is lost, so a Tray picked while it was under way is drawn now: the pick is never stranded.
         showWaitingLook();
         if (queued != null) {
@@ -371,7 +373,7 @@ final class RollController {
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
                 double start = clock.time();
-                playing = new InPlay(request, chain, start);
+                inMotion = new RollInMotion(request, chain, start);
                 // Now something moves, the clock must run.
                 updatePulse();
                 // Published once the Tray has the chain, with the clock time of its first Release, which the dice
@@ -406,7 +408,7 @@ final class RollController {
      * if the advance changed nothing else but {@code settled} (the Tray stopped moving: the camera has settled in).
      */
     private void advanced() {
-        InPlay now = playing;
+        RollInMotion now = inMotion;
         if (now != null) {
             double elapsed = clock.time() - now.start();
             tray.showTime(elapsed);
@@ -420,8 +422,8 @@ final class RollController {
     }
 
     /** The last Throw is at rest: show the Roll Result, and start a Queued Roll's beat. */
-    private void reveal(InPlay now) {
-        playing = null;
+    private void reveal(RollInMotion now) {
+        inMotion = null;
         ended();
         // The Dice are at rest, so a Tray picked while they moved is drawn now, with the Roll Result.
         showWaitingLook();
@@ -465,7 +467,7 @@ final class RollController {
      * as it is: nothing moves yet, but the last Roll's settle-in may still be easing.
      */
     private void updatePulse() {
-        if (playing != null || (queued != null && !underWay())) {
+        if (inMotion != null || (queued != null && !underWay())) {
             if (!pulsing) {
                 pulsing = true;
                 pulses.start();
