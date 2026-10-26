@@ -52,6 +52,8 @@ final class GlTray implements TraySurface, AutoCloseable {
     private ChainPlayback showing;
     // Null until panTo: then told each camera the Tray is drawn from, for panning (#59).
     private Consumer<? super CameraPanning> panning;
+    // Set by attachGestures: a second attach would stack a second set of handlers on the view.
+    private boolean gesturesAttached;
 
     /** The Throw of a chain in motion at a frame, as the slow-GPU watch tells Throws apart (by chain identity). */
     private record ThrowInMotion(ChainPlayback chain, int throwIndex) {}
@@ -161,8 +163,14 @@ final class GlTray implements TraySurface, AutoCloseable {
      * Roll session that drives it, so it can't ask the session itself.
      *
      * @param resting tells whether no Roll is under way, when a double-click may reset the camera
+     * @throws IllegalStateException if the gestures were already attached; they are attached once
      */
     void attachGestures(BooleanSupplier resting) {
+        Objects.requireNonNull(resting, "resting");
+        if (gesturesAttached) {
+            throw new IllegalStateException("the GL Tray already has its camera gestures");
+        }
+        gesturesAttached = true;
         CameraGestures.attach(view, camera, resting, this::showCamera);
     }
 
