@@ -1,8 +1,10 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
 import io.github.evildarkarchon.andysdice.core.geometry.NumberingRotation;
 import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
 import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
+import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.Pickup;
 import io.github.evildarkarchon.andysdice.render.ThrowPlayback;
@@ -33,6 +35,10 @@ import java.util.Objects;
  * the Throws and the camera. Reduced motion changes how the pickup looks, not when anything happens, so it is
  * asked for with each read and a change applies at once.
  *
+ * <p>The chain also carries the context the Roll was thrown in (#67): the {@link #tray() Tray} it was planned in,
+ * and the {@link #thrownKinds(int) Die Kinds} of each Throw's thrown Dice. What follows the Roll (the dice sound)
+ * reads them here rather than asking for the chosen Tray, which the Look tab may change while the Roll is under way.
+ *
  * <p>Immutable and safe on any thread.
  */
 final class ChainPlayback {
@@ -42,6 +48,10 @@ final class ChainPlayback {
             + Pickup.SECONDS;
 
     private final RollPlan.Planned plan;
+    /** The Tray the Roll was planned in: every Throw of the chain was simulated in its shape and materials. */
+    private final Tray tray;
+    /** Each Throw's thrown Dice's Die Kinds, in its thrown order (the order its Recording's Dice are in). */
+    private final List<List<DieKind>> thrownKinds;
     private final List<ThrowPlayback> throwPlaybacks;
     /** When each Throw's Release is, on the chain's timeline. */
     private final double[] starts;
@@ -56,10 +66,13 @@ final class ChainPlayback {
      * Lays out a planned Roll's chain.
      *
      * @param plan the planned Roll
+     * @param tray the Tray the Roll was planned in, whose shape and materials its Throws were simulated in
      */
-    ChainPlayback(RollPlan.Planned plan) {
+    ChainPlayback(RollPlan.Planned plan, Tray tray) {
         this.plan = Objects.requireNonNull(plan, "plan");
+        this.tray = Objects.requireNonNull(tray, "tray");
         List<PlannedThrow> chain = plan.throwChain();
+        List<List<DieKind>> kinds = new ArrayList<>(chain.size());
         List<ThrowPlayback> playbacks = new ArrayList<>(chain.size());
         List<List<DiceScene.Die>> lying = new ArrayList<>(chain.size());
         List<List<DiceScene.Die>> released = new ArrayList<>(chain.size());
@@ -71,8 +84,10 @@ final class ChainPlayback {
         cues.add(new CameraScript.Cue(0, new CameraScript.Shot.WholeTray(), TrayCamera.EASE_OUT_SECONDS));
         for (int k = 0; k < chain.size(); k++) {
             PlannedThrow planned = chain.get(k);
-            ThrowPlayback playback = new ThrowPlayback(planned.recording(),
-                    planned.thrown().stream().map(die -> plan.dice().get(die).kind()).toList(),
+            // A Recording's Dice are the Throw's thrown Dice, in order; Frozen Dice are bodies, not recorded Dice.
+            List<DieKind> thrown = planned.thrown().stream().map(die -> plan.dice().get(die).kind()).toList();
+            kinds.add(thrown);
+            ThrowPlayback playback = new ThrowPlayback(planned.recording(), thrown,
                     planned.rotations().stream().map(NumberingRotation::rotation).toList());
             playbacks.add(playback);
             released.add(List.copyOf(playback.diceAt(0)));
@@ -96,6 +111,7 @@ final class ChainPlayback {
                 start += planned.recording().restTime() + GAP_SECONDS;
             }
         }
+        thrownKinds = List.copyOf(kinds);
         throwPlaybacks = List.copyOf(playbacks);
         lyingAtStart = List.copyOf(lying);
         releases = List.copyOf(released);
@@ -120,6 +136,27 @@ final class ChainPlayback {
      */
     RollPlan.Planned plan() {
         return plan;
+    }
+
+    /**
+     * Returns the Tray the Roll was planned in: the Tray its Throws were simulated in, and so the one it is heard
+     * in, whatever Tray has been picked since.
+     *
+     * @return the Roll's Tray
+     */
+    Tray tray() {
+        return tray;
+    }
+
+    /**
+     * Returns the Die Kinds of a Throw's thrown Dice: one per Die its Recording holds, in the Recording's order.
+     * Frozen Dice aren't thrown, so they aren't among them.
+     *
+     * @param throwIndex an index into the plan's Throw chain
+     * @return the thrown Dice's kinds, unmodifiable
+     */
+    List<DieKind> thrownKinds(int throwIndex) {
+        return thrownKinds.get(Objects.checkIndex(throwIndex, thrownKinds.size()));
     }
 
     /**

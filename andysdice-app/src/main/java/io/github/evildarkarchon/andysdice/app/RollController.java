@@ -281,19 +281,23 @@ final class RollController {
 
         underWay = true;
         setStatus(new RollStatus.Rolling(expression));
+        // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
+        // chain carries this one (#67), so the Roll is heard in the Tray it was simulated in.
+        Tray plannedIn = throwInto;
         CompletableFuture<RollPlan> planned;
         try {
             // Choose and pre-simulate the whole chain on the worker before anything plays (ADR-0001, ADR-0014).
             // An Escaped Die's Attempt is never kept (ADR-0003), so only Attempts inside the walls ever play.
-            TrayGeometry geometry = throwInto.geometry();
-            TrayMaterials materials = throwInto.materials();
+            TrayGeometry geometry = plannedIn.geometry();
+            TrayMaterials materials = plannedIn.materials();
             planned = physics.submit(simulator -> new ThrowPlanner(simulator, geometry, materials)
                     .plan(expression, faceValues, releases));
         } catch (RuntimeException e) {
             // A worker that has been closed rejects the job outright rather than through the future.
             planned = CompletableFuture.failedFuture(e);
         }
-        planned.whenCompleteAsync((plan, error) -> arrived(expression, savedRollName, plan, error), fxThread);
+        planned.whenCompleteAsync((plan, error) -> arrived(expression, savedRollName, plannedIn, plan, error),
+                fxThread);
     }
 
     /**
@@ -316,8 +320,12 @@ final class RollController {
         updatePulse();
     }
 
-    /** The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was. */
-    private void arrived(RollExpression expression, Optional<String> savedRollName, RollPlan plan,
+    /**
+     * The pre-simulation is done: play its chain, or fail the Roll leaving the Tray as it was.
+     *
+     * @param plannedIn the Tray the Roll was planned in, which its chain carries
+     */
+    private void arrived(RollExpression expression, Optional<String> savedRollName, Tray plannedIn, RollPlan plan,
             Throwable error) {
         if (abandoned) {
             // The session failed while this Roll pre-simulated: it was never shown, so it is simply lost.
@@ -329,7 +337,7 @@ final class RollController {
         }
         switch (plan) {
             case RollPlan.Planned planned -> {
-                ChainPlayback chain = new ChainPlayback(planned);
+                ChainPlayback chain = new ChainPlayback(planned, plannedIn);
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
                 playing = new Playing(expression, savedRollName, chain, clock.time());
