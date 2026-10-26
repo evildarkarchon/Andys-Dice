@@ -974,6 +974,24 @@ class RollControllerTest {
         assertThat(pulses.running).isFalse();
     }
 
+    // The Tray hears of every clock advance, once the controller has done that advance's work (#76).
+
+    @Test
+    void theTrayHearsOfEveryAdvanceAfterThatAdvancesDraw() {
+        RollController controller = controller(4);
+        // Nothing rolled yet: still told of each advance.
+        frames(2);
+        assertThat(tray.log).containsExactly("advanced", "advanced");
+        tray.log.clear();
+
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+
+        assertThat(tray.log).containsExactly("show", "showTime", "advanced", "showTime", "advanced", "showTime",
+                "advanced");
+    }
+
     // Abandon: the session has failed (spec §3.2 "Runtime failure"). A Roll it cuts off is a Lost Roll (ADR-0007).
 
     @Test
@@ -1310,6 +1328,11 @@ class RollControllerTest {
         final List<Double> times = new ArrayList<>();
         /** Every look it was shown, oldest first. */
         final List<Look> looks = new ArrayList<>();
+        /**
+         * What the Tray was told, in order: {@code show}, {@code showTime} and {@code advanced}. A test may add what
+         * else it hears (a published status, the pulse) to the same log, to see where the Tray's calls fall.
+         */
+        final List<String> log = new ArrayList<>();
         /** What {@link #moving()} reports: set it to stand in for the camera's settle-in. */
         boolean moving;
 
@@ -1318,11 +1341,18 @@ class RollControllerTest {
             chains.add(chain);
             times.clear();
             times.add(0.0);
+            log.add("show");
         }
 
         @Override
         public void showTime(double seconds) {
             times.add(seconds);
+            log.add("showTime");
+        }
+
+        @Override
+        public void advanced() {
+            log.add("advanced");
         }
 
         @Override
