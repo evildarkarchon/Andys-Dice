@@ -103,11 +103,11 @@ public final class AndysDice extends Application {
         persistence = new Persistence(stateFolder, notices::post);
         SettingsStore settings = new SettingsStore(persistence);
         // Spec §6: the Face Value, Release and sound variation generators are seeded independently from
-        // SecureRandom.
+        // SecureRandom. Kept here: sound variation goes to the sound output below.
+        Generators generators = Generators.fromSecureRandom();
         FailureGuard guard = failures;
         try {
-            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), Generators.fromSecureRandom(),
-                    guard, notices);
+            skeleton = Skeleton.start(clock, Pulses.ofPulse(new PulsePacer(clock)), generators, guard, notices);
         } catch (JoltStartupException | GlUnavailableException e) {
             // The message names what is missing; for GL, the 3.3 core requirement and the renderer, vendor and
             // version the driver reported (ADR-0002). The log has it, and so does the failure panel.
@@ -121,28 +121,34 @@ public final class AndysDice extends Application {
             }
             return;
         }
-        LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + skeleton.driver() + "; shaders compiled");
+        RollSession session = skeleton.session();
+        GlTray glTray = skeleton.glTray();
+        LOG.log(Level.INFO, "Jolt Physics started; OpenGL context: " + glTray.driver() + "; shaders compiled");
         // The Settings tab's Quality Preset (#60): the saved one (Medium at first run) goes to the renderer now, and
         // a new choice is saved and applied at once.
-        QualityPresetChooser.attach(skeleton.pane(), settings, skeleton::setQualityPreset);
+        QualityPresetChooser.attach(session.ui(), settings, glTray::setQualityPreset);
         // The Roll History (#55), loaded before the window shows; Rolls are dated by the wall clock in the system
         // time zone as it was at start-up.
-        HistoryTab history = HistoryTab.install(skeleton.session(), persistence, Clock.systemDefaultZone());
+        HistoryTab history = HistoryTab.install(session, persistence, Clock.systemDefaultZone());
         // The Saved Rolls (#56); History's menu gains Save as a Saved Roll….
-        SavedTab.install(skeleton.session(), persistence, history);
+        SavedTab.install(session, persistence, history);
         // The Player Files are read once, here (spec §3.3, §3.4): each one skipped is a Notice behind the bell, and
         // the Tray is drawn in the stored look before the window opens.
-        skeleton.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);
+        session.attachLook(LookCatalogue.load(dataFolder, notices::post), settings);
 
         // Sound (#59): optional, so it never fails the start. The audio thread loads the samples and tries the device
         // once; no device means silence and one Notice (the smoke test, on CI, runs that way and logs it).
-        sound = Clatter.output(clock, skeleton.generators().soundVariation(), LineSink::open, notices);
-        skeleton.attachSound(sound);
-        SoundSettings.attach(skeleton.pane(), settings, sound);
+        sound = Clatter.output(clock, generators.soundVariation(), LineSink::open, notices);
+        // Side by side: every Throw's contacts go to the sound output as the chain starts to play, in the Tray's
+        // sound, panned by where each appears from the camera the GL Tray is drawn from. Each Roll is heard in the
+        // Tray its chain carries (#67), the one it was thrown into.
+        Clatter.attach(session.controller(), sound);
+        glTray.panTo(sound::setProjection);
+        SoundSettings.attach(session.ui(), settings, sound);
 
         // Layout C, titled as spec §3.2's first run, at the saved geometry (or the first run's): shown, with focus in
         // the box.
-        geometry = MainWindow.open(stage, skeleton.pane(), settings);
+        geometry = MainWindow.open(stage, session.ui(), settings);
         Duration launchToWindow = Duration.between(launched, Instant.now());
         LOG.log(Level.INFO, "Window shown " + launchToWindow.toMillis() + " ms after launch");
 
@@ -150,12 +156,12 @@ public final class AndysDice extends Application {
         // failure panel; one that came before the window was up is shown at once.
         guard.attach(failure -> {
             exitStatus = RUNTIME_FAILED;
-            FailureScreen.show(skeleton.pane(), failure, () -> quit(RUNTIME_FAILED));
+            FailureScreen.show(session.ui(), failure, () -> quit(RUNTIME_FAILED));
             // Then rolling ends, here where the failure is known to end the session, panel first as before: a
             // Queued Roll must not start behind the panel once its beat is up, nor may a Roll in motion (or still
             // pre-simulating) finish behind it: it was never shown, so it is a Lost Roll rather than revealed or
             // kept in the Roll History (ADR-0007). This holds whatever view the panel went into.
-            skeleton.controller().abandon();
+            session.controller().abandon();
             if (unattended) {
                 quit(RUNTIME_FAILED);
             }
