@@ -64,7 +64,7 @@ import org.joml.Vector3dc;
  *
  * <p>A translucent Dice Set (ticket #43, ADR-0009) is drawn after everything opaque, from a copy of the frame taken
  * at that point: each Die refracts what is behind it through its body and shows its far faces' Numerals, with a
- * volume march of {@link #setVolumeSteps} samples through the body. Translucent Dice don't see one another.
+ * volume march of the Quality Preset's samples through the body. Translucent Dice don't see one another.
  *
  * <p>A Die about to be picked up for a Reroll Throw carries a {@linkplain Die#glow() glow}, drawn as a warm,
  * rim-weighted highlight over its Dice Set (ticket #47, {@link Pickup}).
@@ -79,19 +79,21 @@ import org.joml.Vector3dc;
  * it sets the render scale and MSAA, the shadow map's size and taps, and the engraving's and the volume march's
  * sample counts in one message.
  *
- * <p>{@link #setDice}, {@link #setCamera}, {@link #setDiceSet}, {@link #setVolumeSteps}, {@link #setTray},
- * {@link #setLightRig} and {@link #setQualityPreset} may be called from any thread and take effect at the next frame;
- * everything else runs on the render thread, as a {@link FrameRenderer}.
+ * <p>The setters ({@link #setDice}, {@link #setCamera}, {@link #setDiceAndCamera}, {@link #setDiceSet},
+ * {@link #setTray}, {@link #setLightRig}, {@link #setLook}, {@link #setLookAndCamera} and {@link #setQualityPreset})
+ * may be called from any thread and take effect at the next frame; everything else runs on the render thread, as a
+ * {@link FrameRenderer}. Each setter hands over the whole state the next frame draws, and a frame reads it once
+ * (#80), so a frame draws each hand-over whole and never part of one: what one call sets together is drawn together.
  */
 public final class DiceScene implements FrameRenderer {
 
     /** The background, as the opaque ARGB a capture reads back: a dark felt green. */
     public static final int BACKGROUND_ARGB = 0xff12301c;
 
-    /** The samples a translucent Die's volume march takes until {@link #setVolumeSteps} says otherwise (ADR-0009). */
+    /** The samples a translucent Die's volume march takes in a new scene, at High (ADR-0009). */
     public static final int DEFAULT_VOLUME_STEPS = 8;
 
-    /** The most samples {@link #setVolumeSteps} accepts. */
+    /** The most samples a volume march may take. */
     public static final int MAX_VOLUME_STEPS = 64;
 
     /** Physics poses are in centimetres, the renderer's world in millimetres. */
@@ -178,20 +180,56 @@ public final class DiceScene implements FrameRenderer {
     private static final Camera DEFAULT_CAMERA = new Camera(
             new Vector3d(0, 5 + 400 * Math.sin(Math.toRadians(50)), -400 * Math.cos(Math.toRadians(50))),
             new Vector3d(0, 5, 0), 32);
-    /** The Dice and the camera a frame draws, published as one, so a frame never mixes two hand-overs. */
-    private record DiceView(List<Die> dice, Camera camera) {}
+    /**
+     * Everything a frame draws, handed over as one (#80): each setter replaces the whole state, and a frame reads it
+     * once, so a frame never mixes two hand-overs, such as a new Dice Set in the old Tray or a new preset with the
+     * old volume march. Package-private so the non-GL tests can read what was handed over.
+     *
+     * @param dice the Dice, drawn in this order
+     * @param camera where they are seen from
+     * @param diceSet the Dice Set every Die is drawn in
+     * @param tray the Tray the Dice lie in, or {@code null} for none: the gallery's stills and the Dice-only tests
+     *     draw no Tray
+     * @param lightRig the Light Rig the scene is lit by
+     * @param qualityPreset the Quality Preset every quality lever comes from but the volume march's
+     * @param volumeSteps the translucent volume march's samples: the preset's, unless a test set its own
+     * @param clearColour the colour the frame is cleared to, as opaque ARGB
+     */
+    record SceneState(List<Die> dice, Camera camera, DiceSet diceSet, Tray tray, LightRig lightRig,
+            QualityPreset qualityPreset, int volumeSteps, int clearColour) {
 
-    // One reference for both: draw() reads it once, so setDiceAndCamera's pair always reaches the same frame.
-    private final AtomicReference<DiceView> diceView = new AtomicReference<>(new DiceView(List.of(), DEFAULT_CAMERA));
-    private volatile DiceSet diceSet = DiceSetCatalogue.builtIn().fallback();
-    private volatile LightRig lightRig = LightRig.DEFAULT;
-    private volatile int volumeSteps = DEFAULT_VOLUME_STEPS;
-    // Full quality until told otherwise, as the scene drew before presets: the gallery's stills and the gl tests.
-    // The app hands it the Player's preset (Medium by default) before its first Roll.
-    private volatile QualityPreset qualityPreset = QualityPreset.HIGH;
-    private volatile int clearColour = BACKGROUND_ARGB;
-    // Null until a Tray is chosen: the gallery's stills and the Dice-only tests draw no Tray.
-    private volatile Tray tray;
+        /**
+         * A new scene's state: no Dice and no Tray, from the default camera, in the fallback Dice Set under Studio,
+         * at full quality. Full quality is how the scene drew before presets, which the gallery's stills and the gl
+         * tests rely on; the app hands it the Player's preset (Medium by default) before its first Roll.
+         */
+        static SceneState initial() {
+            return new SceneState(List.of(), DEFAULT_CAMERA, DiceSetCatalogue.builtIn().fallback(), null,
+                    LightRig.DEFAULT, QualityPreset.HIGH, QualityPreset.HIGH.volumeSteps(), BACKGROUND_ARGB);
+        }
+
+        SceneState withDiceAndCamera(List<Die> newDice, Camera newCamera) {
+            return new SceneState(newDice, newCamera, diceSet, tray, lightRig, qualityPreset, volumeSteps,
+                    clearColour);
+        }
+
+        SceneState withLook(DiceSet newDiceSet, Tray newTray, LightRig newLightRig) {
+            return new SceneState(dice, camera, newDiceSet, newTray, newLightRig, qualityPreset, volumeSteps,
+                    clearColour);
+        }
+
+        SceneState withQuality(QualityPreset newPreset, int newVolumeSteps) {
+            return new SceneState(dice, camera, diceSet, tray, lightRig, newPreset, newVolumeSteps, clearColour);
+        }
+
+        SceneState withClearColour(int newClearColour) {
+            return new SceneState(dice, camera, diceSet, tray, lightRig, qualityPreset, volumeSteps,
+                    newClearColour);
+        }
+    }
+
+    // The one reference every setter replaces and every frame reads once (render()).
+    private final AtomicReference<SceneState> state = new AtomicReference<>(SceneState.initial());
     private final TrayRenderer trayRenderer = new TrayRenderer();
 
     // Render thread only.
@@ -246,7 +284,7 @@ public final class DiceScene implements FrameRenderer {
      */
     public void setDice(List<Die> dice) {
         List<Die> copy = List.copyOf(dice);
-        diceView.updateAndGet(now -> new DiceView(copy, now.camera()));
+        state.updateAndGet(now -> now.withDiceAndCamera(copy, now.camera()));
     }
 
     /**
@@ -256,7 +294,7 @@ public final class DiceScene implements FrameRenderer {
      */
     public void setCamera(Camera camera) {
         Objects.requireNonNull(camera, "camera");
-        diceView.updateAndGet(now -> new DiceView(now.dice(), camera));
+        state.updateAndGet(now -> now.withDiceAndCamera(now.dice(), camera));
     }
 
     /**
@@ -268,7 +306,9 @@ public final class DiceScene implements FrameRenderer {
      * @param camera the camera they are seen from
      */
     public void setDiceAndCamera(List<Die> dice, Camera camera) {
-        diceView.set(new DiceView(List.copyOf(dice), Objects.requireNonNull(camera, "camera")));
+        List<Die> copy = List.copyOf(dice);
+        Objects.requireNonNull(camera, "camera");
+        state.updateAndGet(now -> now.withDiceAndCamera(copy, camera));
     }
 
     /**
@@ -282,7 +322,8 @@ public final class DiceScene implements FrameRenderer {
      * @param tray the Tray to draw
      */
     public void setTray(Tray tray) {
-        this.tray = Objects.requireNonNull(tray, "tray");
+        Objects.requireNonNull(tray, "tray");
+        state.updateAndGet(now -> now.withLook(now.diceSet(), tray, now.lightRig()));
     }
 
     /**
@@ -292,7 +333,8 @@ public final class DiceScene implements FrameRenderer {
      * @param diceSet the Dice Set
      */
     public void setDiceSet(DiceSet diceSet) {
-        this.diceSet = Objects.requireNonNull(diceSet, "diceSet");
+        Objects.requireNonNull(diceSet, "diceSet");
+        state.updateAndGet(now -> now.withLook(diceSet, now.tray(), now.lightRig()));
     }
 
     /**
@@ -303,47 +345,58 @@ public final class DiceScene implements FrameRenderer {
      * @param lightRig the Light Rig
      */
     public void setLightRig(LightRig lightRig) {
-        this.lightRig = Objects.requireNonNull(lightRig, "lightRig");
+        Objects.requireNonNull(lightRig, "lightRig");
+        state.updateAndGet(now -> now.withLook(now.diceSet(), now.tray(), lightRig));
     }
 
     /**
-     * Sets the whole look the scene is drawn in: the Dice Set, the Tray and the Light Rig, as the Look tab picks
-     * them (ADR-0010), with the same effect as {@link #setDiceSet}, {@link #setTray} and {@link #setLightRig} in
-     * turn. Takes effect at the next frame; any thread.
+     * Sets the whole Look the scene is drawn in: the Dice Set, the Tray and the Light Rig, as the Look tab picks
+     * them (ADR-0010). All three reach the same frame (#80): none is drawn with the parts of the Look before it.
+     * Takes effect at the next frame; any thread.
      *
-     * @param diceSet the Dice Set every Die is drawn in
-     * @param tray the Tray the Dice lie in
-     * @param lightRig the Light Rig the scene is lit by
-     * @throws NullPointerException if any part is {@code null}; then nothing is changed
+     * @param look the Dice Set every Die is drawn in, the Tray the Dice lie in and the Light Rig over both
      */
-    public void setLook(DiceSet diceSet, Tray tray, LightRig lightRig) {
-        Objects.requireNonNull(diceSet, "diceSet");
-        Objects.requireNonNull(tray, "tray");
-        Objects.requireNonNull(lightRig, "lightRig");
-        setDiceSet(diceSet);
-        setTray(tray);
-        setLightRig(lightRig);
+    public void setLook(Look look) {
+        Objects.requireNonNull(look, "look");
+        state.updateAndGet(now -> now.withLook(look.diceSet(), look.tray(), look.lightRig()));
+    }
+
+    /**
+     * Sets the whole Look and moves the camera at once: the next frame draws all of it, and no frame draws the new
+     * Tray from a camera framed for the old one, as two separate calls could allow (#80). A Look picked at rest is
+     * handed over this way, with the camera reframed for its Tray's walls. Any thread.
+     *
+     * @param look the Dice Set, the Tray and the Light Rig
+     * @param camera the camera the scene is seen from
+     */
+    public void setLookAndCamera(Look look, Camera camera) {
+        Objects.requireNonNull(look, "look");
+        Objects.requireNonNull(camera, "camera");
+        state.updateAndGet(now -> now.withLook(look.diceSet(), look.tray(), look.lightRig())
+                .withDiceAndCamera(now.dice(), camera));
     }
 
     /**
      * Sets how many samples a translucent Die's volume march takes through its body, where its clouds scatter and
-     * its glitter glints: fewer is cheaper on the GPU and coarser to look at. The lever a Quality Preset sets
-     * (ADR-0014); opaque Dice Sets never march. Takes effect at the next frame; any thread.
+     * its glitter glints: fewer is cheaper on the GPU and coarser to look at. For tests: it is the one lever a
+     * Quality Preset sets (ADR-0014) that a test needs to move by itself, and the app only ever sets it through
+     * {@link #setQualityPreset}, which replaces this count. Opaque Dice Sets never march. Takes effect at the next
+     * frame; any thread.
      *
      * @param steps the samples per pixel, 1 to {@value #MAX_VOLUME_STEPS}; {@value #DEFAULT_VOLUME_STEPS} until set
      * @throws IllegalArgumentException if the count is out of range
      */
-    public void setVolumeSteps(int steps) {
+    void setVolumeSteps(int steps) {
         if (steps < 1 || steps > MAX_VOLUME_STEPS) {
             throw new IllegalArgumentException("volume steps out of range 1.." + MAX_VOLUME_STEPS + ": " + steps);
         }
-        this.volumeSteps = steps;
+        state.updateAndGet(now -> now.withQuality(now.qualityPreset(), steps));
     }
 
     /**
      * Sets every quality lever at once to a Quality Preset's (ADR-0014): the render scale and MSAA samples the scene
      * is drawn with, the shadow map's size and PCSS tap count, the engraving's parallax sample counts and the
-     * translucent march's samples (this replaces any {@link #setVolumeSteps} count). The render-target cap below
+     * translucent march's samples (this replaces any count a test set by itself). The render-target cap below
      * High is not the scene's: whoever sizes the render target applies it ({@link QualityPreset#capsRenderTarget()}).
      * Takes effect at the next frame; any thread. Until this is called it is {@link QualityPreset#HIGH}, full
      * quality.
@@ -354,8 +407,9 @@ public final class DiceScene implements FrameRenderer {
      * @param preset the Quality Preset
      */
     public void setQualityPreset(QualityPreset preset) {
-        this.qualityPreset = Objects.requireNonNull(preset, "preset");
-        this.volumeSteps = preset.volumeSteps();
+        Objects.requireNonNull(preset, "preset");
+        // The preset and its march count in one hand-over: no frame draws one preset's levers with another's march.
+        state.updateAndGet(now -> now.withQuality(preset, preset.volumeSteps()));
     }
 
     /**
@@ -366,7 +420,17 @@ public final class DiceScene implements FrameRenderer {
      * @param argb the colour as opaque ARGB; {@link #BACKGROUND_ARGB} until set
      */
     void setClearColour(int argb) {
-        this.clearColour = argb;
+        state.updateAndGet(now -> now.withClearColour(argb));
+    }
+
+    /**
+     * Returns what has been handed over for the next frame to draw. For the non-GL tests, which check what each
+     * setter hands over without drawing it. Any thread.
+     *
+     * @return the scene's state now
+     */
+    SceneState state() {
+        return state.get();
     }
 
     /**
@@ -478,31 +542,33 @@ public final class DiceScene implements FrameRenderer {
 
     @Override
     public void render(int targetWidth, int targetHeight) {
-        QualityPreset quality = qualityPreset;
+        // Read once: everything this frame draws comes from the one hand-over (#80).
+        SceneState drawing = state.get();
+        QualityPreset quality = drawing.qualityPreset();
         // At the preset's render scale and MSAA: into the scene's own framebuffer, resolved and scaled up into the
         // render target at the end, or straight into the target at full scale without MSAA.
         frame.begin(targetWidth, targetHeight, quality);
         try {
-            draw(frame.width(), frame.height(), quality);
+            draw(frame.width(), frame.height(), drawing);
         } finally {
             frame.end();
         }
     }
 
-    /** Draws the frame into the bound framebuffer, whose size this is, under a Quality Preset's levers. */
-    private void draw(int width, int height, QualityPreset quality) {
-        int clear = clearColour;
+    /** Draws one state of the scene into the bound framebuffer, whose size this is. */
+    private void draw(int width, int height, SceneState drawing) {
+        int clear = drawing.clearColour();
         glClearColor(((clear >> 16) & 0xff) / 255f, ((clear >> 8) & 0xff) / 255f, (clear & 0xff) / 255f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        DiceView diceAndCamera = diceView.get();
-        List<Die> drawn = diceAndCamera.dice();
-        Tray shown = tray;
+        List<Die> drawn = drawing.dice();
+        Tray shown = drawing.tray();
         if (drawn.isEmpty() && shown == null) {
             return;
         }
-        Camera view = diceAndCamera.camera();
-        DiceSet set = diceSet;
-        LightRig rig = lightRig;
+        QualityPreset quality = drawing.qualityPreset();
+        Camera view = drawing.camera();
+        DiceSet set = drawing.diceSet();
+        LightRig rig = drawing.lightRig();
 
         // The key light's shadow map first, into its own framebuffer: every Die, and the Tray's walls.
         LightView lightView = LightView.of(rig, view);
@@ -522,7 +588,7 @@ public final class DiceScene implements FrameRenderer {
         // Before the depth test and culling go on, and before the Tray is drawn: a first use of a swirled Dice Set
         // bakes its volume here, with a full-screen triangle into a framebuffer of its own.
         diceSetUniforms.apply(set, swirls);
-        glUniform1i(volumeStepsUniform, volumeSteps);
+        glUniform1i(volumeStepsUniform, drawing.volumeSteps());
         glUniform2f(parallaxSamplesUniform, quality.parallaxMinSamples(), quality.parallaxMaxSamples());
         glUniform1i(parallaxShadowSamplesUniform, quality.parallaxShadowSamples());
         double distance = view.eye().distance(view.target());

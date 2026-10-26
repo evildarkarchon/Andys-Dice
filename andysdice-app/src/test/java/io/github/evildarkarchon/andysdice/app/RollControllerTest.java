@@ -24,6 +24,7 @@ import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.DiceScene;
 import io.github.evildarkarchon.andysdice.render.LightRig;
+import io.github.evildarkarchon.andysdice.render.Look;
 import io.github.evildarkarchon.andysdice.render.Pickup;
 import io.github.evildarkarchon.andysdice.render.camera.CameraScript;
 import io.github.evildarkarchon.andysdice.render.camera.TrayCamera;

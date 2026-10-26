@@ -36,6 +36,7 @@
 
     <!-- ============ 1 ============ -->
     <article id="c1" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 space-y-6">
+      <div class="rounded-md bg-emerald-100 border border-slate-200 px-4 py-2 text-sm text-emerald-800"><strong>Status, 26 Oct 2026: done.</strong> Spec #65 folded the Queued Roll and the pulse rule into the roll controller, which publishes one Roll state snapshot (merged in #74).</div>
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-slate-400 font-serif text-2xl">1</span>
         <h2 class="font-serif text-2xl">Deepen the Roll lifecycle into one module</h2>
@@ -104,6 +105,7 @@
 
     <!-- ============ 2 ============ -->
     <article id="c2" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 space-y-6">
+      <div class="rounded-md bg-emerald-100 border border-slate-200 px-4 py-2 text-sm text-emerald-800"><strong>Status, 26 Oct 2026: done.</strong> Spec #75 named the <code>GlTray</code> adapter and shrank the skeleton to the Roll session, the GL Tray and close (merged in #79). ADR-0011's wording was corrected.</div>
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-slate-400 font-serif text-2xl">2</span>
         <h2 class="font-serif text-2xl">Name the GL Tray adapter; dissolve Skeleton's accessor bag</h2>
@@ -175,6 +177,7 @@
 
     <!-- ============ 3 ============ -->
     <article id="c3" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 space-y-6">
+      <div class="rounded-md bg-emerald-100 border border-slate-200 px-4 py-2 text-sm text-emerald-800"><strong>Status, 26 Oct 2026: done.</strong> Ticket #67 put the Roll's Tray and each Throw's Die Kinds on <code>ChainPlayback</code>, and sound reads them from there. Ticket #71 added the mid-Roll Look rule: a Tray picked during a Roll shows once it rests. A Dice Set or Light Rig picked mid-Roll shows at once, by design (spec §3.2 "Look tab").</div>
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-slate-400 font-serif text-2xl">3</span>
         <h2 class="font-serif text-2xl">The Roll carries the Tray it was thrown into</h2>
@@ -230,6 +233,7 @@
 
     <!-- ============ 4 ============ -->
     <article id="c4" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 space-y-6">
+      <div class="rounded-md bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-900"><strong>Status, 26 Oct 2026: narrowed to #80.</strong> Since #79 the GL Tray is the scene's only app caller and already funnels <code>requestFrame</code> and panning, so the single <code>show(FrameState)</code> was dropped. #80 keeps the setters but makes every hand-over atomic through one internal snapshot, and moves <code>Look</code> into render. <em>Follow-up, not in #80:</em> <code>CameraPanning</code> still re-derives the renderer's projection and mm/cm.</div>
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-slate-400 font-serif text-2xl">4</span>
         <h2 class="font-serif text-2xl">One frame hand-over for DiceScene</h2>

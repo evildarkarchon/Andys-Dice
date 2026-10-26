@@ -93,18 +93,14 @@ public final class GpuBench {
      * One candidate for the most expensive scene: 20 Dice of a translucent Dice Set resting in a Tray, under a Light
      * Rig, from one of the camera's shots.
      *
-     * @param diceSet the Dice Set every Die is drawn in
-     * @param tray the Tray
-     * @param lightRig the Light Rig
+     * @param look the Dice Set every Die is drawn in, the Tray and the Light Rig
      * @param shot the camera's framing
      */
-    public record Scene(DiceSet diceSet, Tray tray, LightRig lightRig, Shot shot) {
+    public record Scene(Look look, Shot shot) {
 
         /** Checks that every part is there. */
         public Scene {
-            Objects.requireNonNull(diceSet, "diceSet");
-            Objects.requireNonNull(tray, "tray");
-            Objects.requireNonNull(lightRig, "lightRig");
+            Objects.requireNonNull(look, "look");
             Objects.requireNonNull(shot, "shot");
         }
 
@@ -114,7 +110,7 @@ public final class GpuBench {
          * @return the whole-Tray shot or the close-up on {@link #dice()}
          */
         public DiceScene.Camera camera() {
-            Framing framing = Framing.of(tray.geometry());
+            Framing framing = Framing.of(look.tray().geometry());
             return (shot == Shot.WHOLE_TRAY ? framing.wholeTray(ASPECT) : framing.resting(dice(), ASPECT)).camera();
         }
 
@@ -125,7 +121,8 @@ public final class GpuBench {
          *     resting}
          */
         public String describe() {
-            return diceSet.identity() + " / " + tray.identity() + " / " + lightRig.name().toLowerCase(Locale.ROOT)
+            return look.diceSet().identity() + " / " + look.tray().identity() + " / "
+                    + look.lightRig().name().toLowerCase(Locale.ROOT)
                     + " / " + shot.name().toLowerCase(Locale.ROOT).replace('_', '-');
         }
     }
@@ -264,7 +261,7 @@ public final class GpuBench {
             for (Tray tray : BuiltInTrays.all()) {
                 for (LightRig rig : LightRig.values()) {
                     for (Shot shot : Shot.values()) {
-                        scenes.add(new Scene(set, tray, rig, shot));
+                        scenes.add(new Scene(new Look(set, tray, rig), shot));
                     }
                 }
             }
@@ -357,8 +354,7 @@ public final class GpuBench {
     /** Draws one scene at one preset and times it: {@code warmUp} frames uncounted, then {@code frames} counted. */
     private static GpuTime measure(RenderThread renderer, DiceScene scene, Scene candidate, QualityPreset preset,
             int warmUp, int frames) {
-        scene.setLook(candidate.diceSet(), candidate.tray(), candidate.lightRig());
-        scene.setCamera(candidate.camera());
+        scene.setLookAndCamera(candidate.look(), candidate.camera());
         scene.setQualityPreset(preset);
         // Set before the first frame of the scene is drawn; the warm-up's times are dropped below, which also drops
         // any late result of a frame drawn before the change.

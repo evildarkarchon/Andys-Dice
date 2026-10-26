@@ -9,6 +9,7 @@ import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayMaterials;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
+import io.github.evildarkarchon.andysdice.render.Look;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;

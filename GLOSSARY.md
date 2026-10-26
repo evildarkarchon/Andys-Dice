@@ -18,7 +18,7 @@ _Avoid_: Die type, die size
 
 **Dice Set**:
 A matched visual style (material, colour, numeral ink) applied to the dice in a roll, modelled on the 7-piece D&D set: d4, d6, d8, d10, percentile d10, d12, d20. Some ship with the app, and a player can add their own.
-_Avoid_: Skin, theme, pack, material (the Dice Set is the whole look, not just the body)
+_Avoid_: Skin, theme, pack, material (the Dice Set is everything about how a Die is drawn, not just its body)
 
 **Numeral**:
 A number engraved into a die face and filled with ink. Most faces carry one, and a d4 face carries three, one per corner. It is what a die shows, as distinct from the Face Value it stands for.
@@ -41,6 +41,10 @@ _Avoid_: Tray size
 **Light Rig**:
 The lighting the Tray and Dice are shown under, chosen separately from the Tray.
 _Avoid_: Lighting preset, scene, theme
+
+**Look**:
+What the Dice and the Tray are drawn as: the Dice Set, the Tray and the Light Rig, each picked on its own in the Look tab.
+_Avoid_: Theme, skin, style
 
 **Player File**:
 A Dice Set or Tray the Player added as a file of their own, listed after the ones that ship with the app.

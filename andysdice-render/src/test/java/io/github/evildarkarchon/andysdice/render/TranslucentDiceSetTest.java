@@ -1,7 +1,6 @@
 package io.github.evildarkarchon.andysdice.render;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.lwjgl.opengl.GL11C.GL_NO_ERROR;
 import static org.lwjgl.opengl.GL11C.glGetError;
 
@@ -126,14 +125,6 @@ class TranslucentDiceSetTest {
         assertThat(changed(eight, one)).as("pixels changed by marching 1 step instead of 8")
                 .isGreaterThan(SIZE * SIZE / 50);
         assertThat(changed(eight, eightAgain)).as("the same count draws the same").isZero();
-    }
-
-    @Test
-    void theSampleCountIsBounded() {
-        assertThat(DiceScene.DEFAULT_VOLUME_STEPS).as("ADR-0009's 8 steps").isEqualTo(8);
-        assertThatThrownBy(() -> scene.setVolumeSteps(0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> scene.setVolumeSteps(DiceScene.MAX_VOLUME_STEPS + 1))
-                .isInstanceOf(IllegalArgumentException.class);
     }
 
     /** Draws one Die of a kind in a Dice Set over the default backdrop, filling most of the frame. */

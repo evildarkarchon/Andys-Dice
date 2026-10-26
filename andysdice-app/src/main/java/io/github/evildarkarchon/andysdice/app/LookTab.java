@@ -6,6 +6,7 @@ import io.github.evildarkarchon.andysdice.core.diceset.SrgbColour;
 import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.render.LightRig;
+import io.github.evildarkarchon.andysdice.render.Look;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;

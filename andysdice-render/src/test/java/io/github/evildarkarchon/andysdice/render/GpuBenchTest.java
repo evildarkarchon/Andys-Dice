@@ -39,10 +39,10 @@ class GpuBenchTest {
         assertThat(scenes).hasSize(4 * BuiltInTrays.all().size() * LightRig.values().length
                 * GpuBench.Shot.values().length);
         assertThat(scenes).doesNotHaveDuplicates();
-        assertThat(scenes).extracting(GpuBench.Scene::diceSet).allMatch(DiceSet::translucent)
+        assertThat(scenes).extracting(scene -> scene.look().diceSet()).allMatch(DiceSet::translucent)
                 .containsAll(translucent);
-        assertThat(scenes).extracting(GpuBench.Scene::tray).containsAll(BuiltInTrays.all());
-        assertThat(scenes).extracting(GpuBench.Scene::lightRig).contains(LightRig.values());
+        assertThat(scenes).extracting(scene -> scene.look().tray()).containsAll(BuiltInTrays.all());
+        assertThat(scenes).extracting(scene -> scene.look().lightRig()).contains(LightRig.values());
         assertThat(scenes).extracting(GpuBench.Scene::shot).contains(GpuBench.Shot.values());
     }
 
