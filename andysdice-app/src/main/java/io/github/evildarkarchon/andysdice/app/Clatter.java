@@ -1,10 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
-import io.github.evildarkarchon.andysdice.core.planner.PlannedThrow;
-import io.github.evildarkarchon.andysdice.core.planner.RollPlan;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
-import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import io.github.evildarkarchon.andysdice.sound.AudioSink;
 import io.github.evildarkarchon.andysdice.sound.ClockFollower;
 import io.github.evildarkarchon.andysdice.sound.ImpactObserver;
@@ -20,12 +16,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import java.util.random.RandomGenerator;
 
 /**
  * Dice clatter in the app (#59, spec §3.5, ADR-0012): the sound module's {@link SoundOutput} fed with every Throw of
- * each Roll as it starts to play, at its place on the playback clock, sounding like the chosen Tray. Only contacts
+ * each Roll as it starts to play, at its place on the playback clock, sounding like the Tray the Roll was thrown
+ * into. Only contacts
  * make sound; the Release, the reroll pickup and the UI give the output nothing to play.
  *
  * <p>No audio device means silence and one Notice for the run, however often the device is tried again.
@@ -75,6 +71,23 @@ final class Clatter {
      */
     static SoundOutput output(PlaybackClock clock, RandomGenerator soundVariation, AudioSink.Opener opener,
             Notices notices, LongSupplier nanoTime) {
+        return output(clock, soundVariation, opener, notices, nanoTime, ImpactObserver.NONE);
+    }
+
+    /**
+     * As {@link #output(PlaybackClock, RandomGenerator, AudioSink.Opener, Notices, LongSupplier)}, telling an
+     * observer what the mixer does with each contact: tests hear which Tray's sound each impact was played in.
+     *
+     * @param clock the playback clock
+     * @param soundVariation the sound generator
+     * @param opener opens the default device
+     * @param notices where the one "No audio device" Notice goes
+     * @param nanoTime the real-time source, in nanoseconds, that both the clock's follower and the audio thread read
+     * @param impacts told of every impact started or dropped, on the audio thread
+     * @return the running output
+     */
+    static SoundOutput output(PlaybackClock clock, RandomGenerator soundVariation, AudioSink.Opener opener,
+            Notices notices, LongSupplier nanoTime, ImpactObserver impacts) {
         Objects.requireNonNull(notices, "notices");
         AtomicBoolean noticed = new AtomicBoolean();
         ClockFollower follower = ClockFollower.follow(clock, nanoTime);
@@ -85,39 +98,35 @@ final class Clatter {
             }
         };
         return SoundOutput.start(SampleBank::builtIn, soundVariation, follower, opener, unavailable, nanoTime,
-                Duration.ZERO, MixerTunables.DEFAULTS, ImpactObserver.NONE);
+                Duration.ZERO, MixerTunables.DEFAULTS, Objects.requireNonNull(impacts, "impacts"));
     }
 
     /**
      * Feeds a Roll session's Throws to the sound output: each chain as it starts to play, every Throw at the clock
-     * time its Release plays, in the chosen Tray's sound.
+     * time its Release plays, in the sound of the Tray the Roll was thrown into (#67), whatever Tray has been
+     * picked since.
      *
      * @param session the Roll session
      * @param output the sound output
-     * @param tray the Tray the Rolls are thrown into, asked at each Roll
      */
-    static void attach(RollSession session, SoundOutput output, Supplier<Tray> tray) {
+    static void attach(RollSession session, SoundOutput output) {
         Objects.requireNonNull(output, "output");
-        Objects.requireNonNull(tray, "tray");
-        session.setOnChainShown((chain, start) -> output.play(throwsOf(chain, start, TraySounds.of(tray.get()))));
+        session.setOnChainShown((chain, start) -> output.play(throwsOf(chain, start)));
     }
 
     /**
-     * Places every Throw of a chain on the playback clock for the mixer.
+     * Places every Throw of a chain on the playback clock for the mixer, in the sound of the chain's Tray.
      *
      * @param chain the chain of Throws
      * @param start the clock's time at the chain's first Release
-     * @param sounds what the Tray's floor and walls sound like
      * @return one Throw to hear per planned Throw, in order, each with its thrown Dice's kinds
      */
-    static List<SoundThrow> throwsOf(ChainPlayback chain, double start, TraySounds sounds) {
-        RollPlan.Planned plan = chain.plan();
+    static List<SoundThrow> throwsOf(ChainPlayback chain, double start) {
+        TraySounds sounds = TraySounds.of(chain.tray());
         List<SoundThrow> throwsOf = new ArrayList<>();
-        for (int k = 0; k < plan.throwChain().size(); k++) {
-            PlannedThrow planned = plan.throwChain().get(k);
-            // A Recording's Dice are the Throw's thrown Dice, in order; Frozen Dice are bodies, not recorded Dice.
-            List<DieKind> kinds = planned.thrown().stream().map(i -> plan.dice().get(i).kind()).toList();
-            throwsOf.add(new SoundThrow(planned.recording(), kinds, start + chain.throwStart(k), sounds));
+        for (int k = 0; k < chain.throwCount(); k++) {
+            throwsOf.add(new SoundThrow(chain.plan().throwChain().get(k).recording(), chain.thrownKinds(k),
+                    start + chain.throwStart(k), sounds));
         }
         return throwsOf;
     }

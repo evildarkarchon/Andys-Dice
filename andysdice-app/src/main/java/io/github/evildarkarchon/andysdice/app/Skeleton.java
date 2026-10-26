@@ -371,8 +371,8 @@ final class Skeleton implements AutoCloseable {
      */
     void attachSound(SoundOutput output) {
         sound = Objects.requireNonNull(output, "output");
-        // The Tray each Roll is thrown into, as the Look tab (#57) has chosen it by then.
-        Clatter.attach(session, output, () -> session.controller().tray());
+        // Each Roll is heard in the Tray its chain carries (#67), the one it was thrown into.
+        Clatter.attach(session, output);
         panSound();
     }
 
