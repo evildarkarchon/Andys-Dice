@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Objects;
@@ -169,10 +170,12 @@ final class SavedTab {
     void roll(int index) {
         SavedRoll roll = rolls.rolls().get(index);
         copy(index);
-        if (!roll.rolls()) {
+        Optional<RollExpression> expression = roll.parsed();
+        if (expression.isEmpty()) {
             return;
         }
-        session.roll(roll.expression(), roll.name());
+        // Recorded with the Saved Roll's name (#56): the result strip shows it and the Roll History keeps it.
+        session.controller().roll(expression.get(), Optional.of(roll.name()));
         ui.focusBox();
         ui.expressionBox().selectAll();
     }

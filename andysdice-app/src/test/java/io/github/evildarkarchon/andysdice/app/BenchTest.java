@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
@@ -10,14 +11,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
  * The dev-only {@code --bench}'s verdict (ADR-0014, ticket #61), without GL or Jolt: the two release-blocking budgets
- * (the GPU time and Enter to first motion), what it prints against them, and the exit status a missed one gives.
+ * (the GPU time and Enter to first motion), what it prints against them, and the exit status a missed one gives;
+ * and how it waits, between Rolls, for the Roll's state snapshot to say the app has settled (#73).
  */
 class BenchTest {
 
@@ -78,6 +83,87 @@ class BenchTest {
         assertThat(printed).contains("cold 300 ms", "slowest 200 ms");
         assertThat(printed).contains("Medium 0.450 ms", "(budget 0.50 ms: met)");
         assertThat(printed).contains("Bench: MISSED");
+    }
+
+    @Test
+    void itWaitsForASnapshotSayingTheAppHasSettledBeforeTheNextRoll() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        // Settled already: nothing to wait for.
+        assertThat(settling.next()).isDone();
+
+        settling.accept(snapshot(new RollStatus.PreSimulating(valid(Bench.EXPRESSION)), false));
+        CompletableFuture<Void> settled = settling.next();
+        assertThat(settled).isNotDone();
+        // At rest, but the camera still settling in: not yet.
+        settling.accept(snapshot(new RollStatus.Ready(), false));
+        assertThat(settled).isNotDone();
+
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        assertThat(settled).isCompleted();
+    }
+
+    @Test
+    void eachWaitIsForTheNextSettleNotOneThatCameBeforeIt() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        settling.accept(snapshot(new RollStatus.PreSimulating(valid(Bench.EXPRESSION)), false));
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        settling.accept(snapshot(new RollStatus.PreSimulating(valid(Bench.EXPRESSION)), false));
+
+        CompletableFuture<Void> settled = settling.next();
+        assertThat(settled).isNotDone();
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        assertThat(settled).isCompleted();
+        assertThat(settling.settled()).isTrue();
+    }
+
+    @Test
+    void aSnapshotThatIsNotSettledDuringTheQuietWindowStartsTheWindowOver() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        List<CompletableFuture<Void>> windows = new ArrayList<>();
+        CompletableFuture<Void> idle = settling.idle(() -> {
+            CompletableFuture<Void> window = new CompletableFuture<>();
+            windows.add(window);
+            return window;
+        });
+        assertThat(windows).hasSize(1);
+
+        // The camera stirs and settles again inside the window: settled at its end, but not all the way through.
+        settling.accept(snapshot(new RollStatus.Ready(), false));
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        windows.getFirst().complete(null);
+        assertThat(idle).isNotDone();
+        assertThat(windows).hasSize(2);
+
+        // A window the app stays settled through ends the wait.
+        windows.get(1).complete(null);
+        assertThat(idle).isCompleted();
+    }
+
+    @Test
+    void aQuietWindowThatEndsUnsettledWaitsForTheNextSettleThenAWholeWindow() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        List<CompletableFuture<Void>> windows = new ArrayList<>();
+        CompletableFuture<Void> idle = settling.idle(() -> {
+            CompletableFuture<Void> window = new CompletableFuture<>();
+            windows.add(window);
+            return window;
+        });
+
+        settling.accept(snapshot(new RollStatus.Ready(), false));
+        windows.getFirst().complete(null);
+        // Not settled: no new window until it is.
+        assertThat(windows).hasSize(1);
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        assertThat(windows).hasSize(2);
+        assertThat(idle).isNotDone();
+
+        windows.get(1).complete(null);
+        assertThat(idle).isCompleted();
+    }
+
+    /** A Roll state with no Queued Roll. */
+    private static RollState snapshot(RollStatus status, boolean settled) {
+        return new RollState(status, Optional.empty(), settled);
     }
 
     private static Duration ms(long millis) {

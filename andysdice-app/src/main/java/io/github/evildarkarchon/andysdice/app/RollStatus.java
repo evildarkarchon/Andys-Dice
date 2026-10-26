@@ -7,8 +7,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Where the current Roll stands, as the result strip shows it (spec §3.2): nothing rolled yet, rolling, at rest
- * with its Roll Result, refused before anything moved, or failed.
+ * Where the current Roll stands, as the result strip shows it (spec §3.2): nothing rolled yet, pre-simulating,
+ * playing, at rest with its Roll Result, failed, or lost when a runtime failure ended the session under it. The strip
+ * reads "Rolling…" both while a Roll pre-simulates and while it plays, and nothing for a Lost Roll. A Roll Expression
+ * that doesn't parse never gets this far: entry in the box shows its error and rolls nothing.
  */
 sealed interface RollStatus {
 
@@ -23,21 +25,57 @@ sealed interface RollStatus {
         }
     }
 
+    /** What the result strip shows while a Roll is under way, pre-simulating or playing alike. */
+    String ROLLING = "Rolling…";
+
     /**
-     * A Roll is being pre-simulated or played back; its Dice are still moving.
+     * A Roll under way: from its start until it rests, fails or is lost, which is while it pre-simulates or plays.
+     * This is the one place that says which statuses those are; camera gestures are blocked, a new Roll queues and
+     * an abandoned Roll is lost exactly while the status is one.
+     */
+    sealed interface UnderWay extends RollStatus permits PreSimulating, Playing {
+
+        /** @return what is being rolled */
+        RollExpression expression();
+    }
+
+    /**
+     * A Roll is being pre-simulated on the physics worker: its whole chain of Throws is planned before anything
+     * moves, so the Tray still holds the previous Roll's Dice.
      *
      * @param expression what is being rolled
      */
-    record Rolling(RollExpression expression) implements RollStatus {
+    record PreSimulating(RollExpression expression) implements UnderWay {
 
         /** Checks the expression is present. */
-        public Rolling {
+        public PreSimulating {
             Objects.requireNonNull(expression, "expression");
         }
 
         @Override
         public String text() {
-            return "Rolling…";
+            return ROLLING;
+        }
+    }
+
+    /**
+     * A Roll's chain of Throws is playing back on the Tray; its Dice are moving. The dice sound starts from this.
+     *
+     * @param expression what is being rolled
+     * @param chain the pre-simulated chain of Throws now playing
+     * @param start the playback clock's time at the chain's first Release
+     */
+    record Playing(RollExpression expression, ChainPlayback chain, double start) implements UnderWay {
+
+        /** Checks the parts are present. */
+        public Playing {
+            Objects.requireNonNull(expression, "expression");
+            Objects.requireNonNull(chain, "chain");
+        }
+
+        @Override
+        public String text() {
+            return ROLLING;
         }
     }
 
@@ -70,26 +108,6 @@ sealed interface RollStatus {
         @Override
         public String text() {
             return expression.canonical() + " = " + result.total();
-        }
-    }
-
-    /**
-     * The input wasn't rolled at all: nothing moved and the Tray keeps its Dice.
-     *
-     * @param input what was typed
-     * @param message why it wasn't rolled
-     */
-    record Refused(String input, String message) implements RollStatus {
-
-        /** Checks both parts are present. */
-        public Refused {
-            Objects.requireNonNull(input, "input");
-            Objects.requireNonNull(message, "message");
-        }
-
-        @Override
-        public String text() {
-            return message;
         }
     }
 
@@ -136,6 +154,27 @@ sealed interface RollStatus {
         @Override
         public String text() {
             return message;
+        }
+    }
+
+    /**
+     * A Lost Roll: a runtime failure ended the session (the controller was {@linkplain RollController#abandon
+     * abandoned}) while this Roll pre-simulated or played, so it stopped where it was and its Roll Result was never
+     * revealed. It never joins the Roll History (ADR-0007). It is terminal: nothing rolls after it.
+     *
+     * @param expression what was being rolled
+     */
+    record Lost(RollExpression expression) implements RollStatus {
+
+        /** Checks the expression is present. */
+        public Lost {
+            Objects.requireNonNull(expression, "expression");
+        }
+
+        /** Nothing: the failure panel says what happened, and nothing is still coming. */
+        @Override
+        public String text() {
+            return "";
         }
     }
 }

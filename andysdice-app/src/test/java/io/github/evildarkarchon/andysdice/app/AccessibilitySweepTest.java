@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.sound.SinkException;
@@ -156,11 +157,11 @@ class AccessibilitySweepTest extends HeadlessUiTest {
             pulse(stage.getScene());
             for (Node node : fromFx(() -> focusTraversable(stage.getScene().getRoot()))) {
                 onFx(() -> {
-                    session.roll("1d8");
+                    session.controller().roll(valid("1d8"));
                     node.requestFocus();
                 });
                 onFx(() -> robot().keyType(KeyCode.ESCAPE));
-                if (fromFx(() -> session.entry().queue().queued().isPresent())) {
+                if (queuedRoll().isPresent()) {
                     kept.add(describe(node));
                 }
             }
@@ -168,7 +169,7 @@ class AccessibilitySweepTest extends HeadlessUiTest {
 
         assertThat(kept).as("focus owners where Esc left the Queued Roll").isEmpty();
         // Esc never skipped the Roll under way.
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Rolling.class);
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
     }
 
     @Test

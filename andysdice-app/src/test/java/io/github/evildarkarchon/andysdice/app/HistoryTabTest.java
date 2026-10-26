@@ -96,9 +96,30 @@ class HistoryTabTest extends HeadlessUiTest {
         roll("1d6rr1");
         playToRest();
 
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Failed.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Failed.class);
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
         assertThat(dataFolder.resolve(RollHistory.FILE_NAME)).doesNotExist();
+    }
+
+    @Test
+    void aRollJoinsOnceAtItsRevealHoweverOftenTheRollsStateChangesWhileItRests() throws Exception {
+        faces.then(4);
+        roll("1d6");
+        // Queued behind it, then cancelled with Esc while the first Roll rests: the Roll's state changes, the
+        // revealed Roll doesn't.
+        onFx(() -> {
+            ui().expressionBox().setText("1d8");
+            pressEnterInBox();
+        });
+        playToRest();
+        assertThat(fromFx(() -> history.list().getItems())).hasSize(1);
+        assertThat(queuedRoll()).contains("1d8");
+
+        onFx(() -> robot().keyType(KeyCode.ESCAPE));
+        advance(2);
+
+        assertThat(queuedRoll()).isEmpty();
+        assertThat(fromFx(() -> history.list().getItems())).extracting(PastRoll::expression).containsExactly("1d6");
     }
 
     @Test
@@ -191,7 +212,7 @@ class HistoryTabTest extends HeadlessUiTest {
         click(cells().getFirst(), 1);
 
         assertThat(fromFx(() -> ui().expressionBox().getText())).isEqualTo("2d6+3");
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
     }
 
     @Test
@@ -223,7 +244,7 @@ class HistoryTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
 
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
         assertThat(fromFx(() -> session.entry().nextChip().getText())).isEqualTo("next: 1d8");
     }
 
@@ -307,7 +328,7 @@ class HistoryTabTest extends HeadlessUiTest {
         onFx(() -> history.list().requestFocus());
         onFx(() -> robot().keyType(KeyCode.ENTER));
         onFx(() -> {});
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
         playToRest();
         assertThat(fromFx(() -> history.list().getItems().getFirst().expression())).isEqualTo("1d4");
     }

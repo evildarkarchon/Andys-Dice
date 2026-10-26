@@ -3,12 +3,8 @@ package io.github.evildarkarchon.andysdice.app;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.Executor;
-import java.util.function.Consumer;
 
 /**
  * The Roll UI wired to the roll controller: Layout C ({@link RollUi}) around a Tray, with Enter and the Roll button
@@ -16,9 +12,8 @@ import java.util.function.Consumer;
  * headless UI tests run for real; {@link Skeleton} builds one over the physics worker and the GL Tray, and
  * {@code HeadlessUiTest} over the fake simulator and the stand-in tray.
  *
- * <p>It also asks for JavaFX's pulse only while a Roll plays: from the moment the Tray is given a chain until the
- * status leaves {@link RollStatus.Rolling} and the Tray reports it has stopped {@link TraySurface#moving moving},
- * so an idle app doesn't pulse at the monitor's refresh rate.
+ * <p>The controller itself asks for JavaFX's pulse, and holds the Queued Roll; this class only wires the view to it:
+ * the Roll UI and its result strip, the Notice bell, entry, the keyboard map and Fast-forward.
  *
  * <p>Thread contract: made and used on the JavaFX Application Thread.
  */
@@ -27,35 +22,14 @@ final class RollSession {
     private final RollController controller;
     private final RollUi ui;
     private final Notices notices;
-    private final RollQueue queue;
     private final RollEntry entry;
     private final FastForward fastForward;
-    /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
-    private final TraySurface tray;
-    /**
-     * Everything else that follows the Roll's status (the Roll History, #55; the smoke test; the bench's first-motion
-     * timer), told after the strip.
-     */
-    private final List<Consumer<RollStatus>> statusListeners = new ArrayList<>();
-    private ChainShown onChainShown = (chain, start) -> {};
-
-    /** Told each time a Roll's chain of Throws starts to play on the Tray. */
-    @FunctionalInterface
-    interface ChainShown {
-        /**
-         * A chain has been put on the Tray and plays from now.
-         *
-         * @param chain the chain of Throws
-         * @param start the playback clock's time at its first Release
-         */
-        void shown(ChainPlayback chain, double start);
-    }
 
     /**
      * Wires a Roll UI and its controller.
      *
      * @param clock the playback clock, advanced by {@code pulses} in the app and by hand in tests
-     * @param pulses what advances the clock while a Roll plays
+     * @param pulses what advances the clock while a Roll plays; the controller starts and stops it
      * @param physics where pre-simulation runs
      * @param fxThread runs pre-simulation results on the JavaFX thread ({@code Platform::runLater})
      * @param generators the Face Value and Release generators (sound variation is for the mixer)
@@ -85,60 +59,19 @@ final class RollSession {
         this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
-        this.tray = Objects.requireNonNull(tray, "tray");
-        controller = new RollController(clock, physics, fxThread, new FaceValueGenerator(generators.faceValues()),
-                generators.releases(), throwInto, new RollController.TrayView() {
-                    @Override
-                    public void show(ChainPlayback chain) {
-                        tray.show(chain);
-                        pulses.start();
-                        // The controller starts the chain at the clock's time now (#59: its sound is placed there).
-                        onChainShown.shown(chain, clock.time());
-                    }
-
-                    @Override
-                    public void showTime(double seconds) {
-                        tray.showTime(seconds);
-                    }
-                });
+        Objects.requireNonNull(tray, "tray");
+        // The controller talks to the Tray directly; what follows a Roll hears of it from its state snapshots.
+        controller = new RollController(clock, pulses, physics, fxThread,
+                new FaceValueGenerator(generators.faceValues()), generators.releases(), throwInto, tray);
         ui = new RollUi(tray.node());
+        // The strip is the first to hear of each status; the Roll History, the dice sound and the rest follow it.
+        ui.showStatus(controller.state().status());
+        controller.addStateListener(RollState.statusChanges(ui::showStatus));
         NoticeBell.attach(ui.bell(), notices);
         // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
-        queue = new RollQueue(controller, clock);
-        entry = new RollEntry(ui, queue);
-        // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up.
-        ui.addFailureListener(queue::close);
-        // Nor may a Roll in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost
-        // rather than revealed or kept in the Roll History (ADR-0007).
-        ui.addFailureListener(controller::abandon);
+        entry = new RollEntry(ui, controller);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
-        ui.showStatus(controller.status());
-        controller.setOnStatusChanged(status -> {
-            ui.showStatus(status);
-            // Before the pulse check: a reveal (or failure) starts a Queued Roll's beat.
-            queue.statusChanged(status);
-            if (queue.waiting() && !controller.underWay()) {
-                // The beat is timed on the clock, so the pulse must run through it even with nothing moving (a
-                // Roll that failed in pre-simulation may never have started it).
-                pulses.start();
-            } else if (!(status instanceof RollStatus.Rolling) && !tray.moving()) {
-                // Only playback needs the pulse; once the Dice rest (or nothing will move) and the Tray has
-                // stopped moving (the camera settled in), let JavaFX idle.
-                pulses.stop();
-            }
-            for (Consumer<RollStatus> listener : statusListeners) {
-                listener.accept(status);
-            }
-        });
-        // After the controller's own listener: once the Roll is over, the Tray may still be moving on the clock
-        // (the camera's settle-in after the last Throw), so the pulse stops only when that is done too, and no
-        // Queued Roll is waiting out its beat.
-        clock.addListener(c -> {
-            if (!controller.underWay() && !tray.moving() && !queue.waiting()) {
-                pulses.stop();
-            }
-        });
         // Shift held alone speeds the clock up (#51); everything that plays follows the clock.
         fastForward = new FastForward(clock);
         fastForward.install(ui);
@@ -156,7 +89,8 @@ final class RollSession {
     /**
      * Returns the roll controller.
      *
-     * @return the controller Enter and the Roll button roll through
+     * @return the controller Enter and the Roll button roll through, whose {@link RollState} snapshots everything
+     *     that follows a Roll listens to ({@link RollController#addStateListener})
      */
     RollController controller() {
         return controller;
@@ -190,61 +124,17 @@ final class RollSession {
     }
 
     /**
-     * Rolls a Roll Expression that already parses, from a Saved Roll or a Roll History entry: at once, or as the
-     * Queued Roll while Dice move, exactly as Enter in the box does (spec §3.2 "Entry").
-     *
-     * @param expression the Roll Expression as written
-     */
-    void roll(String expression) {
-        queue.roll(expression);
-    }
-
-    /**
-     * Rolls a Saved Roll's expression as {@link #roll(String)} does, recording the Roll with the Saved Roll's name
-     * (spec §3.2 "Saved tab", #56): the result strip shows it and the Roll History keeps it.
-     *
-     * @param expression the Roll Expression as written; it already parses
-     * @param savedRollName the Saved Roll's name
-     */
-    void roll(String expression, String savedRollName) {
-        queue.roll(expression, Optional.of(savedRollName));
-    }
-
-    /**
-     * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
-     * through the Tray seam and becomes the Tray the next Roll is thrown into.
+     * Fills the Look tab (#57) and sets the stored look through the controller. Each pick there is set through the
+     * controller too, which draws it on the Tray under the mid-Roll Look rule ({@link RollController#setLook}) and
+     * throws the next Roll into its Tray.
      *
      * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
      * @param settings the live settings holding the choices
      * @return the tab's content, already in the Look tab
      */
     LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
-        LookTab look = new LookTab(catalogue, settings, chosen -> {
-            tray.showLook(chosen);
-            controller.setTray(chosen.tray());
-        });
+        LookTab look = new LookTab(catalogue, settings, controller::setLook);
         ui.lookTab().setContent(look.node());
         return look;
-    }
-
-    /**
-     * Sets who is told each time a Roll's chain starts to play, after the Tray has been given it: the dice sound
-     * (#59, {@link Clatter}).
-     *
-     * @param listener the listener; it replaces any earlier one
-     */
-    void setOnChainShown(ChainShown listener) {
-        onChainShown = Objects.requireNonNull(listener, "listener");
-    }
-
-    /**
-     * Adds a listener told each time the Roll's status changes, after the result strip has shown it. Listeners are
-     * never replaced, so the app's own pieces (the Roll History joining a revealed Roll, #55) and the smoke test
-     * don't displace each other.
-     *
-     * @param listener told every status, in the order added
-     */
-    void addStatusListener(Consumer<RollStatus> listener) {
-        statusListeners.add(Objects.requireNonNull(listener, "listener"));
     }
 }

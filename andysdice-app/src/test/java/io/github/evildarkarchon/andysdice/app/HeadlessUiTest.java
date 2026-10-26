@@ -8,13 +8,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.SplittableRandom;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -112,6 +115,8 @@ abstract class HeadlessUiTest {
 
     private String previousDataFolder;
     private Robot robot;
+    /** The Roll's state snapshot published last; read and written on the JavaFX thread. */
+    private RollState rollState;
 
     /**
      * Starts JavaFX once per test JVM on its built-in headless platform, if no test has yet. Safe to call from any
@@ -159,6 +164,9 @@ abstract class HeadlessUiTest {
             tray = new StandInTray(clock);
             session = new RollSession(clock, pulses, physics, Platform::runLater, generators,
                     BuiltInTrays.defaultTray(), tray);
+            // Tests read the Roll's state as it is published, not by asking the controller.
+            rollState = session.controller().state();
+            session.controller().addStateListener(published -> rollState = published);
             // As AndysDice.start does: one writer over the data folder, its Notices behind the bell.
             persistence = new Persistence(dataFolder, session.notices()::post);
             history = HistoryTab.install(session, persistence, wallClock);
@@ -230,12 +238,39 @@ abstract class HeadlessUiTest {
     }
 
     /**
-     * Returns the roll controller under test.
+     * Returns the Roll's state as the app last published it: the snapshot everything that follows a Roll listens to.
+     * Call it on the JavaFX thread (inside {@link #fromFx}).
      *
-     * @return the controller the box and the Roll button roll through
+     * @return the snapshot published last, or the first one if nothing has changed yet
      */
-    protected final RollController controller() {
-        return session.controller();
+    protected final RollState rollState() {
+        return rollState;
+    }
+
+    /**
+     * Adds a listener to the Roll's state snapshots, as the app's own followers of a Roll (the Roll History, the dice
+     * sound) do. Call it on the JavaFX thread.
+     *
+     * @param listener told every snapshot published from now on
+     */
+    protected final void addRollStateListener(Consumer<RollState> listener) {
+        session.controller().addStateListener(listener);
+    }
+
+    /**
+     * Returns the Queued Roll as the Player sees it: the expression on the "next: …" chip at the end of the toolbar.
+     * Call it from the test thread.
+     *
+     * @return the Queued Roll's expression, stripped as the chip shows it, or empty while the chip is hidden
+     * @throws Exception if the JavaFX thread failed or timed out
+     */
+    protected final Optional<String> queuedRoll() throws Exception {
+        return fromFx(() -> {
+            Label chip = session.entry().nextChip();
+            return chip.isVisible()
+                    ? Optional.of(chip.getText().substring(RollEntry.NEXT_PREFIX.length()))
+                    : Optional.<String>empty();
+        });
     }
 
     /**
@@ -300,11 +335,11 @@ abstract class HeadlessUiTest {
     protected final void playToRest() throws Exception {
         onFx(() -> {
             double start = clock.time();
-            while (controller().underWay() && clock.time() - start < PLAY_LIMIT_SECONDS) {
+            while (rollState().underWay() && clock.time() - start < PLAY_LIMIT_SECONDS) {
                 clock.advance(FRAME);
             }
         });
-        if (fromFx(() -> controller().underWay())) {
+        if (fromFx(() -> rollState().underWay())) {
             throw new AssertionError("the Roll was still under way after " + PLAY_LIMIT_SECONDS + " s of playback");
         }
     }

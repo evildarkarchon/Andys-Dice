@@ -151,6 +151,11 @@ public final class AndysDice extends Application {
         guard.attach(failure -> {
             exitStatus = RUNTIME_FAILED;
             FailureScreen.show(skeleton.pane(), failure, () -> quit(RUNTIME_FAILED));
+            // Then rolling ends, here where the failure is known to end the session, panel first as before: a
+            // Queued Roll must not start behind the panel once its beat is up, nor may a Roll in motion (or still
+            // pre-simulating) finish behind it: it was never shown, so it is a Lost Roll rather than revealed or
+            // kept in the Roll History (ADR-0007). This holds whatever view the panel went into.
+            skeleton.controller().abandon();
             if (unattended) {
                 quit(RUNTIME_FAILED);
             }

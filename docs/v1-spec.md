@@ -198,6 +198,10 @@ accessibility, window sizes, first run, locale, the Cocked Rethrow and glyphs) w
   then the Player's own, marked "yours". Clicking a swatch picks it.
 - **Tray:** the built-ins, then the Player's own.
 - **Light Rig:** Studio, Lamp or Window.
+- **Mid-Roll picks:** a pick shows at once, except a Tray picked while a Roll is under way (pre-simulating or
+  playing): the Roll is drawn and heard in the Tray it was thrown into, so the picked Tray shows once that Roll
+  rests, fails or is lost. Of several Trays picked meanwhile, the last one shows. A Dice Set or Light Rig picked
+  mid-Roll shows at once. The next Roll is always thrown into the Tray picked last.
 - Player Files that were skipped stay listed under their section, with the reason, for as long as the app runs.
 
 **Settings tab**
@@ -228,6 +232,9 @@ accessibility, window sizes, first run, locale, the Cocked Rethrow and glyphs) w
   GL context per app run.
 - The Tray area is replaced by a panel drawn by JavaFX alone: "Andy's Dice hit a problem and has to close",
   the one-line cause, the log file's path, **Copy details** and **Quit**. The sidebar is disabled.
+- A Roll under way when the session ends (pre-simulating or playing) is a Lost Roll: it stops where it is, is
+  never revealed and never joins the Roll History, and the result strip shows nothing for it. The Queued Roll is
+  dropped and nothing more rolls.
 - The same panel is the fail-fast at start-up when a GL 3.3 core context can't be created
   ([ADR-0002](adr/0002-embedded-gl-renderer-public-api-bridge.md)), naming the requirement and the detected
   renderer and driver.

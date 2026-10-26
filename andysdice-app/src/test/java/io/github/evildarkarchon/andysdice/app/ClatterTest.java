@@ -3,8 +3,9 @@ package io.github.evildarkarchon.andysdice.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.core.geometry.DieKind;
-import io.github.evildarkarchon.andysdice.core.tray.BuiltInTrays;
 import io.github.evildarkarchon.andysdice.sound.AudioSink;
+import io.github.evildarkarchon.andysdice.sound.Impact;
+import io.github.evildarkarchon.andysdice.sound.ImpactObserver;
 import io.github.evildarkarchon.andysdice.sound.SinkException;
 import io.github.evildarkarchon.andysdice.sound.SoundCategory;
 import io.github.evildarkarchon.andysdice.sound.SoundOutput;
@@ -27,8 +28,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Rolls make sound (#59, spec §3.5, ADR-0012): each contact of every Throw plays on a line opened for the Roll and
- * closed after its last tail; only contacts sound; no device means silence and one Notice; and mute and volume sit
- * in the Settings tab, saved in {@code settings.properties}.
+ * closed after its last tail; only contacts sound; a Roll sounds like the Tray it was thrown into (#67); no device
+ * means silence and one Notice; and mute and volume sit in the Settings tab, saved in {@code settings.properties}.
  */
 class ClatterTest extends HeadlessUiTest {
 
@@ -42,6 +43,8 @@ class ClatterTest extends HeadlessUiTest {
     private SettingsStore settings;
     private SoundOutput output;
     private SoundSettings controls;
+    /** Every impact the mixer has started, as the audio thread renders it. */
+    private final List<Impact> impacts = new CopyOnWriteArrayList<>();
 
     /** A sink that keeps every block, queues nothing and can be told to fail. */
     private final class FakeSink implements AudioSink {
@@ -111,8 +114,14 @@ class ClatterTest extends HeadlessUiTest {
         onFx(() -> {
             // Before the follower's own listener, so it stamps each advance with the time it moved to.
             clock.addListener(c -> now.set(Math.round(c.time() * 1e9)));
-            output = Clatter.output(clock, new SplittableRandom(5), opener, session.notices(), now::get);
-            Clatter.attach(session, output, BuiltInTrays::defaultTray);
+            output = Clatter.output(clock, new SplittableRandom(5), opener, session.notices(), now::get,
+                    new ImpactObserver() {
+                        @Override
+                        public void started(Impact impact) {
+                            impacts.add(impact);
+                        }
+                    });
+            Clatter.attach(session.controller(), output);
             controls = SoundSettings.attach(ui(), settings, output);
         });
         assertThat(await(() -> opener.attempts.get() == 1, Duration.ofSeconds(10))).isTrue();
@@ -145,7 +154,7 @@ class ClatterTest extends HeadlessUiTest {
      */
     private void playToRestHeard() throws Exception {
         assertThat(await(this::lineOpen, Duration.ofSeconds(10))).as("a line opened for the Roll").isTrue();
-        for (int frame = 0; fromFx(() -> controller().underWay()); frame++) {
+        for (int frame = 0; fromFx(() -> rollState().underWay()); frame++) {
             assertThat(frame).as("frames played").isLessThan(10_000);
             int written = blocksWritten();
             advance(FRAME);
@@ -160,8 +169,12 @@ class ClatterTest extends HeadlessUiTest {
         simulator.clatter = true;
         List<SoundThrow> queued = new CopyOnWriteArrayList<>();
         onFx(() -> clock.advance(2.5));
-        onFx(() -> session.setOnChainShown((chain, start) ->
-                queued.addAll(Clatter.throwsOf(chain, start, TraySounds.of(BuiltInTrays.defaultTray())))));
+        // As Clatter.attach does: each chain once, as its Roll's status becomes Playing.
+        onFx(() -> addRollStateListener(RollState.statusChanges(status -> {
+            if (status instanceof RollStatus.Playing playing) {
+                queued.addAll(Clatter.throwsOf(playing.chain(), playing.start()));
+            }
+        })));
 
         roll("1d6rr1+1d8");
         playToRest();
@@ -176,6 +189,53 @@ class ClatterTest extends HeadlessUiTest {
         }
         assertThat(queued.getFirst().kinds()).containsExactly(DieKind.D6, DieKind.D8);
         assertThat(queued.get(1).kinds()).containsExactly(DieKind.D6);
+    }
+
+    /** Fills the Look tab as start-up does, over this test's settings. */
+    private LookTab attachLook() throws Exception {
+        return fromFx(() -> session.attachLook(LookCatalogue.load(dataFolder, session.notices()::post), settings));
+    }
+
+    /** Picks a Tray in the Look tab, as the Player's click does. */
+    private void pickTray(LookTab look, String name) throws Exception {
+        onFx(() -> look.trayButtons().stream().filter(b -> b.getAccessibleText().startsWith("Tray " + name))
+                .findFirst().orElseThrow().fire());
+    }
+
+    /** The floor categories of every impact heard from the given one on. */
+    private List<SoundCategory> floorsHeard(int from) {
+        return impacts.subList(from, impacts.size()).stream().map(Impact::category).toList();
+    }
+
+    @Test
+    void aRollSoundsLikeTheTrayItWasThrownIntoWhateverTrayIsPickedWhileItPreSimulatesOrPlays() throws Exception {
+        LookTab look = attachLook();
+        startSound();
+        simulator.clatter = true;
+        physics.setHolding(true);
+
+        // Thrown into the first-run Tray, Green felt; Leather hexagon is picked while it pre-simulates.
+        roll("2d6");
+        pickTray(look, "Leather hexagon");
+        onFx(physics::finish);
+        // Then Walnut board while its Dice move.
+        advance(FRAME);
+        pickTray(look, "Walnut board");
+        playToRestHeard();
+
+        assertThat(await(() -> lineClosed(1), Duration.ofSeconds(10))).isTrue();
+        assertThat(floorsHeard(0)).as("the Roll's contacts, in Green felt's felt floor").isNotEmpty()
+                .containsOnly(SoundCategory.FELT_FLOOR);
+
+        // The next Roll is thrown into the Tray picked last, and sounds like it.
+        int heard = impacts.size();
+        roll("2d6");
+        onFx(physics::finish);
+        playToRestHeard();
+
+        assertThat(await(() -> lineClosed(2), Duration.ofSeconds(10))).isTrue();
+        assertThat(floorsHeard(heard)).as("the next Roll's contacts, in Walnut board's wood floor").isNotEmpty()
+                .containsOnly(SoundCategory.WOOD_FLOOR);
     }
 
     @Test
@@ -203,7 +263,7 @@ class ClatterTest extends HeadlessUiTest {
         onFx(() -> ui().tabs().getSelectionModel().select(ui().settingsTab()));
         onFx(() -> controls.mute().fire());
 
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Rested.class);
         assertThat(opener.attempts.get()).as("only the start-up try of the device").isEqualTo(1);
     }
 

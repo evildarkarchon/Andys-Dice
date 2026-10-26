@@ -23,8 +23,8 @@ import javafx.stage.Window;
  * <ul>
  *   <li>Errors are checked on Enter only. An invalid Roll Expression selects its span and shows its message in the
  *       {@link ErrorPopup}; nothing is rolled or queued, and a Roll already queued stays queued.</li>
- *   <li>A valid one is accepted: it rolls, or becomes the Queued Roll while Dice move ({@link RollQueue}), and the
- *       box keeps it with all of it selected, so typing replaces it and Enter rolls it again.</li>
+ *   <li>A valid one is accepted: it rolls, or becomes the Queued Roll while Dice move ({@link RollController}), and
+ *       the box keeps it with all of it selected, so typing replaces it and Enter rolls it again.</li>
  *   <li>Esc, when nothing nearer the focus took it (an open popup, an inline edit), cancels an inline edit still
  *       open elsewhere in the window, else the Queued Roll.</li>
  * </ul>
@@ -37,7 +37,7 @@ final class RollEntry {
     static final String NEXT_PREFIX = "next: ";
 
     private final TextField box;
-    private final RollQueue queue;
+    private final RollController controller;
     private final ErrorPopup errorPopup;
     private final Label nextChip = new Label();
     /** Esc's inline-edit step; none until the Saved tab sets it. */
@@ -52,11 +52,11 @@ final class RollEntry {
      * and Esc.
      *
      * @param ui the Roll UI whose box this is
-     * @param queue where accepted Rolls go
+     * @param controller where accepted Rolls go, to roll or queue, and which holds the Queued Roll
      */
-    RollEntry(RollUi ui, RollQueue queue) {
+    RollEntry(RollUi ui, RollController controller) {
         Objects.requireNonNull(ui, "ui");
-        this.queue = Objects.requireNonNull(queue, "queue");
+        this.controller = Objects.requireNonNull(controller, "controller");
         box = ui.expressionBox();
         errorPopup = new ErrorPopup(box);
 
@@ -65,7 +65,8 @@ final class RollEntry {
         nextChip.setVisible(false);
         nextChip.managedProperty().bind(nextChip.visibleProperty());
         ui.toolbar().getChildren().add(nextChip);
-        queue.setOnQueuedChanged(this::showQueued);
+        // The chip follows the Queued Roll in each of the Roll's state snapshots.
+        controller.addStateListener(state -> showQueued(state.queued()));
 
         ui.setOnRoll(this::enter);
         // A popup that doesn't consume the events that auto-hide it (a ContextMenu, the History menu, while nothing
@@ -120,7 +121,8 @@ final class RollEntry {
 
     /**
      * Does what Enter in the box does with its text: shows its error, or accepts it, rolling or queueing it and
-     * selecting all of it.
+     * selecting all of it. This is the one place a Player's input is parsed: the controller is handed the parsed
+     * expression, never the text.
      *
      * @param text the box's text
      */
@@ -129,7 +131,7 @@ final class RollEntry {
             case ParseResult.Invalid invalid -> errorPopup.show(invalid.error());
             case ParseResult.Valid valid -> {
                 errorPopup.hide();
-                queue.roll(text);
+                controller.roll(valid.expression());
                 box.requestFocus();
                 box.selectAll();
             }
@@ -150,7 +152,7 @@ final class RollEntry {
         if (inlineEdit.getAsBoolean()) {
             return true;
         }
-        return queue.cancel();
+        return controller.cancelQueued();
     }
 
     /**
@@ -163,15 +165,6 @@ final class RollEntry {
     }
 
     /**
-     * Returns the Queued Roll.
-     *
-     * @return the queue every accepted Roll goes through
-     */
-    RollQueue queue() {
-        return queue;
-    }
-
-    /**
      * Returns the "next: …" chip.
      *
      * @return the label at the end of the toolbar, visible only while a Roll is queued
@@ -180,8 +173,8 @@ final class RollEntry {
         return nextChip;
     }
 
-    private void showQueued(Optional<String> queued) {
-        nextChip.setText(queued.map(text -> NEXT_PREFIX + text.strip()).orElse(""));
+    private void showQueued(Optional<RollRequest> queued) {
+        nextChip.setText(queued.map(roll -> NEXT_PREFIX + roll.expression().source().strip()).orElse(""));
         nextChip.setVisible(queued.isPresent());
     }
 }

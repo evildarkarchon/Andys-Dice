@@ -205,7 +205,7 @@ class KeyboardMapTest extends HeadlessUiTest {
             assertThat(fromFx(() -> ui().expressionBox().getText())).isEmpty();
         }
         assertThat(tray.shows()).isZero();
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Ready.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Ready.class);
 
         // In the box, the same keys only type.
         onFx(() -> ui().expressionBox().requestFocus());
@@ -371,7 +371,7 @@ class KeyboardMapTest extends HeadlessUiTest {
         }
 
         // The Roll plays on from where it was, at normal speed: nothing jumped ahead.
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Rolling.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Playing.class);
         assertThat(fromFx(tray::shownTime)).isEqualTo(shown);
         assertThat(tray.phase()).isEqualTo(phase);
         assertThat(fromFx(clock::speed)).isEqualTo(1.0);
@@ -388,7 +388,7 @@ class KeyboardMapTest extends HeadlessUiTest {
             ui().expressionBox().setText("1d8");
             robot().keyType(KeyCode.ENTER);
         });
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
         assertThat(queued()).contains("1d8");
     }
 
@@ -403,7 +403,7 @@ class KeyboardMapTest extends HeadlessUiTest {
     }
 
     private Optional<String> queued() throws Exception {
-        return fromFx(() -> session.entry().queue().queued());
+        return queuedRoll();
     }
 
     /** Types Esc wherever the keyboard is: the main window, or the popup or dialog in front of it. */

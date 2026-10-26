@@ -1,7 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
-import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.render.FrameView;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -17,8 +16,9 @@ import javafx.scene.input.KeyEvent;
  * Throw drawn on the render thread, read back, and put on screen by the frame bridge. That frame shows the Dice at
  * their Release, the first moment of the Throw's motion.
  *
- * <p>The Tray must be idle when it starts (no Roll under way, the camera settled, no frame in flight): the first
- * frame shown after the Roll reaches the Tray is then the Roll's own, not one drawn before it.
+ * <p>The app must be idle when it starts (its Roll state {@linkplain RollState#settled settled}, and no frame in
+ * flight): the first frame shown once the Roll's status is {@link RollStatus.Playing} is then the Roll's own, not
+ * one drawn before it.
  *
  * <p>Thread contract: {@link #time} on the JavaFX Application Thread; its result completes there too, except a
  * timeout, which completes it on a timer thread.
@@ -32,50 +32,55 @@ final class FirstMotion {
 
     /**
      * Types a Roll Expression into the box, presses Enter, and times it until the first frame of its Throw is on
-     * screen. It uses the frame view's presented-frame listener until then.
+     * screen: the first frame presented once the Roll's state snapshot says it is Playing. It uses the frame view's
+     * presented-frame listener until then.
      *
      * @param skeleton the started app, idle
-     * @param expression a Roll Expression that parses
-     * @return the time from Enter to the first motion; completed exceptionally if the expression doesn't parse, a
-     *     Roll is already under way, the Roll fails, or it takes longer than {@link #TIMEOUT}
+     * @param parsed the Roll Expression, parsed, so Enter on its text rolls it rather than showing an error
+     * @return the time from Enter to the first motion; completed exceptionally if the app hasn't settled (a Roll
+     *     under way or queued, or the camera still moving), the Roll fails, or it takes longer than {@link #TIMEOUT}
      */
-    static CompletableFuture<Duration> time(Skeleton skeleton, String expression) {
+    static CompletableFuture<Duration> time(Skeleton skeleton, RollExpression parsed) {
         CompletableFuture<Duration> timed = new CompletableFuture<>();
-        if (RollExpressionParser.parse(expression) instanceof ParseResult.Invalid invalid) {
-            // Enter would only show the error popup, and nothing would ever move.
-            timed.completeExceptionally(new IllegalArgumentException("can't time " + expression + ": "
-                    + invalid.error().message()));
-            return timed;
-        }
-        if (skeleton.controller().underWay()) {
-            // Enter would make it the Queued Roll, which waits for the one under way.
+        String expression = parsed.source();
+        if (!skeleton.controller().state().settled()) {
+            // Enter would make it the Queued Roll, or a frame of what is still moving could be taken for its first.
             timed.completeExceptionally(new IllegalStateException("can't time " + expression
-                    + ": a Roll is already under way"));
+                    + ": the app hasn't settled"));
             return timed;
         }
-        ChainPlayback before = skeleton.showing();
         FrameView view = skeleton.view();
         long[] entered = new long[1];
+        // Set once the Roll's status is Playing: by then the Tray has its chain, at its first Release.
+        boolean[] playing = new boolean[1];
         view.setOnFramePresented(() -> {
-            // The Tray was idle, so the first frame shown once the new chain is on the Tray is drawn from it.
-            if (skeleton.showing() != before) {
+            // The app was settled, so the first frame shown once the Roll plays is drawn from its chain. Playing is
+            // published on this thread right after the Tray asked for that frame, so no frame of it is shown before.
+            if (playing[0]) {
                 timed.complete(Duration.ofNanos(System.nanoTime() - entered[0]));
             }
         });
-        // Session listeners can't be removed; once this timing is over, this one does nothing.
-        skeleton.session().addStatusListener(status -> {
-            if (status instanceof RollStatus.Failed failed && !timed.isDone()) {
+        // State listeners can't be removed; once this timing is over, this one does nothing.
+        skeleton.controller().addStateListener(RollState.statusChanges(status -> {
+            if (timed.isDone()) {
+                return;
+            }
+            if (status instanceof RollStatus.Playing) {
+                // Only as a signal: Playing.start() is a playback clock time, and the presented-frame callback
+                // carries no clock time to compare it with, so the timing runs on System.nanoTime() alone.
+                playing[0] = true;
+            } else if (status instanceof RollStatus.Failed failed) {
                 timed.completeExceptionally(new IllegalStateException("the Roll of " + expression + " failed: "
                         + failed.text()));
             }
-        });
+        }));
         // Through the JavaFX thread, which owns the listener: a timeout completes the timing on a timer thread.
         timed.whenComplete((duration, error) -> Platform.runLater(() -> view.setOnFramePresented(null)));
 
         TextField box = skeleton.pane().expressionBox();
         box.setText(expression);
         entered[0] = System.nanoTime();
-        // Enter, as a key press on the box: the path the Player's Enter takes (entry, queue, controller).
+        // Enter, as a key press on the box: the path the Player's Enter takes (entry, then the controller).
         box.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
         return timed.orTimeout(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
     }

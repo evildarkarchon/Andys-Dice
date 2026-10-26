@@ -37,8 +37,9 @@ import javafx.scene.shape.Rectangle;
  * The Look tab's content (spec §3.2 "Look tab"): a swatch grid of the Dice Sets, a list of the Trays and a list of
  * the Light Rigs, each built-in first and then the Player's own, marked "yours", with the Player Files skipped at
  * start-up listed under their section with the reason. Clicking a choice, or Space or Enter on it, picks it; the
- * arrow keys move through a grid or list without picking. A pick is shown at once (through the Tray seam, by the
- * {@code show} callback) and kept by identity in {@code settings.properties} (spec §3.6).
+ * arrow keys move through a grid or list without picking. A pick goes to the {@code show} callback (in the app, the
+ * roll controller, which draws it on the Tray under the mid-Roll Look rule: a Tray picked while Dice move appears
+ * once they rest) and is kept by identity in {@code settings.properties} (spec §3.6).
  *
  * <p>Within a section only the chosen entry is reached by Tab, so a section is one stop in the focus order and the
  * arrow keys do the rest (a roving focus, as a radio group has).
@@ -94,11 +95,12 @@ final class LookTab {
     private Look look;
 
     /**
-     * Builds the tab from the stored choices and shows that look once, at once.
+     * Builds the tab from the stored choices and hands that look to {@code show} once, at once.
      *
      * @param catalogue the Dice Sets and Trays, built-in and the Player's own, and the files skipped
      * @param settings the live settings, read now and written on each pick
-     * @param show draws the Tray in a look; told the stored look now and each pick's after it
+     * @param show sets the look the Tray is drawn in and the next Roll is thrown into; told the stored look now
+     *     and each pick's after it
      */
     LookTab(LookCatalogue catalogue, SettingsStore settings, Consumer<Look> show) {
         this.catalogue = Objects.requireNonNull(catalogue, "catalogue");

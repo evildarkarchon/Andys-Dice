@@ -81,7 +81,19 @@ final class StandInTray extends Region implements TraySurface {
     }
 
     /**
-     * Returns the look the Tray is drawn in, as the Look tab last showed it (#57).
+     * Tells whether the Tray still moves on the clock after the Roll is over: never, since the stand-in has no
+     * camera to settle in.
+     *
+     * @return {@code false}
+     */
+    @Override
+    public boolean moving() {
+        return false;
+    }
+
+    /**
+     * Returns the look the Tray is drawn in, as the controller last showed it (#57): the Look tab's pick, though a
+     * Tray picked while Dice move only once they rest.
      *
      * @return the latest look, or {@code null} if none has been shown
      */

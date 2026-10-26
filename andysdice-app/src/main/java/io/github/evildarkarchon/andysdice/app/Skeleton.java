@@ -130,7 +130,8 @@ final class Skeleton implements AutoCloseable {
         // Every framing fits the view's shape.
         view.widthProperty().addListener((property, was, now) -> fitAspect());
         view.heightProperty().addListener((property, was, now) -> fitAspect());
-        CameraGestures.attach(view, camera, () -> !session.controller().underWay(), this::showCamera);
+        // Orbit and zoom are blocked exactly while the Roll's status is Pre-simulating or Playing.
+        CameraGestures.attach(view, camera, () -> !session.controller().state().underWay(), this::showCamera);
     }
 
     /**
@@ -371,8 +372,8 @@ final class Skeleton implements AutoCloseable {
      */
     void attachSound(SoundOutput output) {
         sound = Objects.requireNonNull(output, "output");
-        // The Tray each Roll is thrown into, as the Look tab (#57) has chosen it by then.
-        Clatter.attach(session, output, () -> session.controller().tray());
+        // Each Roll is heard in the Tray its chain carries (#67), the one it was thrown into.
+        Clatter.attach(session.controller(), output);
         panSound();
     }
 

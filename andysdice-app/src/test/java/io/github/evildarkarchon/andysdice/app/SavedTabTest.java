@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -217,7 +218,7 @@ class SavedTabTest extends HeadlessUiTest {
         click(cells().get(1), 1);
 
         assertThat(fromFx(() -> ui().expressionBox().getText())).isEqualTo("4d6rr1kh3");
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
     }
 
     @Test
@@ -231,7 +232,7 @@ class SavedTabTest extends HeadlessUiTest {
         onFx(() -> {});
         playToRest();
 
-        assertThat(fromFx(() -> ((RollStatus.Rested) controller().status()).savedRollName())).contains("Fireball");
+        assertThat(fromFx(() -> ((RollStatus.Rested) rollState().status()).savedRollName())).contains("Fireball");
         assertThat(fromFx(() -> ui().resultStrip().details().getText())).startsWith("Fireball");
         List<PastRoll> rolls = fromFx(() -> List.copyOf(history.list().getItems()));
         assertThat(rolls).singleElement().satisfies(roll -> {
@@ -253,9 +254,9 @@ class SavedTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
 
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("8d6");
+        assertThat(queuedRoll()).contains("8d6");
         playToRest();
-        advance(RollQueue.BEAT_SECONDS + 0.1);
+        advance(RollController.BEAT_SECONDS + 0.1);
         onFx(() -> {});
         playToRest();
         List<PastRoll> rolls = fromFx(() -> List.copyOf(history.list().getItems()));
@@ -293,7 +294,7 @@ class SavedTabTest extends HeadlessUiTest {
         faces.then(3);
         onFx(() -> robot().keyType(KeyCode.ENTER));
         onFx(() -> {});
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
         playToRest();
         assertThat(fromFx(() -> history.list().getItems().getFirst().savedRollName())).contains("Dagger");
     }
@@ -403,12 +404,12 @@ class SavedTabTest extends HeadlessUiTest {
         });
         assertThat(fromFx(() -> saved.saved().rolls().get(1))).isEqualTo(new SavedRoll("Dagger", "1d4+3"));
         // Enter saved the edit; it didn't also roll.
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
 
         // Esc cancels an edit, before (and instead of) cancelling a Queued Roll.
         roll("3d6");
         advance(0.2);
-        onFx(() -> session.roll("1d8"));
+        onFx(() -> session.controller().roll(valid("1d8")));
         onFx(() -> {
             saved.list().requestFocus();
             robot().keyType(KeyCode.F2);
@@ -419,7 +420,7 @@ class SavedTabTest extends HeadlessUiTest {
 
         assertThat(fromFx(() -> saved.editingIndex())).isEqualTo(-1);
         assertThat(fromFx(() -> saved.saved().rolls().get(1).name())).isEqualTo("Dagger");
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
         assertThat(fromFx(() -> saved.list().isFocused())).isTrue();
     }
 
@@ -522,8 +523,8 @@ class SavedTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
         onFx(() -> {});
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
-        assertThat(fromFx(() -> session.entry().queue().queued())).isEmpty();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
+        assertThat(queuedRoll()).isEmpty();
 
         onFx(() -> cell.editButton().fire());
         SavedCell editing = editingCell();

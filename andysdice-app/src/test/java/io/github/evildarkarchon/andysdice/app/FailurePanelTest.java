@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.render.GlContextLostException;
@@ -40,14 +41,26 @@ class FailurePanelTest extends HeadlessUiTest {
     private FailureGuard guard;
     private Thread.UncaughtExceptionHandler previousHandler;
 
-    /** Installs the log and the guard as the app does, with the panel shown over this test's Roll UI. */
+    /**
+     * Installs the log and the guard as the app does, with the panel shown over this test's Roll UI and the session
+     * ended after it.
+     */
     @BeforeEach
     void guardTheApp() throws Exception {
         log = AppLog.install(dataFolder);
         guard = new FailureGuard(log.file());
         previousHandler = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler(guard);
-        guard.attach(failure -> FailureScreen.show(ui(), failure, () -> quits.add(() -> {})), Platform::runLater);
+        guard.attach(this::endSession, Platform::runLater);
+    }
+
+    /**
+     * What the app's failure guard callback does ({@code AndysDice.start}): the failure panel first, then the
+     * session's rolling ends, in the roll controller.
+     */
+    private void endSession(Failure failure) {
+        FailureScreen.show(ui(), failure, () -> quits.add(() -> {}));
+        session.controller().abandon();
     }
 
     /** Puts the JVM's handler and logging back. */
@@ -205,10 +218,37 @@ class FailurePanelTest extends HeadlessUiTest {
         FailureGuard early = new FailureGuard(log.file());
         early.report("main", new IllegalStateException("before the window"));
 
-        early.attach(failure -> FailureScreen.show(ui(), failure, () -> {}), Platform::runLater);
+        early.attach(this::endSession, Platform::runLater);
 
         assertThat(await(this::panelShown, WAIT)).isTrue();
         assertThat(fromFx(() -> panel().cause().getText())).contains("before the window");
+    }
+
+    @Test
+    void aFailureBeforeThePanelIsAttachedStopsTheSessionRollingOnceItIs() throws Exception {
+        // A Roll in motion when the failure arrives, with no panel attached to any view yet.
+        roll("1d6");
+        advance(FRAME);
+        FailureGuard early = new FailureGuard(log.file());
+        early.report("main", new IllegalStateException("before the window"));
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
+
+        early.attach(this::endSession, Platform::runLater);
+        assertThat(await(this::panelShown, WAIT)).isTrue();
+        onFx(() -> {});
+
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Lost.class);
+        assertThat(fromFx(() -> ui().resultStrip().text())).isNotEqualTo(RollStatus.ROLLING);
+        // Nothing more rolls: not Enter, nor a Roll from a Saved Roll or History entry, which the disabled box
+        // doesn't stand in front of. And the Lost Roll never joins the history.
+        onFx(() -> {
+            ui().expressionBox().setText("1d8");
+            pressEnterInBox();
+        });
+        onFx(() -> session.controller().roll(valid("1d4")));
+        advance(30);
+        assertThat(tray.shows()).isEqualTo(1);
+        assertThat(fromFx(() -> history.list().getItems())).isEmpty();
     }
 
     @Test
@@ -278,36 +318,53 @@ class FailurePanelTest extends HeadlessUiTest {
             ui().expressionBox().setText("1d8");
             pressEnterInBox();
         });
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
 
         dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
         assertThat(await(this::panelShown, WAIT)).isTrue();
-        playToRest();
-        advance(RollQueue.BEAT_SECONDS + 1);
+        // Far past where the Roll in motion would have rested, and the beat after it.
+        advance(30);
 
         assertThat(tray.shows()).isEqualTo(1);
-        assertThat(fromFx(() -> session.entry().queue().queued())).isEmpty();
+        assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> session.entry().nextChip().isVisible())).isFalse();
-        // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing.
-        onFx(() -> session.roll("1d4"));
-        advance(RollQueue.BEAT_SECONDS + 1);
+        // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing, nor does Enter.
+        onFx(() -> session.controller().roll(valid("1d4")));
+        onFx(() -> {
+            ui().expressionBox().setText("1d4");
+            pressEnterInBox();
+        });
+        advance(RollController.BEAT_SECONDS + 1);
         assertThat(tray.shows()).isEqualTo(1);
+        assertThat(queuedRoll()).isEmpty();
     }
 
     @Test
-    void aRollInMotionWhenTheSessionFailsIsNeverRevealedNorJoinsTheHistory() throws Exception {
+    void aRollInMotionWhenTheSessionFailsIsLostNeverRevealedNorJoinsTheHistory() throws Exception {
         // ADR-0007: a Roll interrupted before it rests is lost, because it was never shown.
         roll("1d6");
         assertThat(tray.shows()).isEqualTo(1);
         advance(FRAME);
+        assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo(RollStatus.ROLLING);
 
         dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
         assertThat(await(this::panelShown, WAIT)).isTrue();
         // Far past the chain's rest: nothing plays on behind the panel.
         advance(30);
 
-        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Lost.class);
+        // The strip no longer claims a Roll is coming: it shows nothing for a Lost Roll.
+        assertThat(fromFx(() -> ui().resultStrip().text())).isEmpty();
+        // Nothing is left under way, and the status says so too: the app has settled.
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().settled())).isTrue();
+        // A later Enter rolls nothing.
+        onFx(() -> {
+            ui().expressionBox().setText("1d8");
+            pressEnterInBox();
+        });
+        advance(30);
+        assertThat(tray.shows()).isEqualTo(1);
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
         // Nor is it kept for the next run.
         restartApp();
@@ -327,7 +384,8 @@ class FailurePanelTest extends HeadlessUiTest {
         advance(30);
 
         assertThat(tray.shows()).isZero();
-        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> rollState().status())).isInstanceOf(RollStatus.Lost.class);
+        assertThat(fromFx(() -> ui().resultStrip().text())).isNotEqualTo(RollStatus.ROLLING);
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
     }
 
