@@ -182,7 +182,7 @@ final class HistoryTab {
     void rollAgain(PastRoll roll) {
         copy(roll);
         // Every PastRoll's expression parses (checked when it was made), so it is handed on parsed.
-        session.roll(roll.parsed());
+        session.controller().roll(roll.parsed());
         ui.focusBox();
         ui.expressionBox().selectAll();
     }
