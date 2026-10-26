@@ -26,7 +26,7 @@ class QueuedRollTest extends HeadlessUiTest {
 
         enter("2d6+1");
 
-        assertThat(fromFx(() -> entry().queue().queued())).contains("2d6+1");
+        assertThat(queuedRoll()).contains("2d6+1");
         assertThat(fromFx(() -> chip().isVisible())).isTrue();
         assertThat(fromFx(() -> chip().getText())).isEqualTo("next: 2d6+1");
         // The current Roll plays on untouched; the queued one isn't simulated yet.
@@ -59,11 +59,11 @@ class QueuedRollTest extends HeadlessUiTest {
         enter("2d6");
         enter("1d20+3");
 
-        assertThat(fromFx(() -> entry().queue().queued())).contains("1d20+3");
+        assertThat(queuedRoll()).contains("1d20+3");
         assertThat(fromFx(() -> chip().getText())).isEqualTo("next: 1d20+3");
 
         playToRest();
-        advance(RollQueue.BEAT_SECONDS);
+        advance(RollController.BEAT_SECONDS);
         onFx(() -> {});
         playToRest();
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("1d20+3 = 8");
@@ -78,21 +78,18 @@ class QueuedRollTest extends HeadlessUiTest {
         playToRest();
         double revealed = clock.time();
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("1d6 = 4");
-        assertThat(RollQueue.BEAT_SECONDS).isEqualTo(0.9);
 
-        // Through the beat the Roll Result stays up and the Queued Roll waits, with the clock still pulsing.
+        // Through the beat the Roll Result stays up and the Queued Roll waits behind its chip.
         advance(0.85);
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
         assertThat(fromFx(() -> chip().isVisible())).isTrue();
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("1d6 = 4");
-        assertThat(pulses.running).isTrue();
+        assertThat(tray.shows()).isEqualTo(1);
 
         advance(0.05);
         onFx(() -> {});
         assertThat(clock.time() - revealed).isBetween(0.89, 0.92);
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
         assertThat(fromFx(() -> chip().isVisible())).isFalse();
-        assertThat(fromFx(() -> entry().queue().queued())).isEmpty();
+        assertThat(queuedRoll()).isEmpty();
         assertThat(tray.shows()).isEqualTo(2);
 
         playToRest();
@@ -107,9 +104,9 @@ class QueuedRollTest extends HeadlessUiTest {
         enter("1d8");
         onFx(() -> {});
 
-        assertThat(fromFx(() -> entry().queue().waiting())).isFalse();
+        assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> chip().isVisible())).isFalse();
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("Rolling…");
         assertThat(tray.shows()).isEqualTo(2);
     }
 
@@ -121,12 +118,12 @@ class QueuedRollTest extends HeadlessUiTest {
 
         enter("1d4");
 
-        assertThat(fromFx(() -> entry().queue().queued())).contains("1d4");
+        assertThat(queuedRoll()).contains("1d4");
         onFx(() -> physics.finish());
         // The plan comes back through Platform.runLater; this block runs after it.
         onFx(() -> {});
         assertThat(tray.shows()).isEqualTo(1);
-        assertThat(fromFx(() -> entry().queue().queued())).contains("1d4");
+        assertThat(queuedRoll()).contains("1d4");
     }
 
     @Test
@@ -136,15 +133,14 @@ class QueuedRollTest extends HeadlessUiTest {
 
         onFx(() -> robot().keyType(KeyCode.ESCAPE));
 
-        assertThat(fromFx(() -> entry().queue().waiting())).isFalse();
+        assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> chip().isVisible())).isFalse();
         playToRest();
         advance(2);
         onFx(() -> {});
+        // Nothing followed the Roll under way: its Roll Result stays up.
         assertThat(tray.shows()).isEqualTo(1);
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
-        // With nothing queued, the pulse stops once the Roll is over.
-        assertThat(pulses.running).isFalse();
+        assertThat(fromFx(() -> ui().resultStrip().text())).isNotEqualTo("Rolling…");
     }
 
     @Test
@@ -154,14 +150,14 @@ class QueuedRollTest extends HeadlessUiTest {
         // An invalid Enter neither rolls, queues nor replaces the Queued Roll.
         enter("1d7");
         assertThat(fromFx(() -> entry().errorPopup().isShowing())).isTrue();
-        assertThat(fromFx(() -> entry().queue().queued())).contains("2d6");
+        assertThat(queuedRoll()).contains("2d6");
 
         onFx(() -> robot().keyType(KeyCode.ESCAPE));
         assertThat(fromFx(() -> entry().errorPopup().isShowing())).isFalse();
-        assertThat(fromFx(() -> entry().queue().queued())).contains("2d6");
+        assertThat(queuedRoll()).contains("2d6");
 
         onFx(() -> robot().keyType(KeyCode.ESCAPE));
-        assertThat(fromFx(() -> entry().queue().queued())).isEmpty();
+        assertThat(queuedRoll()).isEmpty();
     }
 
     @Test
@@ -170,7 +166,7 @@ class QueuedRollTest extends HeadlessUiTest {
 
         onFx(() -> robot().keyType(KeyCode.ESCAPE));
 
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("Rolling…");
         playToRest();
         assertThat(tray.phase()).isEqualTo(StandInTray.Phase.AT_REST);
     }
@@ -183,36 +179,34 @@ class QueuedRollTest extends HeadlessUiTest {
         enter("2d6");
         playToRest();
 
-        advance(RollQueue.BEAT_SECONDS);
+        advance(RollController.BEAT_SECONDS);
         onFx(() -> {});
 
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Failed.class);
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo(WOULDNT_SETTLE);
         // Nothing moved: the Tray keeps the first Roll's Dice, and the box keeps the expression.
         assertThat(tray.shows()).isEqualTo(1);
         assertThat(fromFx(() -> ui().expressionBox().getText())).isEqualTo("2d6");
-        assertThat(fromFx(() -> entry().queue().waiting())).isFalse();
-        assertThat(pulses.running).isFalse();
+        assertThat(queuedRoll()).isEmpty();
     }
 
     @Test
-    void aCurrentRollThatFailsStartsTheBeatFromItsFailure() throws Exception {
+    void aCurrentRollThatFailsShowsItsMessageThroughTheBeat() throws Exception {
         physics.setHolding(true);
         simulator.then(24, Ending.TIMED_OUT);
         roll("1d6");
         enter("1d4");
 
-        // The first Roll fails in pre-simulation, before anything moved or asked for the pulse.
+        // The first Roll fails in pre-simulation, before anything moved.
         onFx(() -> physics.finish());
         onFx(() -> {});
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo(WOULDNT_SETTLE);
-        assertThat(pulses.running).isTrue();
 
         advance(0.85);
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo(WOULDNT_SETTLE);
+        assertThat(queuedRoll()).contains("1d4");
         advance(0.05);
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("Rolling…");
+        assertThat(queuedRoll()).isEmpty();
     }
 
     @Test
@@ -221,7 +215,7 @@ class QueuedRollTest extends HeadlessUiTest {
 
         onFx(() -> session.roll("1d12"));
 
-        assertThat(fromFx(() -> entry().queue().queued())).contains("1d12");
+        assertThat(queuedRoll()).contains("1d12");
         assertThat(fromFx(() -> chip().getText())).isEqualTo("next: 1d12");
         assertThat(tray.shows()).isEqualTo(1);
     }
@@ -232,12 +226,12 @@ class QueuedRollTest extends HeadlessUiTest {
         enter("1d8");
         onFx(() -> ui().expressionBox().setText("4d6kh"));
         playToRest();
-        advance(RollQueue.BEAT_SECONDS);
+        advance(RollController.BEAT_SECONDS);
         onFx(() -> {});
 
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(tray.shows()).isEqualTo(2);
         assertThat(fromFx(() -> ui().expressionBox().getText())).isEqualTo("4d6kh");
-        assertThat(fromFx(() -> entry().queue().queued())).isEqualTo(Optional.empty());
+        assertThat(queuedRoll()).isEqualTo(Optional.empty());
     }
 
     private RollEntry entry() {

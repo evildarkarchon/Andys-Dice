@@ -223,7 +223,7 @@ class HistoryTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
 
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
         assertThat(fromFx(() -> session.entry().nextChip().getText())).isEqualTo("next: 1d8");
     }
 

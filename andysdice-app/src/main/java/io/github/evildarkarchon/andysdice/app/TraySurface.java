@@ -26,14 +26,4 @@ interface TraySurface extends RollController.TrayView {
      * @param look the look to draw from now on
      */
     void showLook(Look look);
-
-    /**
-     * Tells whether the Tray still needs the playback clock after the Roll is over, so the pulse keeps running:
-     * the GL Tray's camera settling in on the Dice at rest (#46), for one.
-     *
-     * @return {@code true} while something on the Tray is still moving on the clock; {@code false} by default
-     */
-    default boolean moving() {
-        return false;
-    }
 }

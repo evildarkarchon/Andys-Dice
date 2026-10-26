@@ -278,19 +278,19 @@ class FailurePanelTest extends HeadlessUiTest {
             ui().expressionBox().setText("1d8");
             pressEnterInBox();
         });
-        assertThat(fromFx(() -> session.entry().queue().queued())).contains("1d8");
+        assertThat(queuedRoll()).contains("1d8");
 
         dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
         assertThat(await(this::panelShown, WAIT)).isTrue();
         playToRest();
-        advance(RollQueue.BEAT_SECONDS + 1);
+        advance(RollController.BEAT_SECONDS + 1);
 
         assertThat(tray.shows()).isEqualTo(1);
-        assertThat(fromFx(() -> session.entry().queue().queued())).isEmpty();
+        assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> session.entry().nextChip().isVisible())).isFalse();
         // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing.
         onFx(() -> session.roll("1d4"));
-        advance(RollQueue.BEAT_SECONDS + 1);
+        advance(RollController.BEAT_SECONDS + 1);
         assertThat(tray.shows()).isEqualTo(1);
     }
 

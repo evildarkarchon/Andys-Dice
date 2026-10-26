@@ -403,7 +403,7 @@ class KeyboardMapTest extends HeadlessUiTest {
     }
 
     private Optional<String> queued() throws Exception {
-        return fromFx(() -> session.entry().queue().queued());
+        return queuedRoll();
     }
 
     /** Types Esc wherever the keyboard is: the main window, or the popup or dialog in front of it. */

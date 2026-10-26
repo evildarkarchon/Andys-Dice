@@ -160,7 +160,7 @@ class AccessibilitySweepTest extends HeadlessUiTest {
                     node.requestFocus();
                 });
                 onFx(() -> robot().keyType(KeyCode.ESCAPE));
-                if (fromFx(() -> session.entry().queue().queued().isPresent())) {
+                if (queuedRoll().isPresent()) {
                     kept.add(describe(node));
                 }
             }
