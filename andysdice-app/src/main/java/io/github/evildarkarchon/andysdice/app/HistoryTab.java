@@ -135,11 +135,13 @@ final class HistoryTab {
     static HistoryTab install(RollSession session, Persistence persistence, Clock clock) {
         HistoryTab tab = new HistoryTab(session, persistence, clock);
         tab.show(persistence.load(RollHistory.FILE));
-        session.addStatusListener(status -> {
+        // Once per Rested, at the moment its Roll Result is revealed; later snapshots of the same Roll at rest (its
+        // Queued Roll changing, the camera settling in) don't join it again.
+        session.controller().addStateListener(RollState.statusChanges(status -> {
             if (status instanceof RollStatus.Rested rested) {
                 tab.join(PastRoll.of(clock.instant(), rested));
             }
-        });
+        }));
         return tab;
     }
 

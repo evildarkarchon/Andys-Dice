@@ -217,7 +217,7 @@ class SavedTabTest extends HeadlessUiTest {
         click(cells().get(1), 1);
 
         assertThat(fromFx(() -> ui().expressionBox().getText())).isEqualTo("4d6rr1kh3");
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
     }
 
     @Test
@@ -231,7 +231,7 @@ class SavedTabTest extends HeadlessUiTest {
         onFx(() -> {});
         playToRest();
 
-        assertThat(fromFx(() -> ((RollStatus.Rested) controller().status()).savedRollName())).contains("Fireball");
+        assertThat(fromFx(() -> ((RollStatus.Rested) rollState().status()).savedRollName())).contains("Fireball");
         assertThat(fromFx(() -> ui().resultStrip().details().getText())).startsWith("Fireball");
         List<PastRoll> rolls = fromFx(() -> List.copyOf(history.list().getItems()));
         assertThat(rolls).singleElement().satisfies(roll -> {
@@ -293,7 +293,7 @@ class SavedTabTest extends HeadlessUiTest {
         faces.then(3);
         onFx(() -> robot().keyType(KeyCode.ENTER));
         onFx(() -> {});
-        assertThat(fromFx(() -> controller().underWay())).isTrue();
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
         playToRest();
         assertThat(fromFx(() -> history.list().getItems().getFirst().savedRollName())).contains("Dagger");
     }
@@ -403,7 +403,7 @@ class SavedTabTest extends HeadlessUiTest {
         });
         assertThat(fromFx(() -> saved.saved().rolls().get(1))).isEqualTo(new SavedRoll("Dagger", "1d4+3"));
         // Enter saved the edit; it didn't also roll.
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
 
         // Esc cancels an edit, before (and instead of) cancelling a Queued Roll.
         roll("3d6");
@@ -522,7 +522,7 @@ class SavedTabTest extends HeadlessUiTest {
         click(cell, 1);
         click(cell, 2);
         onFx(() -> {});
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
         assertThat(queuedRoll()).isEmpty();
 
         onFx(() -> cell.editButton().fire());

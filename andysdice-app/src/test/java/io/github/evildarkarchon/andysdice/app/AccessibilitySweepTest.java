@@ -168,7 +168,7 @@ class AccessibilitySweepTest extends HeadlessUiTest {
 
         assertThat(kept).as("focus owners where Esc left the Queued Roll").isEmpty();
         // Esc never skipped the Roll under way.
-        assertThat(fromFx(() -> controller().status())).isInstanceOf(RollStatus.Rolling.class);
+        assertThat(fromFx(() -> rollState().underWay())).isTrue();
     }
 
     @Test

@@ -282,8 +282,8 @@ class FailurePanelTest extends HeadlessUiTest {
 
         dieOn("andysdice-render", new IllegalStateException("the GPU went away"));
         assertThat(await(this::panelShown, WAIT)).isTrue();
-        playToRest();
-        advance(RollController.BEAT_SECONDS + 1);
+        // Far past where the Roll in motion would have rested, and the beat after it.
+        advance(30);
 
         assertThat(tray.shows()).isEqualTo(1);
         assertThat(queuedRoll()).isEmpty();
@@ -306,8 +306,9 @@ class FailurePanelTest extends HeadlessUiTest {
         // Far past the chain's rest: nothing plays on behind the panel.
         advance(30);
 
-        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().status())).isNotInstanceOf(RollStatus.Rested.class);
+        // Nothing is left under way: the app has settled.
+        assertThat(fromFx(() -> rollState().settled())).isTrue();
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
         // Nor is it kept for the next run.
         restartApp();
@@ -327,7 +328,7 @@ class FailurePanelTest extends HeadlessUiTest {
         advance(30);
 
         assertThat(tray.shows()).isZero();
-        assertThat(fromFx(() -> controller().status())).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(fromFx(() -> rollState().status())).isNotInstanceOf(RollStatus.Rested.class);
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
     }
 

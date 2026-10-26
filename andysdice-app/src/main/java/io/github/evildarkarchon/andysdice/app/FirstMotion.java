@@ -47,7 +47,7 @@ final class FirstMotion {
                     + invalid.error().message()));
             return timed;
         }
-        if (skeleton.controller().underWay()) {
+        if (skeleton.controller().state().underWay()) {
             // Enter would make it the Queued Roll, which waits for the one under way.
             timed.completeExceptionally(new IllegalStateException("can't time " + expression
                     + ": a Roll is already under way"));
@@ -62,13 +62,13 @@ final class FirstMotion {
                 timed.complete(Duration.ofNanos(System.nanoTime() - entered[0]));
             }
         });
-        // Session listeners can't be removed; once this timing is over, this one does nothing.
-        skeleton.session().addStatusListener(status -> {
+        // State listeners can't be removed; once this timing is over, this one does nothing.
+        skeleton.controller().addStateListener(RollState.statusChanges(status -> {
             if (status instanceof RollStatus.Failed failed && !timed.isDone()) {
                 timed.completeExceptionally(new IllegalStateException("the Roll of " + expression + " failed: "
                         + failed.text()));
             }
-        });
+        }));
         // Through the JavaFX thread, which owns the listener: a timeout completes the timing on a timer thread.
         timed.whenComplete((duration, error) -> Platform.runLater(() -> view.setOnFramePresented(null)));
 

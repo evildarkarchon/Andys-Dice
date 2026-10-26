@@ -11,8 +11,12 @@ import io.github.evildarkarchon.andysdice.core.simulation.Simulator;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayGeometry;
 import io.github.evildarkarchon.andysdice.core.simulation.TrayMaterials;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
@@ -43,6 +47,10 @@ import java.util.random.RandomGenerator;
  * <p>It listens to the clock once, and handles each advance in a fixed order: draw the playing Roll at its new time;
  * reveal it once the last Throw is at rest; start the Queued Roll once its beat is over; then decide whether the
  * pulse is still needed. No rule here depends on the order listeners were added to the clock.
+ *
+ * <p>What it tells the rest of the app is one immutable {@link RollState} snapshot (the status, the Queued Roll and
+ * whether the app has settled), published on every change, a {@code settled} flip on a clock tick included, to
+ * listeners that are only ever added and are told in the order they were added ({@link #addStateListener}).
  *
  * <p>Thread contract: everything here runs on one thread, the one that advances the clock (the JavaFX
  * Application Thread in the app). Only the planning job runs on the physics worker, and its result is handed
@@ -98,11 +106,8 @@ final class RollController {
      * The chain now playing, with when it started on the clock, the expression it reveals at rest and the name of
      * the Saved Roll it was rolled from, if any (#56).
      */
-    private record Playing(RollExpression expression, Optional<String> savedRollName, ChainPlayback chain,
+    private record InPlay(RollExpression expression, Optional<String> savedRollName, ChainPlayback chain,
             double start) {}
-
-    /** The Queued Roll: what was asked for, and the name of the Saved Roll it came from, if any (#56). */
-    private record Queued(String input, Optional<String> savedRollName) {}
 
     private final PlaybackClock clock;
     private final Pulses pulses;
@@ -113,13 +118,19 @@ final class RollController {
     private Tray throwInto;
     private final TrayView tray;
 
-    private Consumer<RollStatus> onStatusChanged = status -> {};
-    private Consumer<Optional<String>> onQueuedChanged = queued -> {};
+    /** Told every snapshot, in the order added; only ever added to. */
+    private final List<Consumer<RollState>> listeners = new ArrayList<>();
+    /** Snapshots published but not yet told to every listener; see {@link #publish}. */
+    private final Queue<RollState> untold = new ArrayDeque<>();
+    /** Whether {@link #publish} is telling the listeners now. */
+    private boolean telling;
     private RollStatus status = new RollStatus.Ready();
+    /** The snapshot published last, or the first one, made with the controller. */
+    private RollState state;
     private boolean underWay;
-    private Playing playing;
+    private InPlay playing;
     /** The Queued Roll, or {@code null}. */
-    private Queued queued;
+    private RollState.QueuedRoll queued;
     /** When on the clock the Queued Roll starts; NaN until the Roll ahead of it has ended. */
     private double queuedStartsAt = Double.NaN;
     /** Whether this controller has asked for the pulse and not yet let it go; it is the pulse's one user. */
@@ -150,25 +161,28 @@ final class RollController {
         this.releases = Objects.requireNonNull(releases, "releases");
         this.throwInto = Objects.requireNonNull(throwInto, "throwInto");
         this.tray = Objects.requireNonNull(tray, "tray");
+        state = snapshot();
         clock.addListener(c -> advanced());
     }
 
     /**
-     * Returns where the current Roll stands.
+     * Returns the Roll's state as it stands now: the snapshot published last, or before any change, the first one.
      *
-     * @return the status the result strip shows
+     * @return the current snapshot
      */
-    RollStatus status() {
-        return status;
+    RollState state() {
+        return state;
     }
 
     /**
-     * Sets who is told each time the status changes.
+     * Adds a listener told each snapshot published from now on, after the listeners added before it. Listeners are
+     * only ever added, so none unhooks another; a listener is not told the current snapshot, which {@link #state}
+     * returns.
      *
-     * @param listener the listener; it replaces any earlier one
+     * @param listener told every snapshot, in the order they were published, on this controller's thread
      */
-    void setOnStatusChanged(Consumer<RollStatus> listener) {
-        onStatusChanged = Objects.requireNonNull(listener, "listener");
+    void addStateListener(Consumer<RollState> listener) {
+        listeners.add(Objects.requireNonNull(listener, "listener"));
     }
 
     /**
@@ -188,34 +202,6 @@ final class RollController {
      */
     void setTray(Tray tray) {
         throwInto = Objects.requireNonNull(tray, "tray");
-    }
-
-    /**
-     * Tells whether a Roll is being pre-simulated or played back.
-     *
-     * @return {@code true} from Enter until the Roll is at rest or has failed
-     */
-    boolean underWay() {
-        return underWay;
-    }
-
-    /**
-     * Returns the Queued Roll.
-     *
-     * @return its text as asked for, or empty if none is queued
-     */
-    Optional<String> queued() {
-        return queued == null ? Optional.empty() : Optional.of(queued.input());
-    }
-
-    /**
-     * Sets who is told when the Queued Roll changes: queued, replaced, cancelled, started or dropped. A stop-gap
-     * for the "next: …" chip until the Roll's state snapshot replaces it.
-     *
-     * @param listener told the Queued Roll's text, or empty; it replaces any earlier one
-     */
-    void setOnQueuedChanged(Consumer<Optional<String>> listener) {
-        onQueuedChanged = Objects.requireNonNull(listener, "listener");
     }
 
     /**
@@ -246,8 +232,8 @@ final class RollController {
             return;
         }
         if (underWay || queued != null) {
-            queued = new Queued(input, savedRollName);
-            onQueuedChanged.accept(queued());
+            queued = new RollState.QueuedRoll(input, savedRollName);
+            publish();
             return;
         }
         start(input, savedRollName);
@@ -265,6 +251,7 @@ final class RollController {
         clearQueued();
         // With nothing left to wait for, a beat no longer needs the pulse.
         updatePulse();
+        publish();
         return true;
     }
 
@@ -280,7 +267,7 @@ final class RollController {
         }
 
         underWay = true;
-        setStatus(new RollStatus.Rolling(expression));
+        setStatus(new RollStatus.PreSimulating(expression));
         // The Tray this Roll is planned in, taken now: one picked while it pre-simulates is the next Roll's. Its
         // chain carries this one (#67), so the Roll is heard in the Tray it was simulated in.
         Tray plannedIn = throwInto;
@@ -318,6 +305,7 @@ final class RollController {
             clearQueued();
         }
         updatePulse();
+        publish();
     }
 
     /**
@@ -340,9 +328,13 @@ final class RollController {
                 ChainPlayback chain = new ChainPlayback(planned, plannedIn);
                 tray.show(chain);
                 // Playback starts now on the clock, wherever the clock has got to.
-                playing = new Playing(expression, savedRollName, chain, clock.time());
+                double start = clock.time();
+                playing = new InPlay(expression, savedRollName, chain, start);
                 // Now something moves, the clock must run.
                 updatePulse();
+                // Published once the Tray has the chain, with the clock time of its first Release, which the dice
+                // sound places its Throws from (#59).
+                setStatus(new RollStatus.Playing(expression, chain, start));
             }
             case RollPlan.Failed failed -> fail(RollStatus.Failed.of(expression, failed.reason()), null);
             // The expression parsed here already, so the planner never sees an invalid one.
@@ -367,10 +359,11 @@ final class RollController {
      * The clock moved on. In this order, which is the one rule here about ordering: draw the playing chain at its
      * new time; reveal the Roll once its last Throw is at rest; start the Queued Roll once its beat is over (so a
      * chain it shows this advance is drawn from its first Release, not redrawn); and only then decide whether the
-     * pulse is still needed, with everything this advance changed already in place.
+     * pulse is still needed, with everything this advance changed already in place. Last, the snapshot is published
+     * if the advance changed nothing else but {@code settled} (the Tray stopped moving: the camera has settled in).
      */
     private void advanced() {
-        Playing now = playing;
+        InPlay now = playing;
         if (now != null) {
             double elapsed = clock.time() - now.start();
             tray.showTime(elapsed);
@@ -380,10 +373,11 @@ final class RollController {
         }
         startQueuedIfDue();
         updatePulse();
+        publish();
     }
 
     /** The last Throw is at rest: show the Roll Result, and start a Queued Roll's beat. */
-    private void reveal(Playing now) {
+    private void reveal(InPlay now) {
         playing = null;
         underWay = false;
         ended();
@@ -407,15 +401,17 @@ final class RollController {
                 || clock.time() < queuedStartsAt - 1e-9) {
             return;
         }
-        Queued next = queued;
+        RollState.QueuedRoll next = queued;
+        // Not published on its own: start publishes the new status with the Queued Roll gone, in one snapshot, so
+        // nothing sees the app settled for a moment between the Roll at rest and the one taking over from it.
         clearQueued();
         start(next.input(), next.savedRollName());
     }
 
+    /** Drops the Queued Roll and its beat. It publishes nothing; the caller does, once its change is complete. */
     private void clearQueued() {
         queued = null;
         queuedStartsAt = Double.NaN;
-        onQueuedChanged.accept(Optional.empty());
     }
 
     /**
@@ -438,9 +434,50 @@ final class RollController {
         }
     }
 
+    /** Moves the status on and publishes it: every new status is a change, even one equal to the last. */
     private void setStatus(RollStatus next) {
         status = next;
-        onStatusChanged.accept(next);
+        publish();
+    }
+
+    /** The Roll's state as it stands now; settled once nothing is under way or queued and the Tray is still. */
+    private RollState snapshot() {
+        return new RollState(status, Optional.ofNullable(queued), !underWay && queued == null && !tray.moving());
+    }
+
+    /**
+     * Publishes the Roll's state if it changed since the last snapshot: a new status (told apart by identity), a
+     * different Queued Roll, or {@code settled} flipping. Each listener is told in the order it was added.
+     *
+     * <p>A listener may act on the controller while being told (roll, say, the moment a Roll rests), which publishes
+     * again from inside this call. That snapshot waits until every listener has been told the one before it, so all
+     * of them hear every snapshot in the same order, rather than later listeners hearing the newer one first and
+     * then the stale one.
+     */
+    private void publish() {
+        RollState next = snapshot();
+        if (next.status() == state.status() && next.queued().equals(state.queued())
+                && next.settled() == state.settled()) {
+            return;
+        }
+        state = next;
+        untold.add(next);
+        if (telling) {
+            return;
+        }
+        telling = true;
+        try {
+            for (RollState told = untold.poll(); told != null; told = untold.poll()) {
+                // By index: a listener added while one is being told is told this snapshot too, not a failure.
+                for (int i = 0; i < listeners.size(); i++) {
+                    listeners.get(i).accept(told);
+                }
+            }
+        } finally {
+            telling = false;
+            // Empty unless a listener threw; what it left untold is stale by the next change, so it is dropped.
+            untold.clear();
+        }
     }
 
     private static String describe(Throwable error) {

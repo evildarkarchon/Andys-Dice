@@ -65,7 +65,8 @@ final class RollEntry {
         nextChip.setVisible(false);
         nextChip.managedProperty().bind(nextChip.visibleProperty());
         ui.toolbar().getChildren().add(nextChip);
-        controller.setOnQueuedChanged(this::showQueued);
+        // The chip follows the Queued Roll in each of the Roll's state snapshots.
+        controller.addStateListener(state -> showQueued(state.queued()));
 
         ui.setOnRoll(this::enter);
         // A popup that doesn't consume the events that auto-hide it (a ContextMenu, the History menu, while nothing
@@ -171,8 +172,8 @@ final class RollEntry {
         return nextChip;
     }
 
-    private void showQueued(Optional<String> queued) {
-        nextChip.setText(queued.map(text -> NEXT_PREFIX + text.strip()).orElse(""));
+    private void showQueued(Optional<RollState.QueuedRoll> queued) {
+        nextChip.setText(queued.map(roll -> NEXT_PREFIX + roll.input().strip()).orElse(""));
         nextChip.setVisible(queued.isPresent());
     }
 }

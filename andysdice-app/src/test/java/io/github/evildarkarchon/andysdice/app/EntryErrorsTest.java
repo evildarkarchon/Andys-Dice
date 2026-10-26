@@ -36,7 +36,7 @@ class EntryErrorsTest extends HeadlessUiTest {
         assertThat(fromFx(() -> entry().errorPopup().message())).isEqualTo(NO_D7);
 
         // Nothing was rolled: no Roll under way, nothing simulated, the Tray and the strip as they were.
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
         assertThat(simulator.requests).isEmpty();
         assertThat(tray.shows()).isZero();
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo(new RollStatus.Ready().text());
@@ -119,7 +119,7 @@ class EntryErrorsTest extends HeadlessUiTest {
         assertThat(fromFx(() -> ui().expressionBox().getSelectedText())).isEqualTo("d7");
         assertThat(fromFx(() -> entry().errorPopup().isShowing())).isTrue();
         assertThat(fromFx(() -> ui().expressionBox().isFocused())).isTrue();
-        assertThat(fromFx(() -> controller().underWay())).isFalse();
+        assertThat(fromFx(() -> rollState().underWay())).isFalse();
     }
 
     @Test

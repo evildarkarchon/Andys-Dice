@@ -38,7 +38,8 @@ import org.junit.jupiter.api.Test;
  * order with the other Dice lying still, and the Roll Result appears only once the last Throw is at rest. A Roll
  * asked for meanwhile waits as the Queued Roll and starts a beat after the reveal (or the failure), and JavaFX's
  * pulse is asked for exactly while something needs the clock. No GL, no Jolt, no JavaFX, and no test sleeps
- * (ADR-0011). It asserts only on what the controller reports and on what the Tray and the pulse were told.
+ * (ADR-0011). It asserts only on the Roll's state snapshots the controller publishes and on what the Tray and the
+ * pulse were told.
  */
 class RollControllerTest {
 
@@ -53,8 +54,8 @@ class RollControllerTest {
     private HeldPhysics physics;
     private RecordingTray tray;
     private HandPulses pulses;
-    private List<RollStatus> statuses;
-    private List<Optional<String>> queuedChanges;
+    /** Every snapshot the controller published, in order. */
+    private List<RollState> published;
 
     @BeforeEach
     void setUp() {
@@ -63,8 +64,48 @@ class RollControllerTest {
         physics = new HeldPhysics(simulator);
         tray = new RecordingTray();
         pulses = new HandPulses();
-        statuses = new ArrayList<>();
-        queuedChanges = new ArrayList<>();
+        published = new ArrayList<>();
+    }
+
+    /** The snapshot published last. */
+    private RollState latest() {
+        return published.getLast();
+    }
+
+    /** The status in the snapshot published last. */
+    private RollStatus status() {
+        return latest().status();
+    }
+
+    /** Whether the snapshot published last has a Roll under way. */
+    private boolean underWay() {
+        return latest().underWay();
+    }
+
+    /** The Queued Roll's text in the snapshot published last. */
+    private Optional<String> queued() {
+        return latest().queued().map(RollState.QueuedRoll::input);
+    }
+
+    /** Each status published, once each, in order. */
+    private List<RollStatus> statuses() {
+        List<RollStatus> statuses = new ArrayList<>();
+        published.forEach(RollState.statusChanges(statuses::add));
+        return statuses;
+    }
+
+    /** Each change of the Queued Roll's text across the published snapshots, from none at the start. */
+    private List<Optional<String>> queuedChanges() {
+        List<Optional<String>> changes = new ArrayList<>();
+        Optional<String> last = Optional.empty();
+        for (RollState state : published) {
+            Optional<String> now = state.queued().map(RollState.QueuedRoll::input);
+            if (!now.equals(last)) {
+                changes.add(now);
+                last = now;
+            }
+        }
+        return changes;
     }
 
     /** A controller whose Face Value generator draws exactly these values, throwing into the default Tray. */
@@ -76,8 +117,7 @@ class RollControllerTest {
     private RollController controller(ScriptedRandom faces, Tray into) {
         RollController controller = new RollController(clock, pulses, physics, Runnable::run,
                 new FaceValueGenerator(faces), new SplittableRandom(1), into, tray);
-        controller.setOnStatusChanged(statuses::add);
-        controller.setOnQueuedChanged(queuedChanges::add);
+        controller.addStateListener(published::add);
         return controller;
     }
 
@@ -135,7 +175,7 @@ class RollControllerTest {
 
     /** Advances the clock a frame at a time until the Roll is no longer under way, or ten seconds pass. */
     private void playToRest(RollController controller) {
-        for (int i = 0; controller.underWay() && i < 600; i++) {
+        for (int i = 0; underWay() && i < 600; i++) {
             clock.advance(FRAME);
         }
     }
@@ -151,7 +191,7 @@ class RollControllerTest {
     void beforeAnyRollTheTrayIsEmptyAndTheControllerIsReady() {
         RollController controller = controller();
 
-        assertThat(controller.status()).isInstanceOf(RollStatus.Ready.class);
+        assertThat(controller.state().status()).isInstanceOf(RollStatus.Ready.class);
         assertThat(tray.chains).isEmpty();
     }
 
@@ -162,7 +202,7 @@ class RollControllerTest {
 
         controller.roll("4d6rr1kh3");
 
-        assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
         assertThat(physics.held).isNotNull();
         assertThat(simulator.requests).isEmpty();
         assertThat(tray.chains).isEmpty();
@@ -245,7 +285,7 @@ class RollControllerTest {
         List<Integer> order = new ArrayList<>();
         List<DiceScene.Die> before = chain.diceAt(0);
         boolean[] movedInThrow = new boolean[throwChain.size()];
-        while (controller.underWay() && clock.time() < 10) {
+        while (underWay() && clock.time() < 10) {
             clock.advance(FRAME);
             double t = tray.times.getLast();
             int playing = chain.throwAt(t);
@@ -282,15 +322,15 @@ class RollControllerTest {
         while (clock.time() + FRAME < chain.restTime()) {
             clock.advance(FRAME);
             assertThat(tray.times.getLast()).isCloseTo(clock.time(), within(1e-9));
-            assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
+            assertThat(status()).isInstanceOf(RollStatus.Playing.class);
         }
         clock.advance(FRAME);
 
         // Rolls show 2 (after 1, 1), 4, 3 (after 1) and 6; the highest three make 13.
-        RollStatus.Rested rested = (RollStatus.Rested) controller.status();
+        RollStatus.Rested rested = (RollStatus.Rested) status();
         assertThat(rested.result().total()).isEqualTo(13);
         assertThat(rested.text()).isEqualTo("4d6rr1kh3 = 13");
-        assertThat(statuses).filteredOn(RollStatus.Rested.class::isInstance).hasSize(1);
+        assertThat(statuses()).filteredOn(RollStatus.Rested.class::isInstance).hasSize(1);
     }
 
     @Test
@@ -436,7 +476,7 @@ class RollControllerTest {
         playToRest(controller);
         int drawn = tray.times.size();
         clock.advance(2);
-        assertThat(controller.status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(status()).isInstanceOf(RollStatus.Rested.class);
         assertThat(tray.times).hasSize(drawn);
 
         controller.roll("1d6");
@@ -456,7 +496,7 @@ class RollControllerTest {
         physics.finish();
         playToRest(controller);
 
-        assertThat(((RollStatus.Rested) controller.status()).result().total()).isEqualTo(9);
+        assertThat(((RollStatus.Rested) status()).result().total()).isEqualTo(9);
     }
 
     @Test
@@ -465,7 +505,7 @@ class RollControllerTest {
 
         controller.roll("1d6+");
 
-        RollStatus.Refused refused = (RollStatus.Refused) controller.status();
+        RollStatus.Refused refused = (RollStatus.Refused) status();
         assertThat(refused.message()).isNotBlank();
         assertThat(physics.held).isNull();
         assertThat(tray.chains).isEmpty();
@@ -485,9 +525,9 @@ class RollControllerTest {
         physics.finish();
         clock.advance(1);
 
-        RollStatus.Failed failed = (RollStatus.Failed) controller.status();
+        RollStatus.Failed failed = (RollStatus.Failed) status();
         assertThat(failed.text()).isEqualTo(WOULDNT_SETTLE);
-        assertThat(controller.underWay()).isFalse();
+        assertThat(underWay()).isFalse();
         assertThat(tray.chains).hasSize(1);
         assertThat(tray.times).hasSize(drawn);
     }
@@ -499,7 +539,7 @@ class RollControllerTest {
         controller.roll("1d6rr1");
         physics.finish();
 
-        assertThat(controller.status().text()).isEqualTo("Too many rerolls. Nothing was rolled.");
+        assertThat(status().text()).isEqualTo("Too many rerolls. Nothing was rolled.");
         assertThat(simulator.requests).isEmpty();
         assertThat(tray.chains).isEmpty();
     }
@@ -512,9 +552,119 @@ class RollControllerTest {
         controller.roll("1d6");
         physics.finish();
 
-        assertThat(controller.status()).isInstanceOf(RollStatus.Failed.class);
-        assertThat(controller.underWay()).isFalse();
+        assertThat(status()).isInstanceOf(RollStatus.Failed.class);
+        assertThat(underWay()).isFalse();
         assertThat(tray.chains).isEmpty();
+    }
+
+    // The Roll's state snapshot: published on every change, to every listener, in the order they were added.
+
+    @Test
+    void eachChangeIsOneSnapshotFromPreSimulatingThroughPlayingToRestThenSettledOnceTheCameraHasSettledIn() {
+        RollController controller = controller(4);
+        clock.advance(2.5);
+        assertThat(controller.state().settled()).as("nothing rolled yet").isTrue();
+
+        controller.roll("1d6");
+
+        assertThat(published).hasSize(1);
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
+        assertThat(status().text()).isEqualTo("Rolling…");
+        assertThat(latest().queued()).isEmpty();
+        assertThat(latest().settled()).isFalse();
+        // Under way, so camera gestures are blocked, from Pre-simulating through Playing.
+        assertThat(latest().underWay()).isTrue();
+
+        physics.finish();
+
+        assertThat(published).hasSize(2);
+        RollStatus.Playing playing = (RollStatus.Playing) status();
+        assertThat(playing.chain()).isSameAs(tray.chains.getFirst());
+        assertThat(playing.start()).as("the clock's time at its first Release").isEqualTo(2.5);
+        assertThat(playing.text()).isEqualTo("Rolling…");
+        assertThat(latest().settled()).isFalse();
+        assertThat(latest().underWay()).isTrue();
+
+        // The camera's settle-in on the Dice at rest outlasts the last Throw.
+        tray.moving = true;
+        playToRest(controller);
+        assertThat(published).hasSize(3);
+        assertThat(status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(latest().underWay()).isFalse();
+        assertThat(latest().settled()).isFalse();
+        // Clock ticks that change nothing publish nothing.
+        frames(10);
+        assertThat(published).hasSize(3);
+
+        tray.moving = false;
+        frames(1);
+
+        assertThat(published).hasSize(4);
+        assertThat(latest().status()).isSameAs(published.get(2).status());
+        assertThat(latest().settled()).isTrue();
+        assertThat(controller.state()).isEqualTo(latest());
+        frames(10);
+        assertThat(published).hasSize(4);
+    }
+
+    @Test
+    void theSnapshotHoldsTheQueuedRollWithItsSavedRollsNameAndIsNeverSettledWhileItWaits() {
+        RollController controller = controller(4, 1, 2, 3, 4, 5, 6, 1, 2);
+        controller.roll("1d6");
+
+        controller.roll("8d6", Optional.of("Fireball"));
+
+        assertThat(latest().queued()).contains(new RollState.QueuedRoll("8d6", Optional.of("Fireball")));
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
+        physics.finish();
+        playToRest(controller);
+        // At rest, but the Queued Roll waits out its beat.
+        assertThat(status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(latest().queued()).isPresent();
+        frames(54);
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
+        assertThat(latest().queued()).isEmpty();
+        // Not even for a moment as the Queued Roll took over from the Roll at rest.
+        assertThat(published).noneMatch(RollState::settled);
+    }
+
+    @Test
+    void everyListenerIsToldEverySnapshotInTheOrderTheyWereAddedAndNoneReplacesAnother() {
+        RollController controller = controller(4);
+        List<String> told = new ArrayList<>();
+        controller.addStateListener(state -> told.add("second " + state.status().getClass().getSimpleName()));
+        controller.addStateListener(state -> told.add("third " + state.status().getClass().getSimpleName()));
+
+        controller.roll("1d6");
+        physics.finish();
+
+        assertThat(told).containsExactly("second PreSimulating", "third PreSimulating", "second Playing",
+                "third Playing");
+        // The first listener, added with the controller, still hears every one.
+        assertThat(published).extracting(RollState::status)
+                .extracting(status -> status.getClass().getSimpleName())
+                .containsExactly("PreSimulating", "Playing");
+    }
+
+    @Test
+    void aListenerThatRollsFromItsNotificationLeavesTheListenersAfterItToldInOrder() {
+        RollController controller = controller(4, 2);
+        // Rolls again the moment the first Roll rests, from inside that snapshot's notification.
+        controller.addStateListener(RollState.statusChanges(status -> {
+            if (status instanceof RollStatus.Rested && tray.chains.size() == 1) {
+                controller.roll("1d4");
+            }
+        }));
+        List<RollStatus> later = new ArrayList<>();
+        controller.addStateListener(RollState.statusChanges(later::add));
+
+        controller.roll("1d6");
+        physics.finish();
+        frames((int) Math.ceil(tray.chains.getFirst().restTime() / FRAME) + 1);
+
+        assertThat(later).extracting(status -> status.getClass().getSimpleName())
+                .containsExactly("PreSimulating", "Playing", "Rested", "PreSimulating");
+        assertThat(statuses()).containsExactlyElementsOf(later);
     }
 
     // The Queued Roll (spec §3.2 "Entry"; GLOSSARY).
@@ -526,17 +676,17 @@ class RollControllerTest {
 
         // Still pre-simulating: it queues rather than starting a second Roll.
         controller.roll("2d6");
-        assertThat(controller.queued()).contains("2d6");
-        assertThat(queuedChanges).containsExactly(Optional.of("2d6"));
+        assertThat(queued()).contains("2d6");
+        assertThat(queuedChanges()).containsExactly(Optional.of("2d6"));
         physics.finish();
         assertThat(tray.chains).hasSize(1);
 
         // And while the first Roll plays, too: it plays on untouched, and nothing more is simulated.
         frames(3);
-        assertThat(controller.queued()).contains("2d6");
+        assertThat(queued()).contains("2d6");
         assertThat(physics.held).isNull();
         assertThat(simulator.requests).hasSize(1);
-        assertThat(statuses).filteredOn(RollStatus.Rolling.class::isInstance).hasSize(1);
+        assertThat(statuses()).filteredOn(RollStatus.PreSimulating.class::isInstance).hasSize(1);
     }
 
     @Test
@@ -548,9 +698,9 @@ class RollControllerTest {
 
         controller.roll("1d8");
 
-        assertThat(controller.queued()).isEmpty();
-        assertThat(queuedChanges).isEmpty();
-        assertThat(controller.underWay()).isTrue();
+        assertThat(queued()).isEmpty();
+        assertThat(queuedChanges()).isEmpty();
+        assertThat(underWay()).isTrue();
         assertThat(physics.held).isNotNull();
     }
 
@@ -563,23 +713,23 @@ class RollControllerTest {
         controller.roll("1d6+1");
         playToRest(controller);
         double revealed = clock.time();
-        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+        assertThat(status().text()).isEqualTo("1d6 = 4");
 
         // Through the beat the Roll Result stays up and the Queued Roll waits.
         frames(51);
-        assertThat(controller.underWay()).isFalse();
-        assertThat(controller.queued()).contains("1d6+1");
-        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+        assertThat(underWay()).isFalse();
+        assertThat(queued()).contains("1d6+1");
+        assertThat(status().text()).isEqualTo("1d6 = 4");
         assertThat(physics.held).isNull();
 
         frames(3);
         assertThat(clock.time() - revealed).isBetween(0.89, 0.92);
-        assertThat(controller.underWay()).isTrue();
-        assertThat(controller.queued()).isEmpty();
-        assertThat(queuedChanges).containsExactly(Optional.of("1d6+1"), Optional.empty());
+        assertThat(underWay()).isTrue();
+        assertThat(queued()).isEmpty();
+        assertThat(queuedChanges()).containsExactly(Optional.of("1d6+1"), Optional.empty());
         physics.finish();
         playToRest(controller);
-        assertThat(controller.status().text()).isEqualTo("1d6+1 = 7");
+        assertThat(status().text()).isEqualTo("1d6+1 = 7");
         assertThat(tray.chains).hasSize(2);
     }
 
@@ -591,18 +741,18 @@ class RollControllerTest {
         controller.roll("1d20+3");
         physics.finish();
 
-        assertThat(controller.queued()).contains("1d20+3");
+        assertThat(queued()).contains("1d20+3");
         playToRest(controller);
         // Asked for during the beat, it replaces the Queued Roll rather than jumping ahead of it.
         frames(20);
         controller.roll("1d12");
-        assertThat(controller.queued()).contains("1d12");
+        assertThat(queued()).contains("1d12");
         assertThat(physics.held).isNull();
         frames(34);
         physics.finish();
         playToRest(controller);
 
-        assertThat(controller.status().text()).isEqualTo("1d12 = 5");
+        assertThat(status().text()).isEqualTo("1d12 = 5");
         assertThat(tray.chains).hasSize(2);
     }
 
@@ -615,17 +765,17 @@ class RollControllerTest {
 
         assertThat(controller.cancelQueued()).isTrue();
 
-        assertThat(controller.queued()).isEmpty();
-        assertThat(queuedChanges).containsExactly(Optional.of("2d6"), Optional.empty());
+        assertThat(queued()).isEmpty();
+        assertThat(queuedChanges()).containsExactly(Optional.of("2d6"), Optional.empty());
         assertThat(controller.cancelQueued()).isFalse();
         // The Roll under way plays on, and nothing follows it.
-        assertThat(controller.underWay()).isTrue();
+        assertThat(underWay()).isTrue();
         physics.finish();
         playToRest(controller);
         frames(120);
         assertThat(tray.chains).hasSize(1);
         assertThat(physics.held).isNull();
-        assertThat(controller.status().text()).isEqualTo("1d6 = 4");
+        assertThat(status().text()).isEqualTo("1d6 = 4");
     }
 
     @Test
@@ -637,18 +787,18 @@ class RollControllerTest {
 
         // The first Roll fails in pre-simulation, before anything moved.
         physics.finish();
-        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
-        assertThat(controller.underWay()).isFalse();
+        assertThat(status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(underWay()).isFalse();
 
         frames(51);
-        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
-        assertThat(controller.queued()).contains("1d4");
+        assertThat(status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(queued()).contains("1d4");
         frames(3);
-        assertThat(controller.status()).isInstanceOf(RollStatus.Rolling.class);
-        assertThat(controller.queued()).isEmpty();
+        assertThat(status()).isInstanceOf(RollStatus.PreSimulating.class);
+        assertThat(queued()).isEmpty();
         physics.finish();
         playToRest(controller);
-        assertThat(controller.status().text()).isEqualTo("1d4 = 3");
+        assertThat(status().text()).isEqualTo("1d4 = 3");
     }
 
     @Test
@@ -663,9 +813,9 @@ class RollControllerTest {
         frames(54);
         physics.finish();
 
-        assertThat(controller.status().text()).isEqualTo(WOULDNT_SETTLE);
-        assertThat(controller.queued()).isEmpty();
-        assertThat(controller.underWay()).isFalse();
+        assertThat(status().text()).isEqualTo(WOULDNT_SETTLE);
+        assertThat(queued()).isEmpty();
+        assertThat(underWay()).isFalse();
         // Nothing moved: the Tray keeps the first Roll's Dice.
         assertThat(tray.chains).hasSize(1);
     }
@@ -681,7 +831,7 @@ class RollControllerTest {
         physics.finish();
         playToRest(controller);
 
-        RollStatus.Rested rested = (RollStatus.Rested) controller.status();
+        RollStatus.Rested rested = (RollStatus.Rested) status();
         assertThat(rested.text()).startsWith("8d6 = ");
         assertThat(rested.savedRollName()).contains("Fireball");
     }
@@ -698,7 +848,7 @@ class RollControllerTest {
         physics.finish();
         playToRest(controller);
 
-        RollStatus.Rested rested = (RollStatus.Rested) controller.status();
+        RollStatus.Rested rested = (RollStatus.Rested) status();
         assertThat(rested.text()).isEqualTo("1d4 = 3");
         assertThat(rested.savedRollName()).isEmpty();
     }
@@ -714,11 +864,11 @@ class RollControllerTest {
         // ×4: the 0.9 s beat passes in a quarter of the real time, 14 frames rather than 54.
         clock.setFastForwardFactor(FastForward.SPEED);
         frames(13);
-        assertThat(controller.underWay()).isFalse();
-        assertThat(controller.queued()).contains("1d6+1");
+        assertThat(underWay()).isFalse();
+        assertThat(queued()).contains("1d6+1");
         frames(1);
-        assertThat(controller.underWay()).isTrue();
-        assertThat(controller.queued()).isEmpty();
+        assertThat(underWay()).isTrue();
+        assertThat(queued()).isEmpty();
     }
 
     @Test
@@ -765,7 +915,7 @@ class RollControllerTest {
         // The camera's settle-in on the Dice at rest outlasts the last Throw.
         tray.moving = true;
         playToRest(controller);
-        assertThat(controller.status()).isInstanceOf(RollStatus.Rested.class);
+        assertThat(status()).isInstanceOf(RollStatus.Rested.class);
         assertThat(pulses.running).isTrue();
 
         frames(10);
@@ -802,7 +952,7 @@ class RollControllerTest {
         controller.roll("1d6");
         physics.finish();
 
-        assertThat(controller.status()).isInstanceOf(RollStatus.Failed.class);
+        assertThat(status()).isInstanceOf(RollStatus.Failed.class);
         assertThat(pulses.starts).hasValue(0);
     }
 
@@ -844,21 +994,24 @@ class RollControllerTest {
 
         controller.abandon();
 
-        assertThat(controller.queued()).isEmpty();
-        assertThat(queuedChanges).containsExactly(Optional.of("1d8"), Optional.empty());
-        assertThat(controller.underWay()).isFalse();
+        assertThat(queued()).isEmpty();
+        assertThat(queuedChanges()).containsExactly(Optional.of("1d8"), Optional.empty());
+        // Nothing is left under way: the app has settled.
+        assertThat(latest().settled()).isTrue();
         assertThat(pulses.running).isFalse();
         // Far past the chain's rest: nothing plays on, and nothing is revealed.
         frames(1800);
-        assertThat(controller.status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(status()).isNotInstanceOf(RollStatus.Rested.class);
         assertThat(tray.chains).hasSize(1);
         // Nor can one be asked for, nor queued.
         controller.roll("1d4");
         assertThat(physics.held).isNull();
-        assertThat(controller.queued()).isEmpty();
+        assertThat(queued()).isEmpty();
         // Calling it again does nothing.
+        int before = published.size();
         controller.abandon();
-        assertThat(queuedChanges).hasSize(2);
+        assertThat(queuedChanges()).hasSize(2);
+        assertThat(published).hasSize(before);
     }
 
     @Test
@@ -871,7 +1024,7 @@ class RollControllerTest {
         frames(600);
 
         assertThat(tray.chains).isEmpty();
-        assertThat(controller.status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(status()).isNotInstanceOf(RollStatus.Rested.class);
         assertThat(pulses.starts).hasValue(0);
     }
 
