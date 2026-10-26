@@ -16,8 +16,9 @@ import javafx.scene.input.KeyEvent;
  * Throw drawn on the render thread, read back, and put on screen by the frame bridge. That frame shows the Dice at
  * their Release, the first moment of the Throw's motion.
  *
- * <p>The Tray must be idle when it starts (no Roll under way, the camera settled, no frame in flight): the first
- * frame shown after the Roll reaches the Tray is then the Roll's own, not one drawn before it.
+ * <p>The app must be idle when it starts (its Roll state {@linkplain RollState#settled settled}, and no frame in
+ * flight): the first frame shown once the Roll's status is {@link RollStatus.Playing} is then the Roll's own, not
+ * one drawn before it.
  *
  * <p>Thread contract: {@link #time} on the JavaFX Application Thread; its result completes there too, except a
  * timeout, which completes it on a timer thread.
@@ -31,34 +32,42 @@ final class FirstMotion {
 
     /**
      * Types a Roll Expression into the box, presses Enter, and times it until the first frame of its Throw is on
-     * screen. It uses the frame view's presented-frame listener until then.
+     * screen: the first frame presented once the Roll's state snapshot says it is Playing. It uses the frame view's
+     * presented-frame listener until then.
      *
      * @param skeleton the started app, idle
      * @param parsed the Roll Expression, parsed, so Enter on its text rolls it rather than showing an error
-     * @return the time from Enter to the first motion; completed exceptionally if a Roll is already under way, the
-     *     Roll fails, or it takes longer than {@link #TIMEOUT}
+     * @return the time from Enter to the first motion; completed exceptionally if the app hasn't settled (a Roll
+     *     under way or queued, or the camera still moving), the Roll fails, or it takes longer than {@link #TIMEOUT}
      */
     static CompletableFuture<Duration> time(Skeleton skeleton, RollExpression parsed) {
         CompletableFuture<Duration> timed = new CompletableFuture<>();
         String expression = parsed.source();
-        if (skeleton.controller().state().underWay()) {
-            // Enter would make it the Queued Roll, which waits for the one under way.
+        if (!skeleton.controller().state().settled()) {
+            // Enter would make it the Queued Roll, or a frame of what is still moving could be taken for its first.
             timed.completeExceptionally(new IllegalStateException("can't time " + expression
-                    + ": a Roll is already under way"));
+                    + ": the app hasn't settled"));
             return timed;
         }
-        ChainPlayback before = skeleton.showing();
         FrameView view = skeleton.view();
         long[] entered = new long[1];
+        // Set once the Roll's status is Playing: by then the Tray has its chain, at its first Release.
+        boolean[] playing = new boolean[1];
         view.setOnFramePresented(() -> {
-            // The Tray was idle, so the first frame shown once the new chain is on the Tray is drawn from it.
-            if (skeleton.showing() != before) {
+            // The app was settled, so the first frame shown once the Roll plays is drawn from its chain. Playing is
+            // published on this thread right after the Tray asked for that frame, so no frame of it is shown before.
+            if (playing[0]) {
                 timed.complete(Duration.ofNanos(System.nanoTime() - entered[0]));
             }
         });
         // State listeners can't be removed; once this timing is over, this one does nothing.
         skeleton.controller().addStateListener(RollState.statusChanges(status -> {
-            if (status instanceof RollStatus.Failed failed && !timed.isDone()) {
+            if (timed.isDone()) {
+                return;
+            }
+            if (status instanceof RollStatus.Playing) {
+                playing[0] = true;
+            } else if (status instanceof RollStatus.Failed failed) {
                 timed.completeExceptionally(new IllegalStateException("the Roll of " + expression + " failed: "
                         + failed.text()));
             }
