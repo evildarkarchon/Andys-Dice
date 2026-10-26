@@ -228,6 +228,9 @@ accessibility, window sizes, first run, locale, the Cocked Rethrow and glyphs) w
   GL context per app run.
 - The Tray area is replaced by a panel drawn by JavaFX alone: "Andy's Dice hit a problem and has to close",
   the one-line cause, the log file's path, **Copy details** and **Quit**. The sidebar is disabled.
+- A Roll under way when the session ends (pre-simulating or playing) is a Lost Roll: it stops where it is, is
+  never revealed and never joins the Roll History, and the result strip shows nothing for it. The Queued Roll is
+  dropped and nothing more rolls.
 - The same panel is the fail-fast at start-up when a GL 3.3 core context can't be created
   ([ADR-0002](adr/0002-embedded-gl-renderer-public-api-bridge.md)), naming the requirement and the detected
   renderer and driver.

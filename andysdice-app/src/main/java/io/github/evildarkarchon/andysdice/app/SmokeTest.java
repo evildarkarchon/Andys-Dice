@@ -77,6 +77,9 @@ final class SmokeTest {
                 case RollStatus.Ready ready -> { }
                 case RollStatus.PreSimulating preSimulating -> { }
                 case RollStatus.Playing playing -> { }
+                // A runtime failure ended the session: the failure guard's callback quits with the runtime
+                // failure's own exit status, which is the one to report, so the smoke test adds nothing.
+                case RollStatus.Lost lost -> { }
             }
         }));
         CompletableFuture.delayedExecutor(TIMEOUT_SECONDS, TimeUnit.SECONDS).execute(() -> Platform.runLater(() -> {
