@@ -8,9 +8,9 @@ import java.util.Optional;
 
 /**
  * Where the current Roll stands, as the result strip shows it (spec §3.2): nothing rolled yet, pre-simulating,
- * playing, at rest with its Roll Result, or failed. The strip reads "Rolling…" both while a Roll pre-simulates and
- * while it plays. A Roll Expression that doesn't parse never gets this far: entry in the box shows its error and
- * rolls nothing.
+ * playing, at rest with its Roll Result, failed, or lost when a runtime failure ended the session under it. The strip
+ * reads "Rolling…" both while a Roll pre-simulates and while it plays, and nothing for a Lost Roll. A Roll Expression
+ * that doesn't parse never gets this far: entry in the box shows its error and rolls nothing.
  */
 sealed interface RollStatus {
 
@@ -143,6 +143,27 @@ sealed interface RollStatus {
         @Override
         public String text() {
             return message;
+        }
+    }
+
+    /**
+     * A Lost Roll: a runtime failure ended the session (the controller was {@linkplain RollController#abandon
+     * abandoned}) while this Roll pre-simulated or played, so it stopped where it was and its Roll Result was never
+     * revealed. It never joins the Roll History (ADR-0007). It is terminal: nothing rolls after it.
+     *
+     * @param expression what was being rolled
+     */
+    record Lost(RollExpression expression) implements RollStatus {
+
+        /** Checks the expression is present. */
+        public Lost {
+            Objects.requireNonNull(expression, "expression");
+        }
+
+        /** Nothing: the failure panel says what happened, and nothing is still coming. */
+        @Override
+        public String text() {
+            return "";
         }
     }
 }

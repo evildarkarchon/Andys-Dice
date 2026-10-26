@@ -971,10 +971,36 @@ class RollControllerTest {
         assertThat(pulses.running).isFalse();
     }
 
-    // Abandon: the session has failed (spec §3.2 "Runtime failure").
+    // Abandon: the session has failed (spec §3.2 "Runtime failure"). A Roll it cuts off is a Lost Roll (ADR-0007).
 
     @Test
-    void abandoningDropsTheQueuedRollAndNothingMoreRolls() {
+    void abandoningARollInMotionLosesItWhereItIsNeverRevealedAndLaterTicksDrawNothing() {
+        RollController controller = controller(4);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        frames(3);
+        int drawn = tray.times.size();
+
+        controller.abandon();
+
+        RollStatus.Lost lost = (RollStatus.Lost) status();
+        assertThat(lost.expression().source()).isEqualTo("1d6");
+        // The strip shows nothing for it, so it no longer says "Rolling…".
+        assertThat(lost.text()).isEmpty();
+        // Nothing is left under way, and the status agrees with settled.
+        assertThat(underWay()).isFalse();
+        assertThat(latest().settled()).isTrue();
+        assertThat(pulses.running).isFalse();
+        // Far past the chain's rest: the Dice stay where they stopped, and nothing is revealed.
+        frames(1800);
+        assertThat(tray.times).hasSize(drawn);
+        assertThat(status()).isSameAs(lost);
+        assertThat(statuses()).noneMatch(RollStatus.Rested.class::isInstance);
+        assertThat(tray.chains).hasSize(1);
+    }
+
+    @Test
+    void abandoningWithARollQueuedDropsItAndNothingMoreRolls() {
         RollController controller = controller(4, 2, 3);
         controller.roll(valid("1d6"));
         physics.finish();
@@ -983,38 +1009,133 @@ class RollControllerTest {
 
         controller.abandon();
 
+        assertThat(status()).isInstanceOf(RollStatus.Lost.class);
         assertThat(queued()).isEmpty();
         assertThat(queuedChanges()).containsExactly(Optional.of("1d8"), Optional.empty());
         // Nothing is left under way: the app has settled.
         assertThat(latest().settled()).isTrue();
         assertThat(pulses.running).isFalse();
-        // Far past the chain's rest: nothing plays on, and nothing is revealed.
+        // Far past the chain's rest and the beat after it: nothing plays on, and nothing starts.
         frames(1800);
-        assertThat(status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(statuses()).noneMatch(RollStatus.Rested.class::isInstance);
         assertThat(tray.chains).hasSize(1);
         // Nor can one be asked for, nor queued.
         controller.roll(valid("1d4"));
         assertThat(physics.held).isNull();
         assertThat(queued()).isEmpty();
-        // Calling it again does nothing.
-        int before = published.size();
-        controller.abandon();
-        assertThat(queuedChanges()).hasSize(2);
-        assertThat(published).hasSize(before);
     }
 
     @Test
-    void aRollStillPreSimulatingWhenTheSessionIsAbandonedNeverPlays() {
+    void abandoningTwiceDoesNothingTheSecondTime() {
+        RollController controller = controller(4, 2);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        controller.roll(valid("1d8"));
+        controller.abandon();
+        RollState after = latest();
+        int before = published.size();
+
+        controller.abandon();
+
+        assertThat(published).hasSize(before);
+        assertThat(controller.state()).isSameAs(after);
+        assertThat(queuedChanges()).hasSize(2);
+    }
+
+    @Test
+    void aRollStillPreSimulatingWhenTheSessionIsAbandonedIsLostAndNeverPlays() {
         RollController controller = controller(4);
         controller.roll(valid("1d6"));
 
         controller.abandon();
+
+        RollStatus.Lost lost = (RollStatus.Lost) status();
+        assertThat(lost.expression().source()).isEqualTo("1d6");
+        assertThat(latest().settled()).isTrue();
+        // The plan arrives after the session has ended.
         physics.finish();
         frames(600);
 
         assertThat(tray.chains).isEmpty();
-        assertThat(status()).isNotInstanceOf(RollStatus.Rested.class);
+        assertThat(status()).isSameAs(lost);
+        assertThat(statuses()).noneMatch(RollStatus.Playing.class::isInstance);
         assertThat(pulses.starts).hasValue(0);
+    }
+
+    @Test
+    void abandoningBeforeAnyRollLeavesTheTrayReadyAndNothingRollsAfter() {
+        RollController controller = controller(4);
+
+        controller.abandon();
+
+        // No Roll was cut off, so none is lost.
+        assertThat(controller.state().status()).isInstanceOf(RollStatus.Ready.class);
+        assertThat(controller.state().settled()).isTrue();
+        controller.roll(valid("1d6"));
+        assertThat(physics.held).isNull();
+        assertThat(controller.state().status()).isInstanceOf(RollStatus.Ready.class);
+        assertThat(tray.chains).isEmpty();
+        assertThat(pulses.starts).hasValue(0);
+    }
+
+    @Test
+    void abandoningARollAtRestKeepsItsResultAndNothingRollsAfter() {
+        RollController controller = controller(4, 2);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        playToRest(controller);
+        RollStatus rested = status();
+        assertThat(rested).isInstanceOf(RollStatus.Rested.class);
+
+        controller.abandon();
+
+        // It was revealed before the session ended, so it is not lost.
+        assertThat(controller.state().status()).isSameAs(rested);
+        controller.roll(valid("1d8"));
+        assertThat(physics.held).isNull();
+        assertThat(controller.state().status()).isSameAs(rested);
+        assertThat(tray.chains).hasSize(1);
+    }
+
+    @Test
+    void abandoningAfterAFailedRollKeepsItsMessageAndNothingRollsAfter() {
+        simulator.then(24, Ending.TIMED_OUT);
+        RollController controller = controller(4, 2);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        RollStatus failed = status();
+        assertThat(failed).isInstanceOf(RollStatus.Failed.class);
+
+        controller.abandon();
+
+        assertThat(controller.state().status()).isSameAs(failed);
+        controller.roll(valid("1d8"));
+        assertThat(physics.held).isNull();
+        assertThat(controller.state().status()).isSameAs(failed);
+    }
+
+    @Test
+    void abandoningWhileTheQueuedRollWaitsOutItsBeatDropsItAndItNeverStarts() {
+        RollController controller = controller(4, 2);
+        controller.roll(valid("1d6"));
+        physics.finish();
+        controller.roll(valid("1d8"));
+        playToRest(controller);
+        RollStatus rested = status();
+        assertThat(rested).isInstanceOf(RollStatus.Rested.class);
+        assertThat(queued()).contains("1d8");
+
+        controller.abandon();
+
+        assertThat(queued()).isEmpty();
+        assertThat(status()).isSameAs(rested);
+        assertThat(latest().settled()).isTrue();
+        assertThat(pulses.running).isFalse();
+        // Far past the beat: the Queued Roll never starts.
+        frames(600);
+        assertThat(physics.held).isNull();
+        assertThat(status()).isSameAs(rested);
+        assertThat(tray.chains).hasSize(1);
     }
 
     /** A Tray that remembers what it was asked to show, and reports itself moving when told to. */

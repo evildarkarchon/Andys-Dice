@@ -66,7 +66,6 @@ final class RollUi extends BorderPane {
     private final ResultStrip resultStrip = new ResultStrip();
     private final Node tray;
     private Consumer<String> onRoll = expression -> {};
-    private final List<Runnable> failureListeners = new ArrayList<>();
     private boolean failed;
 
     /**
@@ -316,7 +315,8 @@ final class RollUi extends BorderPane {
      * Ends the session on screen (spec §3.2 "Runtime failure", #53): the Tray area holds only the failure panel,
      * the Tray's own node taken out of the window, and the sidebar and the toolbar are disabled behind it, so
      * nothing can be rolled, chosen or changed once the session has failed. Any popup or dialog open over the window
-     * is closed first, and the {@link #addFailureListener failure listeners} are told last.
+     * is closed first. This is the view's side alone: the Rolling itself is ended by whoever shows the panel, which
+     * abandons the roll controller after it ({@link RollController#abandon}).
      *
      * @param panel the failure panel
      */
@@ -331,9 +331,6 @@ final class RollUi extends BorderPane {
         trayArea.getChildren().setAll(panel);
         sidebar.setDisable(true);
         toolbar.setDisable(true);
-        for (Runnable listener : List.copyOf(failureListeners)) {
-            listener.run();
-        }
     }
 
     /**
@@ -345,16 +342,6 @@ final class RollUi extends BorderPane {
      */
     boolean failed() {
         return failed;
-    }
-
-    /**
-     * Adds a listener told once the failure panel is shown, after the sidebar and toolbar are disabled: the session
-     * drops its Queued Roll there, so nothing starts behind the panel.
-     *
-     * @param listener run on the JavaFX thread, in the order added
-     */
-    void addFailureListener(Runnable listener) {
-        failureListeners.add(Objects.requireNonNull(listener, "listener"));
     }
 
     /** Hides every popup and dialog owned, directly or through another, by this UI's window. */

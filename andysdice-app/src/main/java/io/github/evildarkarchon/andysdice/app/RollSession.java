@@ -74,10 +74,6 @@ final class RollSession {
         NoticeBell.attach(ui.bell(), notices);
         // Enter and the Roll button go through entry (#50): errors on Enter, then roll or queue.
         entry = new RollEntry(ui, controller);
-        // #53's panel ends the session: a Queued Roll must not start behind it once its beat is up, nor may a Roll
-        // in motion (or still pre-simulating) finish behind it: it was never shown, so it is lost rather than
-        // revealed or kept in the Roll History (ADR-0007).
-        ui.addFailureListener(controller::abandon);
         // Ctrl+1 to Ctrl+4, Ctrl+L and Ctrl+R (#62); Ctrl+S is the Saved tab's.
         KeyboardMap.install(ui);
         // Shift held alone speeds the clock up (#51); everything that plays follows the clock.
