@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.render.GlContextLostException;
@@ -289,7 +290,7 @@ class FailurePanelTest extends HeadlessUiTest {
         assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> session.entry().nextChip().isVisible())).isFalse();
         // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing.
-        onFx(() -> session.roll("1d4"));
+        onFx(() -> session.roll(valid("1d4")));
         advance(RollController.BEAT_SECONDS + 1);
         assertThat(tray.shows()).isEqualTo(1);
     }

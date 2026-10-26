@@ -179,8 +179,8 @@ final class HistoryTab {
      */
     void rollAgain(PastRoll roll) {
         copy(roll);
-        // Every PastRoll's expression parses (checked when it was made), as RollSession.roll requires.
-        session.roll(roll.expression());
+        // Every PastRoll's expression parses (checked when it was made), so it is handed on parsed.
+        session.roll(roll.parsed());
         ui.focusBox();
         ui.expressionBox().selectAll();
     }

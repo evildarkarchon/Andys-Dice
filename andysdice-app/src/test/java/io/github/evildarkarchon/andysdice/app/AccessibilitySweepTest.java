@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.sound.SinkException;
@@ -156,7 +157,7 @@ class AccessibilitySweepTest extends HeadlessUiTest {
             pulse(stage.getScene());
             for (Node node : fromFx(() -> focusTraversable(stage.getScene().getRoot()))) {
                 onFx(() -> {
-                    session.roll("1d8");
+                    session.roll(valid("1d8"));
                     node.requestFocus();
                 });
                 onFx(() -> robot().keyType(KeyCode.ESCAPE));

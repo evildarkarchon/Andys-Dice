@@ -2,6 +2,7 @@ package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.core.expression.ParseError;
 import io.github.evildarkarchon.andysdice.core.expression.ParseResult;
+import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
 import java.util.Objects;
 import java.util.Optional;
@@ -46,6 +47,18 @@ record SavedRoll(String name, String expression) {
         return switch (RollExpressionParser.parse(expression)) {
             case ParseResult.Invalid invalid -> Optional.of(invalid.error());
             case ParseResult.Valid valid -> Optional.empty();
+        };
+    }
+
+    /**
+     * Returns the expression parsed, to roll it, if it parses.
+     *
+     * @return the parsed expression, or empty for a Saved Roll that {@linkplain #problem no longer parses}
+     */
+    Optional<RollExpression> parsed() {
+        return switch (RollExpressionParser.parse(expression)) {
+            case ParseResult.Invalid invalid -> Optional.empty();
+            case ParseResult.Valid valid -> Optional.of(valid.expression());
         };
     }
 

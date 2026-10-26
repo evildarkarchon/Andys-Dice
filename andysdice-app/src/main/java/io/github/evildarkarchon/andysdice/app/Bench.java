@@ -226,7 +226,7 @@ final class Bench {
             return CompletableFuture.completedFuture(new FirstMotions(timed));
         }
         return whenIdle(skeleton)
-                .thenComposeAsync(idle -> FirstMotion.time(skeleton, EXPRESSION), fx)
+                .thenComposeAsync(idle -> FirstMotion.time(skeleton, RollExpressions.valid(EXPRESSION)), fx)
                 .thenComposeAsync(firstMotion -> {
                     LOG.log(Level.INFO, "Bench: Roll " + (timed.size() + 1) + " reached the screen "
                             + String.format(Locale.ROOT, "%.1f", firstMotion.toNanos() / 1e6) + " ms after Enter");

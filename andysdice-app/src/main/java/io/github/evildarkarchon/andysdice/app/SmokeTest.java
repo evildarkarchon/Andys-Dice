@@ -30,7 +30,7 @@ final class SmokeTest {
     /** How much faster than real time the Throw plays. */
     static final double SPEED = 8;
 
-    /** Exit status when the Roll was refused or failed, or didn't finish in time. */
+    /** Exit status when the Roll failed, or didn't finish in time. */
     static final int FAILED = 2;
 
     /** How long the Roll may take, pre-simulation and playback together, before the smoke test fails. */
@@ -70,10 +70,6 @@ final class SmokeTest {
                     LOG.log(Level.INFO, "Smoke test rolled " + rested.text());
                     finish.accept(0);
                 }
-                case RollStatus.Refused refused -> {
-                    LOG.log(Level.ERROR, "Smoke test's Roll was refused: " + refused.text());
-                    finish.accept(FAILED);
-                }
                 case RollStatus.Failed failed -> {
                     LOG.log(Level.ERROR, "Smoke test's Roll failed: " + failed.text());
                     finish.accept(FAILED);
@@ -89,6 +85,7 @@ final class SmokeTest {
             }
         }));
         LOG.log(Level.INFO, "Smoke test rolling " + EXPRESSION + " at x" + SPEED);
-        skeleton.controller().roll(EXPRESSION);
+        // The controller's normal Roll, the one Enter goes through once entry has parsed the box.
+        skeleton.controller().roll(RollExpressions.valid(EXPRESSION));
     }
 }

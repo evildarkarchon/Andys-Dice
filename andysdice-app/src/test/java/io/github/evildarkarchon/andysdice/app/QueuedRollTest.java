@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.evildarkarchon.andysdice.core.simulation.Ending;
@@ -213,7 +214,7 @@ class QueuedRollTest extends HeadlessUiTest {
     void aRollFromTheSessionQueuesTheSameWayAsEnter() throws Exception {
         roll("1d6");
 
-        onFx(() -> session.roll("1d12"));
+        onFx(() -> session.roll(valid("1d12")));
 
         assertThat(queuedRoll()).contains("1d12");
         assertThat(fromFx(() -> chip().getText())).isEqualTo("next: 1d12");

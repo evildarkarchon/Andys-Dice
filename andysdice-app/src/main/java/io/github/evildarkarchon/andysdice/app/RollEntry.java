@@ -120,7 +120,8 @@ final class RollEntry {
 
     /**
      * Does what Enter in the box does with its text: shows its error, or accepts it, rolling or queueing it and
-     * selecting all of it.
+     * selecting all of it. This is the one place a Player's input is parsed: the controller is handed the parsed
+     * expression, never the text.
      *
      * @param text the box's text
      */
@@ -129,7 +130,7 @@ final class RollEntry {
             case ParseResult.Invalid invalid -> errorPopup.show(invalid.error());
             case ParseResult.Valid valid -> {
                 errorPopup.hide();
-                controller.roll(text);
+                controller.roll(valid.expression());
                 box.requestFocus();
                 box.selectAll();
             }

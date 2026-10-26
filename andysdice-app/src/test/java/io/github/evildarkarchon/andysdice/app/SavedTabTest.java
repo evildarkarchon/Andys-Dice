@@ -1,5 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
+import static io.github.evildarkarchon.andysdice.app.RollExpressions.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -408,7 +409,7 @@ class SavedTabTest extends HeadlessUiTest {
         // Esc cancels an edit, before (and instead of) cancelling a Queued Roll.
         roll("3d6");
         advance(0.2);
-        onFx(() -> session.roll("1d8"));
+        onFx(() -> session.roll(valid("1d8")));
         onFx(() -> {
             saved.list().requestFocus();
             robot().keyType(KeyCode.F2);
