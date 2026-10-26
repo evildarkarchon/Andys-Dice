@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +114,51 @@ class BenchTest {
         settling.accept(snapshot(new RollStatus.Ready(), true));
         assertThat(settled).isCompleted();
         assertThat(settling.settled()).isTrue();
+    }
+
+    @Test
+    void aSnapshotThatIsNotSettledDuringTheQuietWindowStartsTheWindowOver() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        List<CompletableFuture<Void>> windows = new ArrayList<>();
+        CompletableFuture<Void> idle = settling.idle(() -> {
+            CompletableFuture<Void> window = new CompletableFuture<>();
+            windows.add(window);
+            return window;
+        });
+        assertThat(windows).hasSize(1);
+
+        // The camera stirs and settles again inside the window: settled at its end, but not all the way through.
+        settling.accept(snapshot(new RollStatus.Ready(), false));
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        windows.getFirst().complete(null);
+        assertThat(idle).isNotDone();
+        assertThat(windows).hasSize(2);
+
+        // A window the app stays settled through ends the wait.
+        windows.get(1).complete(null);
+        assertThat(idle).isCompleted();
+    }
+
+    @Test
+    void aQuietWindowThatEndsUnsettledWaitsForTheNextSettleThenAWholeWindow() {
+        Bench.Settling settling = new Bench.Settling(snapshot(new RollStatus.Ready(), true));
+        List<CompletableFuture<Void>> windows = new ArrayList<>();
+        CompletableFuture<Void> idle = settling.idle(() -> {
+            CompletableFuture<Void> window = new CompletableFuture<>();
+            windows.add(window);
+            return window;
+        });
+
+        settling.accept(snapshot(new RollStatus.Ready(), false));
+        windows.getFirst().complete(null);
+        // Not settled: no new window until it is.
+        assertThat(windows).hasSize(1);
+        settling.accept(snapshot(new RollStatus.Ready(), true));
+        assertThat(windows).hasSize(2);
+        assertThat(idle).isNotDone();
+
+        windows.get(1).complete(null);
+        assertThat(idle).isCompleted();
     }
 
     /** A Roll state with no Queued Roll. */

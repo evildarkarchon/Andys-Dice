@@ -29,12 +29,23 @@ sealed interface RollStatus {
     String ROLLING = "Rolling…";
 
     /**
+     * A Roll under way: from its start until it rests, fails or is lost, which is while it pre-simulates or plays.
+     * This is the one place that says which statuses those are; camera gestures are blocked, a new Roll queues and
+     * an abandoned Roll is lost exactly while the status is one.
+     */
+    sealed interface UnderWay extends RollStatus permits PreSimulating, Playing {
+
+        /** @return what is being rolled */
+        RollExpression expression();
+    }
+
+    /**
      * A Roll is being pre-simulated on the physics worker: its whole chain of Throws is planned before anything
      * moves, so the Tray still holds the previous Roll's Dice.
      *
      * @param expression what is being rolled
      */
-    record PreSimulating(RollExpression expression) implements RollStatus {
+    record PreSimulating(RollExpression expression) implements UnderWay {
 
         /** Checks the expression is present. */
         public PreSimulating {
@@ -54,7 +65,7 @@ sealed interface RollStatus {
      * @param chain the pre-simulated chain of Throws now playing
      * @param start the playback clock's time at the chain's first Release
      */
-    record Playing(RollExpression expression, ChainPlayback chain, double start) implements RollStatus {
+    record Playing(RollExpression expression, ChainPlayback chain, double start) implements UnderWay {
 
         /** Checks the parts are present. */
         public Playing {

@@ -15,6 +15,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.Supplier;
 import javafx.application.Platform;
 
 /**
@@ -196,6 +197,8 @@ final class Bench {
         private RollState latest;
         /** The wait not yet over, or {@code null}. */
         private CompletableFuture<Void> waiting;
+        /** How many snapshots told so far said the app isn't settled; {@link #idle} watches it across a window. */
+        private long unsettled;
 
         /**
          * Starts from the snapshot as it stands; add it to the controller as a state listener before any change.
@@ -228,9 +231,31 @@ final class Bench {
             return latest.settled();
         }
 
+        /**
+         * Returns a wait for the app to settle and stay settled through a whole quiet window. A snapshot that isn't
+         * settled while the window runs starts the wait over: for the next settle, then a fresh window from it.
+         *
+         * @param quietWindow starts one quiet window, completed once it is over, on the thread that tells this its
+         *     snapshots
+         * @return completed once a quiet window has run from a settle to its end with every snapshot in it settled
+         */
+        CompletableFuture<Void> idle(Supplier<CompletableFuture<Void>> quietWindow) {
+            Objects.requireNonNull(quietWindow, "quietWindow");
+            return next().thenCompose(settled -> {
+                // Counted, not just re-read at the end: a Roll or a camera stir that is over again by the window's
+                // end would leave the snapshot settled, yet its last frames may still be on their way to the screen.
+                long unsettledBefore = unsettled;
+                return quietWindow.get().thenCompose(quiet -> unsettled == unsettledBefore
+                        ? CompletableFuture.<Void>completedFuture(null) : idle(quietWindow));
+            });
+        }
+
         @Override
         public void accept(RollState state) {
             latest = Objects.requireNonNull(state, "state");
+            if (!state.settled()) {
+                unsettled++;
+            }
             if (state.settled() && waiting != null) {
                 CompletableFuture<Void> over = waiting;
                 // Cleared before completing: what runs on completion may wait again, for a later settle.
@@ -298,18 +323,16 @@ final class Bench {
     }
 
     /**
-     * Completes, on the JavaFX thread, once the Roll's state snapshot says the app has settled and it is still
-     * settled {@value #QUIET_MILLIS} ms later, long enough for the last frame drawn to have reached the screen. If it
-     * has stopped being settled by then, it waits for the next settle.
+     * Completes, on the JavaFX thread, once the Roll's state snapshot says the app has settled and it has stayed
+     * settled for {@value #QUIET_MILLIS} ms, long enough for the last frame drawn to have reached the screen. If a
+     * snapshot in that time says it isn't settled, it waits for the next settle and starts the window over
+     * ({@link Settling#idle}).
      *
      * <p>Call it on the JavaFX thread, which tells {@code settling} its snapshots.
      */
     private static CompletableFuture<Void> whenIdle(Settling settling, Executor fx) {
         // One timer, not a poll: the quiet wait ends on the JavaFX thread, where the snapshot is read again.
         Executor afterQuiet = CompletableFuture.delayedExecutor(QUIET_MILLIS, TimeUnit.MILLISECONDS, fx);
-        return settling.next()
-                .thenCompose(settled -> CompletableFuture.runAsync(() -> {}, afterQuiet))
-                .thenCompose(quiet -> settling.settled() ? CompletableFuture.<Void>completedFuture(null)
-                        : whenIdle(settling, fx));
+        return settling.idle(() -> CompletableFuture.runAsync(() -> {}, afterQuiet));
     }
 }

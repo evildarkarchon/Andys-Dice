@@ -173,7 +173,7 @@ final class RollEntry {
         return nextChip;
     }
 
-    private void showQueued(Optional<RollState.QueuedRoll> queued) {
+    private void showQueued(Optional<RollRequest> queued) {
         nextChip.setText(queued.map(roll -> NEXT_PREFIX + roll.expression().source().strip()).orElse(""));
         nextChip.setVisible(queued.isPresent());
     }

@@ -315,7 +315,7 @@ final class RollUi extends BorderPane {
      * Ends the session on screen (spec §3.2 "Runtime failure", #53): the Tray area holds only the failure panel,
      * the Tray's own node taken out of the window, and the sidebar and the toolbar are disabled behind it, so
      * nothing can be rolled, chosen or changed once the session has failed. Any popup or dialog open over the window
-     * is closed first. This is the view's side alone: the Rolling itself is ended by whoever shows the panel, which
+     * is closed first. This is the view's side alone: rolling itself is ended by whoever shows the panel, which
      * abandons the roll controller after it ({@link RollController#abandon}).
      *
      * @param panel the failure panel

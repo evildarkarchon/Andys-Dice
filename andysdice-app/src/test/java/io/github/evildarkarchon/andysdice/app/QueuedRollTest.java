@@ -214,7 +214,7 @@ class QueuedRollTest extends HeadlessUiTest {
     void aRollFromTheSessionQueuesTheSameWayAsEnter() throws Exception {
         roll("1d6");
 
-        onFx(() -> session.roll(valid("1d12")));
+        onFx(() -> session.controller().roll(valid("1d12")));
 
         assertThat(queuedRoll()).contains("1d12");
         assertThat(fromFx(() -> chip().getText())).isEqualTo("next: 1d12");

@@ -157,7 +157,7 @@ class AccessibilitySweepTest extends HeadlessUiTest {
             pulse(stage.getScene());
             for (Node node : fromFx(() -> focusTraversable(stage.getScene().getRoot()))) {
                 onFx(() -> {
-                    session.roll(valid("1d8"));
+                    session.controller().roll(valid("1d8"));
                     node.requestFocus();
                 });
                 onFx(() -> robot().keyType(KeyCode.ESCAPE));

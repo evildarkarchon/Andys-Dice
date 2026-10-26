@@ -174,7 +174,8 @@ final class SavedTab {
         if (expression.isEmpty()) {
             return;
         }
-        session.roll(expression.get(), roll.name());
+        // Recorded with the Saved Roll's name (#56): the result strip shows it and the Roll History keeps it.
+        session.controller().roll(expression.get(), Optional.of(roll.name()));
         ui.focusBox();
         ui.expressionBox().selectAll();
     }

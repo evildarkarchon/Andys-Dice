@@ -1,11 +1,9 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.facevalue.FaceValueGenerator;
 import io.github.evildarkarchon.andysdice.core.playback.PlaybackClock;
 import io.github.evildarkarchon.andysdice.core.tray.Tray;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 
 /**
@@ -123,27 +121,6 @@ final class RollSession {
      */
     RollEntry entry() {
         return entry;
-    }
-
-    /**
-     * Rolls a Roll Expression that already parses, from a Saved Roll or a Roll History entry: at once, or as the
-     * Queued Roll while Dice move, exactly as Enter in the box does (spec §3.2 "Entry").
-     *
-     * @param expression the Roll Expression, parsed
-     */
-    void roll(RollExpression expression) {
-        controller.roll(expression);
-    }
-
-    /**
-     * Rolls a Saved Roll's expression as {@link #roll(RollExpression)} does, recording the Roll with the Saved Roll's
-     * name (spec §3.2 "Saved tab", #56): the result strip shows it and the Roll History keeps it.
-     *
-     * @param expression the Saved Roll's Roll Expression, parsed
-     * @param savedRollName the Saved Roll's name
-     */
-    void roll(RollExpression expression, String savedRollName) {
-        controller.roll(expression, Optional.of(savedRollName));
     }
 
     /**

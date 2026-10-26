@@ -5,8 +5,9 @@ import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import io.github.evildarkarchon.andysdice.core.expression.RollExpressionParser;
 
 /**
- * Parses Roll Expressions the app already knows to be valid: a fixed one (the smoke test's, the bench's), or one
- * checked when it was kept (a Roll History entry's). A Player's own input is parsed, and refused, only by entry in
+ * Parses Roll Expressions the app already knows to be valid: a fixed one (the smoke test's, the bench's), one
+ * checked when it was kept (a Roll History entry's), or a Saved Roll's that has just been found to parse
+ * ({@link SavedRoll#parsed}). A Player's own input is parsed, and refused, only by entry in
  * the Roll Expression box ({@link RollEntry}); the roll controller takes only parsed expressions.
  */
 final class RollExpressions {

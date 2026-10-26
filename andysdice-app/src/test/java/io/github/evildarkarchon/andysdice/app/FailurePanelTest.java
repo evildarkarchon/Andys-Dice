@@ -56,7 +56,7 @@ class FailurePanelTest extends HeadlessUiTest {
 
     /**
      * What the app's failure guard callback does ({@code AndysDice.start}): the failure panel first, then the
-     * session's Rolling ends, in the roll controller.
+     * session's rolling ends, in the roll controller.
      */
     private void endSession(Failure failure) {
         FailureScreen.show(ui(), failure, () -> quits.add(() -> {}));
@@ -245,7 +245,7 @@ class FailurePanelTest extends HeadlessUiTest {
             ui().expressionBox().setText("1d8");
             pressEnterInBox();
         });
-        onFx(() -> session.roll(valid("1d4")));
+        onFx(() -> session.controller().roll(valid("1d4")));
         advance(30);
         assertThat(tray.shows()).isEqualTo(1);
         assertThat(fromFx(() -> history.list().getItems())).isEmpty();
@@ -329,7 +329,7 @@ class FailurePanelTest extends HeadlessUiTest {
         assertThat(queuedRoll()).isEmpty();
         assertThat(fromFx(() -> session.entry().nextChip().isVisible())).isFalse();
         // Nor can one be asked for: a Saved Roll or History entry rolled now does nothing, nor does Enter.
-        onFx(() -> session.roll(valid("1d4")));
+        onFx(() -> session.controller().roll(valid("1d4")));
         onFx(() -> {
             ui().expressionBox().setText("1d4");
             pressEnterInBox();

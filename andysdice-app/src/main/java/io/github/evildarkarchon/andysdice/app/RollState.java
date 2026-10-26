@@ -1,6 +1,5 @@
 package io.github.evildarkarchon.andysdice.app;
 
-import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -8,15 +7,15 @@ import java.util.function.Consumer;
 /**
  * One immutable snapshot of where the Roll stands, as the roll controller publishes it on every change: the status
  * the result strip shows, the Queued Roll waiting behind it, and whether the app has settled. Everything that follows
- * a Roll (the result strip, entry's "next: …" chip, the Roll History, the dice sound, the smoke test, the bench) learns about it
- * from these, through {@link RollController#addStateListener}.
+ * a Roll (the result strip, entry's "next: …" chip, the Roll History, the dice sound, the smoke test, the bench)
+ * learns about it from these, through {@link RollController#addStateListener}.
  *
  * @param status where the current Roll stands
- * @param queued the Queued Roll, if one waits
+ * @param queued the Queued Roll, if one waits (spec §3.2 "Entry"): what was asked for while a Roll was under way
  * @param settled whether the app has settled: no Roll under way, no Queued Roll waiting, and the Tray no longer
  *     {@linkplain RollController.TrayView#moving moving} (the camera's settle-in over)
  */
-record RollState(RollStatus status, Optional<QueuedRoll> queued, boolean settled) {
+record RollState(RollStatus status, Optional<RollRequest> queued, boolean settled) {
 
     /** Checks the parts are present. */
     RollState {
@@ -25,29 +24,13 @@ record RollState(RollStatus status, Optional<QueuedRoll> queued, boolean settled
     }
 
     /**
-     * The Queued Roll (spec §3.2 "Entry"): what was asked for while a Roll was under way, and the Saved Roll it came
-     * from, if any (#56).
-     *
-     * @param expression the Roll Expression asked for, already parsed
-     * @param savedRollName the Saved Roll's name, or empty for a Roll typed or taken from the History
-     */
-    record QueuedRoll(RollExpression expression, Optional<String> savedRollName) {
-
-        /** Checks the parts are present. */
-        QueuedRoll {
-            Objects.requireNonNull(expression, "expression");
-            Objects.requireNonNull(savedRollName, "savedRollName");
-        }
-    }
-
-    /**
-     * Tells whether a Roll is under way: its status is Pre-simulating or Playing. Camera gestures are blocked exactly
-     * while it is.
+     * Tells whether a Roll is under way: its status is Pre-simulating or Playing ({@link RollStatus.UnderWay}).
+     * Camera gestures are blocked exactly while it is.
      *
      * @return {@code true} from the Roll's start until it is at rest or has failed
      */
     boolean underWay() {
-        return status instanceof RollStatus.PreSimulating || status instanceof RollStatus.Playing;
+        return status instanceof RollStatus.UnderWay;
     }
 
     /**
