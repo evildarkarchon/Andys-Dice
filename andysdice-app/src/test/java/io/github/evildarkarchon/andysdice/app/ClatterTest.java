@@ -121,7 +121,7 @@ class ClatterTest extends HeadlessUiTest {
                             impacts.add(impact);
                         }
                     });
-            Clatter.attach(session, output);
+            Clatter.attach(session.controller(), output);
             controls = SoundSettings.attach(ui(), settings, output);
         });
         assertThat(await(() -> opener.attempts.get() == 1, Duration.ofSeconds(10))).isTrue();

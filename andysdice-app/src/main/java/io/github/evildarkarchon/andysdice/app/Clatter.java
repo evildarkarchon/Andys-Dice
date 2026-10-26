@@ -21,8 +21,7 @@ import java.util.random.RandomGenerator;
 /**
  * Dice clatter in the app (#59, spec §3.5, ADR-0012): the sound module's {@link SoundOutput} fed with every Throw of
  * each Roll as it starts to play, at its place on the playback clock, sounding like the Tray the Roll was thrown
- * into. Only contacts
- * make sound; the Release, the reroll pickup and the UI give the output nothing to play.
+ * into. Only contacts make sound; the Release, the reroll pickup and the UI give the output nothing to play.
  *
  * <p>No audio device means silence and one Notice for the run, however often the device is tried again.
  */
@@ -102,17 +101,17 @@ final class Clatter {
     }
 
     /**
-     * Feeds a Roll session's Throws to the sound output: each chain as its Roll's status becomes Playing, every
+     * Feeds a roll controller's Throws to the sound output: each chain as its Roll's status becomes Playing, every
      * Throw at the clock time its Release plays, in the sound of the Tray the Roll was thrown into (#67), whatever
      * Tray has been picked since.
      *
-     * @param session the Roll session
+     * @param controller the Roll session's roll controller
      * @param output the sound output
      */
-    static void attach(RollSession session, SoundOutput output) {
+    static void attach(RollController controller, SoundOutput output) {
         Objects.requireNonNull(output, "output");
         // Once per Playing: later snapshots while it plays (a Roll queued behind it) must not queue its sound again.
-        session.controller().addStateListener(RollState.statusChanges(status -> {
+        controller.addStateListener(RollState.statusChanges(status -> {
             if (status instanceof RollStatus.Playing playing) {
                 output.play(throwsOf(playing.chain(), playing.start()));
             }
