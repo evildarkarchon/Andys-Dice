@@ -278,7 +278,8 @@ abstract class HeadlessUiTest {
     /**
      * Plays the clock forward in 60 Hz frames, as JavaFX's pulse would, on the JavaFX thread.
      *
-     * @param seconds how much playback time to play; rounded up to whole frames
+     * @param seconds how much real time to play, rounded up to whole frames. The playback time is the same at the
+     *     default ×1, and that many seconds times the clock's speed otherwise
      * @throws Exception if the JavaFX thread failed or timed out
      */
     protected final void advance(double seconds) throws Exception {

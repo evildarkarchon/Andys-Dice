@@ -37,12 +37,43 @@ class PlaybackClockTest {
         PlaybackClock clock = new PlaybackClock();
         clock.advance(0.5);
 
-        clock.setSpeed(4);
+        clock.setBaseSpeed(4);
         clock.advance(0.25);
 
         // 0.5 s at x1, then 0.25 s of real time at x4 is a further second of playback.
         assertThat(clock.time()).isCloseTo(1.5, within(1e-12));
         assertThat(clock.speed()).isEqualTo(4);
+    }
+
+    @Test
+    void aFastForwardFactorChangeAppliesOnlyFromTheNextAdvance() {
+        PlaybackClock clock = new PlaybackClock();
+        clock.setBaseSpeed(2);
+        clock.advance(0.5);
+
+        clock.setFastForwardFactor(4);
+        assertThat(clock.time()).as("time already advanced is unchanged").isCloseTo(1.0, within(1e-12));
+        clock.advance(0.25);
+        clock.setFastForwardFactor(1);
+        clock.advance(0.25);
+
+        // 0.5 s at x2, then 0.25 s at x8, then 0.25 s back at the base x2.
+        assertThat(clock.time()).isCloseTo(1.0 + 2.0 + 0.5, within(1e-12));
+        assertThat(clock.speed()).isEqualTo(2);
+    }
+
+    @Test
+    void itsSpeedIsTheBaseSpeedTimesTheFastForwardFactorInEitherOrderOfSetting() {
+        PlaybackClock baseFirst = new PlaybackClock();
+        baseFirst.setBaseSpeed(16);
+        baseFirst.setFastForwardFactor(4);
+        PlaybackClock factorFirst = new PlaybackClock();
+        factorFirst.setFastForwardFactor(4);
+        factorFirst.setBaseSpeed(16);
+
+        assertThat(baseFirst.speed()).isEqualTo(64);
+        assertThat(factorFirst.speed()).isEqualTo(64);
+        assertThat(baseFirst.baseSpeed()).isEqualTo(16);
     }
 
     @Test
@@ -78,9 +109,19 @@ class PlaybackClockTest {
 
         assertThatThrownBy(() -> clock.advance(-0.001)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> clock.advance(Double.NaN)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> clock.setSpeed(0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> clock.setSpeed(Double.POSITIVE_INFINITY))
-                .isInstanceOf(IllegalArgumentException.class);
         assertThat(clock.time()).isZero();
+    }
+
+    @Test
+    void eitherFactorMustBePositiveAndFinite() {
+        PlaybackClock clock = new PlaybackClock();
+
+        for (double bad : new double[] {0, -1, Double.NaN, Double.POSITIVE_INFINITY}) {
+            assertThatThrownBy(() -> clock.setBaseSpeed(bad)).as("base speed %s", bad)
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> clock.setFastForwardFactor(bad)).as("Fast-forward factor %s", bad)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(clock.speed()).as("a rejected factor changes nothing").isEqualTo(1);
     }
 }

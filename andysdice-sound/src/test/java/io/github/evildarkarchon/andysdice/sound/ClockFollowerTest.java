@@ -36,7 +36,7 @@ class ClockFollowerTest {
     @Test
     void aSpeedChangeTakesEffectFromTheNextAdvance() {
         advance(1_000 * MS, 1.0);
-        clock.setSpeed(4);
+        clock.setBaseSpeed(4);
         assertThat(follower.at(1_010 * MS).speed()).isEqualTo(1);
 
         advance(1_010 * MS, 0.01);

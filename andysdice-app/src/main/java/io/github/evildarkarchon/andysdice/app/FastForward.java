@@ -11,10 +11,14 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Window;
 
 /**
- * Fast-forward (spec §3.2 "Fast-forward"): while the Player holds Shift by itself, the playback clock runs at
- * ×{@value #SPEED}, so the whole chain (Throws, the reroll pickup and the camera's easing, which all play on that
- * clock) plays faster; releasing Shift puts it back to ×1 at once. Nothing is ever skipped: only the clock's speed
+ * Fast-forward (spec §3.2 "Fast-forward"): while the Player holds Shift by itself, the playback clock runs
+ * ×{@value #SPEED} faster, so the whole chain (Throws, the reroll pickup and the camera's easing, which all play on
+ * that clock) plays faster; releasing Shift puts it back at once. Nothing is ever skipped: only the clock's speed
  * changes, so every Die is still seen landing.
+ *
+ * <p>It writes only the clock's Fast-forward factor, never its base speed, which is the launch mode's: ×1 in the
+ * Player's app, so there Fast-forward means ×{@value #SPEED} and back to ×1; in an unattended run it multiplies that
+ * run's own speed, and releasing Shift returns to it rather than to real time.
  *
  * <p>Fast-forward starts only once Shift has been held alone for {@value #HOLD_SECONDS} s. Shift is also how
  * {@code +}, {@code %}, {@code <}, {@code >} and capitals are typed into the box, so any other key pressed during
@@ -22,14 +26,16 @@ import javafx.stage.Window;
  * again. A held Shift's auto-repeat presses don't restart the hold.
  *
  * <p>The hold is timed on the playback clock, not a wall clock, so tests time it by advancing the injected clock
- * (ADR-0011). The clock runs at ×1 throughout a hold, so its time is real time; but it only moves while something
- * plays, so Shift held while the Tray is idle starts counting when the next Roll starts playing.
+ * (ADR-0011). Throughout a hold the Fast-forward factor is ×1, so the clock runs at exactly its base speed, and its
+ * time since the press divided by the base speed is real time: the hold lasts {@value #HOLD_SECONDS} s of real time
+ * at any base speed. The clock only moves while something plays, though, so Shift held while the Tray is idle starts
+ * counting when the next Roll starts playing.
  *
  * <p>Thread contract: made and used on the JavaFX Application Thread, like the clock it speeds up.
  */
 final class FastForward {
 
-    /** How fast the clock runs while Fast-forward is on (spec §4 "Fast-forward speed"). */
+    /** The clock's Fast-forward factor while Fast-forward is on (spec §4 "Fast-forward speed"). */
     static final double SPEED = 4;
 
     /** How long Shift must be held alone before Fast-forward starts, in seconds (spec §4, a tunable). */
@@ -37,7 +43,7 @@ final class FastForward {
 
     /** Where Shift stands. */
     enum State {
-        /** Shift is up: the clock runs at ×1. */
+        /** Shift is up: a Fast-forward factor of ×1, so the clock runs at its base speed. */
         OFF,
         /** Shift is down alone, not yet for the whole hold time: still ×1. */
         HOLDING,
@@ -52,7 +58,7 @@ final class FastForward {
     private double holdStart;
 
     /**
-     * Creates Fast-forward for a clock, at ×1 with no hold.
+     * Creates Fast-forward for a clock, with no hold. It leaves the clock's Fast-forward factor at its default ×1.
      *
      * @param clock the playback clock it speeds up; its advances time the hold
      */
@@ -67,7 +73,7 @@ final class FastForward {
      * <p>The keys are heard through event filters on the window itself, the first stop of every key event's
      * dispatch, so a control or scene filter that consumes a key (Esc, Enter) can't hide it from the hold, and a key
      * still counts when nothing in the window has focus. The window losing focus ends the hold: Shift may then come
-     * up elsewhere, where this window would never hear it, and the clock must not stay at ×{@value #SPEED}.
+     * up elsewhere, where this window would never hear it, and the clock must not stay fast-forwarded.
      *
      * @param node a node of the window's content (the Layout C root)
      */
@@ -100,7 +106,8 @@ final class FastForward {
     /**
      * Returns where Shift stands.
      *
-     * @return the current state; the clock runs at ×{@value #SPEED} exactly when it is {@link State#ON}
+     * @return the current state; the clock's Fast-forward factor is ×{@value #SPEED} exactly when it is
+     *     {@link State#ON}
      */
     State state() {
         return state;
@@ -121,25 +128,30 @@ final class FastForward {
         }
     }
 
-    /** A key came up: Shift ends the hold, whatever became of it, and puts the clock back to ×1 at once. */
+    /** A key came up: Shift ends the hold, whatever became of it, and puts the clock back to its base speed at once. */
     private void released(KeyCode key) {
         if (key == KeyCode.SHIFT) {
             become(State.OFF);
         }
     }
 
-    /** The clock moved on: a hold that has lasted long enough turns Fast-forward on. */
+    /** The clock moved on: a hold that has lasted long enough in real time turns Fast-forward on. */
     private void advanced() {
-        // While HOLDING the clock runs at x1, so its time since the press is real time. The tolerance absorbs the
-        // rounding of a sum of 1/60 s frames that should land exactly on the hold time.
-        if (state == State.HOLDING && clock.time() - holdStart >= HOLD_SECONDS - 1e-9) {
+        // While HOLDING the Fast-forward factor is x1, so the clock runs at exactly the base speed, and its time since
+        // the press divided by that speed is real time. The base speed is read here, on every advance, rather than kept
+        // from construction: the launch mode sets it, and Fast-forward mustn't depend on which was made first. The
+        // tolerance absorbs the rounding of a sum of 1/60 s frames that should land exactly on the hold time.
+        if (state == State.HOLDING && (clock.time() - holdStart) / clock.baseSpeed() >= HOLD_SECONDS - 1e-9) {
             become(State.ON);
         }
     }
 
-    /** Moves to a state and sets the clock's speed to match it. */
+    /**
+     * Moves to a state and sets the clock's Fast-forward factor to match it. Only the factor: the base speed is the
+     * launch mode's, so leaving Fast-forward returns to the run's own speed, not to real time.
+     */
     private void become(State next) {
         state = next;
-        clock.setSpeed(next == State.ON ? SPEED : 1);
+        clock.setFastForwardFactor(next == State.ON ? SPEED : 1);
     }
 }

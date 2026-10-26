@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
  */
 class FastForwardTest extends HeadlessUiTest {
 
+    /** The base speed the bench runs at (#66): the unattended case Fast-forward must multiply, never override. */
+    private static final double BENCH_BASE_SPEED = 16;
+
     @Test
     void holdingShiftAloneForTheHoldTimeRunsTheClockAtFourTimes() throws Exception {
         assertThat(fromFx(() -> clock.speed())).isEqualTo(1.0);
@@ -135,6 +138,54 @@ class FastForwardTest extends HeadlessUiTest {
                 .as("the whole chain's playback time went by")
                 .isBetween(chain.restTime(), chain.restTime() + 4 * FRAME + 1e-9);
         assertThat(fromFx(() -> ui().resultStrip().text())).isEqualTo("4d6rr1kh3 = 15");
+    }
+
+    @Test
+    void atTheBenchsBaseSpeedFastForwardSpeedsUpAndReleasingShiftReturnsToTheBaseSpeed() throws Exception {
+        // Set after the session was built, unlike in AndysDice: Fast-forward must work whichever came first.
+        onFx(() -> clock.setBaseSpeed(BENCH_BASE_SPEED));
+        press(KeyCode.SHIFT);
+        advance(0.5);
+        assertThat(fromFx(() -> clock.speed())).as("x4 on top of the base x16").isEqualTo(64.0);
+
+        release(KeyCode.SHIFT);
+
+        assertThat(fromFx(() -> clock.speed())).as("back to the run's own speed, not real time").isEqualTo(16.0);
+    }
+
+    @Test
+    void atTheBenchsBaseSpeedAnotherKeyReturnsToTheBaseSpeed() throws Exception {
+        onFx(() -> clock.setBaseSpeed(BENCH_BASE_SPEED));
+        press(KeyCode.SHIFT);
+        advance(0.1);
+        press(KeyCode.A);
+        release(KeyCode.A);
+        assertThat(fromFx(() -> clock.speed())).as("a cancelled hold").isEqualTo(16.0);
+        release(KeyCode.SHIFT);
+
+        press(KeyCode.SHIFT);
+        advance(0.5);
+        assertThat(fromFx(() -> clock.speed())).isEqualTo(64.0);
+        press(KeyCode.A);
+        release(KeyCode.A);
+        assertThat(fromFx(() -> clock.speed())).as("Fast-forward ended by a key").isEqualTo(16.0);
+    }
+
+    @Test
+    void atTheBenchsBaseSpeedTheHoldStillTakesTheHoldTimeOfRealTime() throws Exception {
+        onFx(() -> clock.setBaseSpeed(BENCH_BASE_SPEED));
+        press(KeyCode.SHIFT);
+        // advance plays real 60 Hz frames: the last frame before the hold time is 11 of them, nearly 3 s of clock
+        // time at x16 but under 0.2 s of real time.
+        advance(11 * FRAME);
+        assertThat(fromFx(() -> session.fastForward().state())).as("still within the hold")
+                .isEqualTo(FastForward.State.HOLDING);
+        assertThat(fromFx(() -> clock.speed())).isEqualTo(16.0);
+
+        advance(FRAME);
+
+        assertThat(fromFx(() -> session.fastForward().state())).isEqualTo(FastForward.State.ON);
+        assertThat(fromFx(() -> clock.speed())).isEqualTo(64.0);
     }
 
     /**

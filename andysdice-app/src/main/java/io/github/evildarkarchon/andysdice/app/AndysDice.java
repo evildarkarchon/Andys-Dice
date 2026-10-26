@@ -87,7 +87,9 @@ public final class AndysDice extends Application {
         // Neither hidden mode waits on a person: a failure exits at once.
         boolean unattended = mode.unattended();
         PlaybackClock clock = new PlaybackClock();
-        clock.setSpeed(mode.speed());
+        // The base speed's one writer (#66). Fast-forward, installed in every mode, multiplies it by its own factor
+        // and never writes it, so letting go of Shift returns an unattended run to this speed, not to real time.
+        clock.setBaseSpeed(mode.speed());
         // The persisted state first (spec §3.6): the window opens at the saved geometry. The one Notices goes to the
         // session too, so a file set aside while loading shows behind the bell. The bench keeps its state in a
         // throwaway folder, so its Rolls never join the Player's Roll History.

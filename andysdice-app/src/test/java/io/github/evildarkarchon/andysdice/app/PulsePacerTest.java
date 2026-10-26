@@ -98,7 +98,7 @@ class PulsePacerTest {
     @Test
     void theClockSpeedStillApplies() {
         PlaybackClock clock = new PlaybackClock();
-        clock.setSpeed(4);
+        clock.setBaseSpeed(4);
         PulsePacer pacer = new PulsePacer(clock);
 
         pacer.pulse(0);

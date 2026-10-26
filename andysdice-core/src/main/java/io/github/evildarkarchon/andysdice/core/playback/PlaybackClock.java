@@ -9,9 +9,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * sound is mixed and Throw phases are reported.
  *
  * <p>It holds playback time in seconds and is moved on only by {@link #advance}, by the real time that passed
- * times the current {@link #speed()} (×4 while Fast-forward is on, ×1 otherwise). In the app something on
- * JavaFX's pulse advances it; tests advance it by hand, so nothing that plays back ever reads a wall clock or
- * sleeps (ADR-0011). Its time only ever increases.
+ * times the current {@link #speed()}. In the app something on JavaFX's pulse advances it; tests advance it by hand,
+ * so nothing that plays back ever reads a wall clock or sleeps (ADR-0011). Its time only ever increases.
+ *
+ * <p>The speed is the product of two factors, each with exactly one writer, so neither can undo the other: the
+ * {@linkplain #setBaseSpeed base speed}, set once at start-up by the launch mode (×1 for the Player's app, faster for
+ * the unattended runs), and the {@linkplain #setFastForwardFactor Fast-forward factor}, set only by Fast-forward
+ * (×4 while it is on, ×1 otherwise). Everything that reads the clock's speed reads the product.
  *
  * <p>Thread contract: confined to the thread that advances it (the JavaFX Application Thread in the app).
  * Listeners are told on that thread, after each advance. Something on another thread (the audio thread, the
@@ -33,9 +37,10 @@ public final class PlaybackClock {
     // Copy-on-write so a listener may add or remove listeners (itself included) while being told.
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private double time;
-    private double speed = 1;
+    private double baseSpeed = 1;
+    private double fastForwardFactor = 1;
 
-    /** Creates a clock at time 0, running at ×1. */
+    /** Creates a clock at time 0, running at ×1: both factors are 1. */
     public PlaybackClock() {}
 
     /**
@@ -48,25 +53,52 @@ public final class PlaybackClock {
     }
 
     /**
-     * Returns how fast playback runs against real time.
+     * Returns how fast playback runs against real time: the base speed times the Fast-forward factor.
      *
      * @return the factor, 1 for normal speed
      */
     public double speed() {
-        return speed;
+        return baseSpeed * fastForwardFactor;
     }
 
     /**
-     * Sets how fast playback runs from the next {@link #advance} on; time already advanced is unchanged.
+     * Returns the base speed alone, the launch mode's factor without Fast-forward's. Fast-forward reads it to turn
+     * clock time back into real time.
+     *
+     * @return the factor, 1 for the Player's app
+     */
+    public double baseSpeed() {
+        return baseSpeed;
+    }
+
+    /**
+     * Sets the base speed from the next {@link #advance} on; time already advanced is unchanged. Only the launch mode
+     * calls it, once at start-up.
      *
      * @param speed the factor against real time, 1 for normal speed
      * @throws IllegalArgumentException if it isn't a positive, finite number (playback never stops or skips)
      */
-    public void setSpeed(double speed) {
-        if (!(speed > 0) || !Double.isFinite(speed)) {
-            throw new IllegalArgumentException("A playback speed must be positive and finite: " + speed);
+    public void setBaseSpeed(double speed) {
+        baseSpeed = checkedFactor(speed);
+    }
+
+    /**
+     * Sets the Fast-forward factor from the next {@link #advance} on; time already advanced is unchanged. Only
+     * Fast-forward calls it.
+     *
+     * @param factor how much faster than the base speed playback runs, 1 when Fast-forward is off
+     * @throws IllegalArgumentException if it isn't a positive, finite number (playback never stops or skips)
+     */
+    public void setFastForwardFactor(double factor) {
+        fastForwardFactor = checkedFactor(factor);
+    }
+
+    /** Returns a speed factor if it is positive and finite, the rule both setters share. */
+    private static double checkedFactor(double factor) {
+        if (!(factor > 0) || !Double.isFinite(factor)) {
+            throw new IllegalArgumentException("A playback speed must be positive and finite: " + factor);
         }
-        this.speed = speed;
+        return factor;
     }
 
     /**
@@ -80,7 +112,7 @@ public final class PlaybackClock {
         if (!(realSeconds >= 0) || !Double.isFinite(realSeconds)) {
             throw new IllegalArgumentException("The clock advances by a finite, non-negative time: " + realSeconds);
         }
-        time += realSeconds * speed;
+        time += realSeconds * speed();
         for (Listener listener : listeners) {
             listener.advanced(this);
         }
