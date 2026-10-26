@@ -115,6 +115,10 @@ _Avoid_: Roll event, history entry
 A Roll that ends without a Roll Result, because its Dice could not be brought to rest or it needed too many Rerolls. Nothing moves, and it never joins the Roll History.
 _Avoid_: Error roll, aborted roll
 
+**Lost Roll**:
+A Roll cut off before its Roll Result was revealed, because the session ended in a runtime failure or the app closed. It was never shown, so it never joins the Roll History. Unlike a Failed Roll, its Dice may already have been moving.
+_Avoid_: Abandoned roll, cancelled roll
+
 **Queued Roll**:
 A Roll the Player asks for while Dice are still moving, which starts shortly after the current Roll Result is revealed. There is at most one.
 _Avoid_: Pending roll, next roll
