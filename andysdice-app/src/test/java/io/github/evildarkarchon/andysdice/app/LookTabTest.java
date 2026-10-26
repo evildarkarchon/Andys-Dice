@@ -135,6 +135,36 @@ class LookTabTest extends HeadlessUiTest {
     }
 
     @Test
+    void aTrayPickedWhileTheDiceMoveAppearsOnTheTrayOnlyOnceTheyRest() throws Exception {
+        attachLook();
+        faces.then(3);
+        roll("1d6");
+        advance(0.1);
+
+        onFx(() -> named(look.trayButtons(), "Tray Leather hexagon").fire());
+
+        // The pick is taken and kept at once, but the Dice in motion stay in the Tray they were thrown into.
+        assertThat(fromFx(() -> picked(named(look.trayButtons(), "Tray Leather hexagon")))).isTrue();
+        assertThat(savedSettings()).contains("look.tray=02-leather-hexagon");
+        onFx(() -> {
+            assertThat(rollState().status()).isInstanceOf(RollStatus.Playing.class);
+            // Frame by frame to the rest, two minutes at most, as playToRest does.
+            for (int frame = 0; rollState().underWay() && frame < 7200; frame++) {
+                assertThat(tray.look().tray().identity()).as("at %.3f s", clock.time())
+                        .isEqualTo(BuiltInTrays.DEFAULT_IDENTITY);
+                clock.advance(1.0 / 60);
+            }
+        });
+        assertThat(fromFx(() -> tray.phase())).isEqualTo(StandInTray.Phase.AT_REST);
+        assertThat(fromFx(() -> tray.look().tray().identity())).isEqualTo("02-leather-hexagon");
+        // And the next Roll is thrown into it.
+        faces.then(5);
+        roll("1d6");
+        assertThat(simulator.requests.getLast().tray())
+                .isEqualTo(BuiltInTrays.find("02-leather-hexagon").orElseThrow().geometry());
+    }
+
+    @Test
     void pickingALightRigChangesTheLightAndSavesIt() throws Exception {
         attachLook();
 

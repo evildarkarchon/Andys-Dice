@@ -198,6 +198,10 @@ accessibility, window sizes, first run, locale, the Cocked Rethrow and glyphs) w
   then the Player's own, marked "yours". Clicking a swatch picks it.
 - **Tray:** the built-ins, then the Player's own.
 - **Light Rig:** Studio, Lamp or Window.
+- **Mid-Roll picks:** a pick shows at once, except a Tray picked while a Roll is under way (pre-simulating or
+  playing): the Roll is drawn and heard in the Tray it was thrown into, so the picked Tray shows once that Roll
+  rests, fails or is lost. Of several Trays picked meanwhile, the last one shows. A Dice Set or Light Rig picked
+  mid-Roll shows at once. The next Roll is always thrown into the Tray picked last.
 - Player Files that were skipped stay listed under their section, with the reason, for as long as the app runs.
 
 **Settings tab**

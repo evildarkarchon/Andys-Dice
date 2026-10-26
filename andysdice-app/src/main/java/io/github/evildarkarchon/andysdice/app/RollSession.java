@@ -26,8 +26,6 @@ final class RollSession {
     private final Notices notices;
     private final RollEntry entry;
     private final FastForward fastForward;
-    /** The Tray seam: where the Roll is drawn, and the look it is drawn in (#57). */
-    private final TraySurface tray;
 
     /**
      * Wires a Roll UI and its controller.
@@ -63,7 +61,7 @@ final class RollSession {
         this.notices = Objects.requireNonNull(notices, "notices");
         Objects.requireNonNull(pulses, "pulses");
         Objects.requireNonNull(generators, "generators");
-        this.tray = Objects.requireNonNull(tray, "tray");
+        Objects.requireNonNull(tray, "tray");
         // The controller talks to the Tray directly; what follows a Roll hears of it from its state snapshots.
         controller = new RollController(clock, pulses, physics, fxThread,
                 new FaceValueGenerator(generators.faceValues()), generators.releases(), throwInto, tray);
@@ -153,18 +151,16 @@ final class RollSession {
     }
 
     /**
-     * Fills the Look tab (#57) and draws the Tray in the stored look at once. Each pick there redraws the Tray
-     * through the Tray seam and becomes the Tray the next Roll is thrown into.
+     * Fills the Look tab (#57) and sets the stored look through the controller. Each pick there is set through the
+     * controller too, which draws it on the Tray under the mid-Roll Look rule ({@link RollController#setLook}) and
+     * throws the next Roll into its Tray.
      *
      * @param catalogue the Dice Sets and Trays read at start-up, and the Player Files skipped
      * @param settings the live settings holding the choices
      * @return the tab's content, already in the Look tab
      */
     LookTab attachLook(LookCatalogue catalogue, SettingsStore settings) {
-        LookTab look = new LookTab(catalogue, settings, chosen -> {
-            tray.showLook(chosen);
-            controller.setTray(chosen.tray());
-        });
+        LookTab look = new LookTab(catalogue, settings, controller::setLook);
         ui.lookTab().setContent(look.node());
         return look;
     }
