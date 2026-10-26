@@ -166,6 +166,16 @@ final class Skeleton implements AutoCloseable {
     }
 
     /**
+     * Returns the GL Tray the Roll session drives, for what the app, the bench and the first-motion timer attach to
+     * it: the driver report, the Quality Preset, sound panning, the frame-presented callback and the GPU bench.
+     *
+     * @return the GL Tray
+     */
+    GlTray glTray() {
+        return tray;
+    }
+
+    /**
      * Returns the roll controller.
      *
      * @return the controller Enter rolls through
