@@ -15,7 +15,8 @@ import javafx.scene.layout.Region;
  * injected playback clock's time when each of those began.
  *
  * <p>The controller drives it exactly as it drives the real Tray: {@link #show} when a pre-simulated chain is ready,
- * then {@link #showTime} on every clock advance. Thread contract: the JavaFX Application Thread.
+ * then {@link #showTime} and {@link #advanced} on every clock advance. Thread contract: the JavaFX Application
+ * Thread.
  */
 final class StandInTray extends Region implements TraySurface {
 
@@ -78,6 +79,15 @@ final class StandInTray extends Region implements TraySurface {
     @Override
     public void showLook(Look look) {
         looks.add(Objects.requireNonNull(look, "look"));
+    }
+
+    /**
+     * Hears that the clock advanced: does nothing, since the stand-in draws nothing beyond the chain
+     * ({@link #showTime}) and has no camera to redraw.
+     */
+    @Override
+    public void advanced() {
+        // Nothing to draw: the phase reports come from showTime alone.
     }
 
     /**

@@ -1,7 +1,6 @@
 package io.github.evildarkarchon.andysdice.app;
 
 import io.github.evildarkarchon.andysdice.core.expression.RollExpression;
-import io.github.evildarkarchon.andysdice.render.FrameView;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -32,8 +31,8 @@ final class FirstMotion {
 
     /**
      * Types a Roll Expression into the box, presses Enter, and times it until the first frame of its Throw is on
-     * screen: the first frame presented once the Roll's state snapshot says it is Playing. It uses the frame view's
-     * presented-frame listener until then.
+     * screen: the first frame presented once the Roll's state snapshot says it is Playing. It uses the GL Tray's
+     * frame-presented callback until then, and types and presses Enter in the Roll session's box.
      *
      * @param skeleton the started app, idle
      * @param parsed the Roll Expression, parsed, so Enter on its text rolls it rather than showing an error
@@ -43,17 +42,18 @@ final class FirstMotion {
     static CompletableFuture<Duration> time(Skeleton skeleton, RollExpression parsed) {
         CompletableFuture<Duration> timed = new CompletableFuture<>();
         String expression = parsed.source();
-        if (!skeleton.controller().state().settled()) {
+        RollSession session = skeleton.session();
+        GlTray tray = skeleton.glTray();
+        if (!session.controller().state().settled()) {
             // Enter would make it the Queued Roll, or a frame of what is still moving could be taken for its first.
             timed.completeExceptionally(new IllegalStateException("can't time " + expression
                     + ": the app hasn't settled"));
             return timed;
         }
-        FrameView view = skeleton.view();
         long[] entered = new long[1];
         // Set once the Roll's status is Playing: by then the Tray has its chain, at its first Release.
         boolean[] playing = new boolean[1];
-        view.setOnFramePresented(() -> {
+        tray.onFramePresented(() -> {
             // The app was settled, so the first frame shown once the Roll plays is drawn from its chain. Playing is
             // published on this thread right after the Tray asked for that frame, so no frame of it is shown before.
             if (playing[0]) {
@@ -61,7 +61,7 @@ final class FirstMotion {
             }
         });
         // State listeners can't be removed; once this timing is over, this one does nothing.
-        skeleton.controller().addStateListener(RollState.statusChanges(status -> {
+        session.controller().addStateListener(RollState.statusChanges(status -> {
             if (timed.isDone()) {
                 return;
             }
@@ -75,9 +75,9 @@ final class FirstMotion {
             }
         }));
         // Through the JavaFX thread, which owns the listener: a timeout completes the timing on a timer thread.
-        timed.whenComplete((duration, error) -> Platform.runLater(() -> view.setOnFramePresented(null)));
+        timed.whenComplete((duration, error) -> Platform.runLater(() -> tray.onFramePresented(null)));
 
-        TextField box = skeleton.pane().expressionBox();
+        TextField box = session.ui().expressionBox();
         box.setText(expression);
         entered[0] = System.nanoTime();
         // Enter, as a key press on the box: the path the Player's Enter takes (entry, then the controller).

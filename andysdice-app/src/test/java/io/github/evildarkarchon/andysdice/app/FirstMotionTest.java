@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.SplittableRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.AfterAll;
@@ -35,15 +36,21 @@ class FirstMotionTest {
         HeadlessUiTest.startToolkit();
         Generators generators = new Generators(new SplittableRandom(3), new SplittableRandom(5),
                 new SplittableRandom(7));
-        skeleton = HeadlessUiTest.fromFx(() -> Skeleton.start(new PlaybackClock(), new HandPulses(), generators));
+        AtomicBoolean firstRunShown = new AtomicBoolean();
+        skeleton = HeadlessUiTest.fromFx(() -> {
+            Skeleton started = Skeleton.start(new PlaybackClock(), new HandPulses(), generators);
+            // Set on the JavaFX thread before it can present the first-run frame, so that frame is heard.
+            started.glTray().onFramePresented(() -> firstRunShown.set(true));
+            return started;
+        });
         stage = HeadlessUiTest.fromFx(() -> {
             Stage s = new Stage();
-            s.setScene(new Scene(skeleton.pane(), 640, 480));
+            s.setScene(new Scene(skeleton.session().ui(), 640, 480));
             s.show();
             return s;
         });
         // The empty first-run Tray is on screen before anything is timed.
-        assertThat(HeadlessUiTest.await(() -> skeleton.view().framesPresented() > 0, WAIT)).isTrue();
+        assertThat(HeadlessUiTest.await(firstRunShown::get, WAIT)).isTrue();
     }
 
     @AfterAll
@@ -56,7 +63,6 @@ class FirstMotionTest {
 
     @Test
     void itTimesEnterToTheFirstFrameOfTheThrowOnScreen() throws Exception {
-        long framesBefore = skeleton.view().framesPresented();
         long start = System.nanoTime();
 
         CompletableFuture<Duration> timed = HeadlessUiTest.fromFx(() -> FirstMotion.time(skeleton,
@@ -66,13 +72,13 @@ class FirstMotionTest {
 
         assertThat(firstMotion).isPositive();
         assertThat(firstMotion.toNanos()).isLessThanOrEqualTo(elapsed);
-        // By then the Roll is on the Tray and a frame of it has been shown.
-        ChainPlayback shown = HeadlessUiTest.fromFx(skeleton::showing);
+        // By then the Roll is on the Tray and a frame of it has been shown: the timing only completes from the GL
+        // Tray's frame-presented callback.
+        ChainPlayback shown = HeadlessUiTest.fromFx(() -> skeleton.glTray().showing());
         assertThat(shown).isNotNull();
         assertThat(shown.plan().dice()).hasSize(20);
         assertThat(shown.plan().throwChain().getFirst().thrown()).hasSize(20);
-        assertThat(skeleton.view().framesPresented()).isGreaterThan(framesBefore);
-        assertThat(HeadlessUiTest.fromFx(() -> skeleton.pane().expressionBox().getText()))
+        assertThat(HeadlessUiTest.fromFx(() -> skeleton.session().ui().expressionBox().getText()))
                 .isEqualTo(Bench.EXPRESSION);
     }
 }
