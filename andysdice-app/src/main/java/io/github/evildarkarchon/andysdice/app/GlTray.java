@@ -7,6 +7,7 @@ import io.github.evildarkarchon.andysdice.render.FrameView;
 import io.github.evildarkarchon.andysdice.render.GlDriver;
 import io.github.evildarkarchon.andysdice.render.GpuBench;
 import io.github.evildarkarchon.andysdice.render.LightRig;
+import io.github.evildarkarchon.andysdice.render.Look;
 import io.github.evildarkarchon.andysdice.render.QualityPreset;
 import io.github.evildarkarchon.andysdice.render.RenderThread;
 import io.github.evildarkarchon.andysdice.render.camera.Framing;
@@ -134,11 +135,12 @@ final class GlTray implements TraySurface, AutoCloseable {
 
     @Override
     public void showLook(Look look) {
-        // The scene takes each part on the render thread at its next frame; the camera reframes for the new Tray's
-        // walls at once.
-        scene.setLook(look.diceSet(), look.tray(), look.lightRig());
+        // The camera reframes for the new Tray's walls at once, so it is reframed first and handed over with the
+        // Look as one (#80): no frame draws the new Tray from a camera framed for the old one.
         camera.setFraming(Framing.of(look.tray().geometry()));
-        showCamera();
+        scene.setLookAndCamera(look, camera.camera());
+        pan();
+        renderer.requestFrame();
     }
 
     @Override

@@ -145,8 +145,10 @@ public final class RenderThread implements AutoCloseable {
     }
 
     /**
-     * Runs {@code task} on the render thread, before the next frame. This is how other threads hand the
-     * renderer its messages (camera, Dice Set and so on) and how tests reach GL. Any thread; never blocks.
+     * Runs {@code task} on the render thread, before the next frame: how tests and the still capture reach GL. The
+     * renderer's messages (the camera, the Dice, the Look and so on) don't come this way; they are handed to the
+     * {@link FrameRenderer} itself, as {@link DiceScene}'s setters take them, and the next frame reads them. Any
+     * thread; never blocks.
      *
      * @param task what to run; it may make GL calls
      * @param <T> the result type
