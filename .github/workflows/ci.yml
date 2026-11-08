@@ -109,11 +109,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # No `cache: maven` here, on purpose. This job shares the windows job's cache key (it hashes only the POMs)
+      # and, being the quicker of the two, would save the cache first. A cache entry is never overwritten, so a
+      # -DskipTests build's ~/.m2 would stand for every later Windows run, the nightly soak included: it lacks
+      # surefire's test-time JUnit Platform provider, which every soak then fetched from Central and failed on
+      # when Central blinked. Left to the windows job, the cache is one a full `mvn verify` filled.
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: ${{ env.JAVA_DISTRIBUTION }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
 
       # No Mesa step here, on purpose. The tests ran in the windows job; this one only needs the zip.
       - name: Build the zip
